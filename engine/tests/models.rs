@@ -191,7 +191,7 @@ fn model_rule(id: i64, detection_type: DetectionType, sha256: &str, threshold: i
     }
 }
 
-/// The built-in rules (ids 1–6) plus one model rule as id 7.
+/// The built-in rules (ids 1–12) plus one model rule as id 100.
 fn with_default_rules(rule: Rule) -> RuleSet {
     let mut rule_set = default_rule_set();
     rule_set.rules.push(rule);
@@ -212,7 +212,7 @@ fn matches(result: &ScanResult) -> Vec<&MatchDetails> {
 fn assess(text: &str, model: &[u8], threshold: i64) -> ScanResult {
     let (models, sha256) = load(model);
     let rule_set = with_default_rules(model_rule(
-        7,
+        100,
         DetectionType::ModelAssessment,
         &sha256,
         threshold,
@@ -255,8 +255,8 @@ fn an_assessment_rates_the_value_without_changing_the_rule_scores() {
     assert_eq!(
         after.model_assessments,
         [ModelAssessment {
-            rule_id: 7,
-            rule_name: "Model rule 7".into(),
+            rule_id: 100,
+            rule_name: "Model rule 100".into(),
             score: 90,
             verdict: ModelVerdict::LikelyReal,
         }]
@@ -264,7 +264,7 @@ fn an_assessment_rates_the_value_without_changing_the_rule_scores() {
     assert!(
         after
             .why_flagged
-            .ends_with("The Model rule 7 model rates it likely real (score 90, threshold 80).")
+            .ends_with("The Model rule 100 model rates it likely real (score 90, threshold 80).")
     );
     assert!(before.model_assessments.is_empty());
 }
@@ -306,7 +306,7 @@ fn findings_with_no_value_get_no_assessment() {
 #[test]
 fn a_model_that_was_not_loaded_is_a_rule_error_and_the_other_rules_still_run() {
     let rule_set = with_default_rules(model_rule(
-        7,
+        100,
         DetectionType::ModelAssessment,
         &"0".repeat(64),
         50,
@@ -322,7 +322,7 @@ fn a_model_that_was_not_loaded_is_a_rule_error_and_the_other_rules_still_run() {
             Violation::Match(_) => None,
         })
         .expect("the model rule should be a rule error");
-    assert_eq!(error.rule_id, 7);
+    assert_eq!(error.rule_id, 100);
     assert_eq!(error.field, RuleField::Model);
     assert_eq!(error.code, ErrorCode::ModelUnavailable);
     assert_eq!(
@@ -338,7 +338,7 @@ fn a_model_that_does_not_fit_its_rule_type_is_a_rule_error() {
         (constant_assessor(0.5), DetectionType::ModelDetection),
     ] {
         let (models, sha256) = load(&model);
-        let rule_set = with_default_rules(model_rule(7, detection_type, &sha256, 50));
+        let rule_set = with_default_rules(model_rule(100, detection_type, &sha256, 50));
         let result = scan_with_models(1, &format!("key: {AWS_KEY}"), &rule_set, &models).unwrap();
         let codes: Vec<ErrorCode> = result
             .findings

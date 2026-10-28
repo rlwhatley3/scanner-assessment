@@ -67,13 +67,14 @@ async fn seeding_twice_leaves_one_built_in_rule_set() {
         count(&db, "SELECT COUNT(*) FROM rule_set_versions").await,
         1
     );
+    let built_in = secrets_scanner_engine::default_rule_set().rules.len() as i64;
     assert_eq!(
         count(&db, "SELECT COUNT(*) FROM rules WHERE drafting = 0").await,
-        6
+        built_in
     );
     assert_eq!(
         count(&db, "SELECT COUNT(*) FROM rule_set_version_rules").await,
-        6
+        built_in
     );
 }
 

@@ -104,7 +104,7 @@ rule set version (id, parent, archived)
 
 Every table also carries `created_at` and `updated_at`.
 
-A scan session uses one rule set version and has many scans. Fixing an issue and rescanning creates a new scan in the same session, so all scans stay tied to the session. A scan's id doubles as its log id: the engine tags its log events with it. A rule that fails to run is recorded as a finding of kind `rule_error` on that rule, so a scan is partial when it has one, and clean when it has no findings at all.
+A scan session uses one rule set version and has many scans. Fixing an issue and rescanning creates a new scan in the same session, so all scans stay tied to the session. Scan sessions, scans, and findings are never deleted: together they record what was scanned with which rule set version, so they can be created and read but not removed. A scan's id doubles as its log id: the engine tags its log events with it. A rule that fails to run is recorded as a finding of kind `rule_error` on that rule, so a scan is partial when it has one, and clean when it has no findings at all.
 
 Never stored: the pasted text, matched values, or a hash of the input. A hash was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
 
@@ -209,3 +209,60 @@ Known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) are rules of type pl
 5. **WASM in the browser:** it has use cases, like building a local pre-check model, but it is large and specialized. I think the better solution is a real local application anyway, and I really dislike this whole concept being in a browser.
 6. **Auth and multiple users:** these go with the hosted API.
 7. **Compiled-rule caching:** rule set versions never change once saved, so the compiled rules could be cached per version instead of recompiled on every scan. That's an optimization, not a requirement for the POC, but likely needed for a production app.
+
+## Phase 2: Core implementation
+
+Phase 2 notes so far. The UI and the rest of the API are still to come.
+
+### Detection approach
+
+The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a pure Rust library: no network, disk, or HTTP. It layers four techniques, all running locally:
+
+1. **Regex rules** for known formats (AWS access keys, GitHub, npm, and GitLab tokens, private key blocks, payment card numbers, Bitcoin private keys) and for risky code (secrets written to logs).
+2. **Entropy** for likely credentials: a random-looking value (at least 3 bits per character) assigned to a name like `password`, `secret`, or `token`.
+3. **Checksums:** some formats carry one, so the engine can tell a real value from a made-up one offline. GitHub, npm, and GitLab tokens end in a CRC32 of the rest, card numbers carry a Luhn check digit, and Bitcoin private keys use Base58Check. A valid checksum raises confidence to 99; a failed one drops it to 50 and marks the finding as a likely example. A failed checksum never hides a finding, because GitHub, npm, and GitLab haven't published test tokens to confirm the exact encoding against.
+   - **Seeded and custom setups:** a checksum is a small description on the rule. `luhn` and `base58check` need nothing else; `crc32` also takes an encoding (`base62`, `base36`, or `hex`), a prefix length, and a checksum length. The built-in rules seed the common setups: GitHub, npm, GitLab (routable tokens, plus a separate rule for the older format, which has no checksum), payment cards, and Bitcoin private keys. A rule author can describe their own, e.g. for an in-house token format.
+   - **Not seeded:** Microsoft/Azure identifiable keys (their checksum algorithm couldn't be confirmed); Ethereum addresses and IBANs (public identifiers, not secrets). A wrong custom setup only lowers confidence on real tokens, so it can't hide them, and a length too short to hold the value is rejected as a rule error.
+4. **File format parsing:** the text is read as JSON, YAML, `.env`, or plain text. Parsed key/value pairs catch secrets a pattern alone misses (a quoted value containing `$` or `;`, a JSON key and value on separate lines). Comments are recognized, so a secret in a comment scores as a likely example, and commented-out code that logs a secret drops to low confidence.
+
+**Placeholder vs. real is a rule type.** Known fake values (`changeme`, `example`, ...) are rules like any other, edited and versioned the same way. They never create findings of their own; when one matches inside another rule's finding, that finding scores as a likely example. This is the fourth detection type from Phase 1, coming back as a rule type instead of a separate list.
+
+**Deliberately not used:**
+- **Live verification:** asking the provider whether a secret works is the strongest signal, but it sends the secret off the machine. Not built for the POC; a production build could offer it for certain rules:
+  - **Opt-in only:** off by default, chosen per scan (or a `--verify` flag in the CLI).
+  - **Only rules with a safe, read-only check:** GitHub (`GET /user`), npm (`whoami`), and GitLab (`GET /api/v4/personal_access_tokens/self`). AWS only when the secret access key is found alongside the key ID. Never for payment cards or Bitcoin keys (checking would mean attempting a charge or transaction), and never for likely credentials or unsafe handling (no provider to ask).
+  - **Built-in verifiers only:** a rule can turn on a verifier the app ships with, never point at its own URL, so a custom rule can't send secrets anywhere.
+  - **Only confident findings:** e.g. GitHub tokens whose checksum passes, not ones in comments or ones that look like examples.
+  - **Runs in the API or CLI, not the engine:** it happens during the scan request, while the text is still in memory, because findings never contain the secret itself. Results come back first and verification statuses fill in after, so a slow provider never holds up a scan.
+  - **Stores a status, never the provider's response:** `active`, `inactive`, `unknown`, or `not attempted`, with when it was checked, in a separate `verifications` table. Active findings would sort first in the UI and get their own CI exit code.
+- **AI or ML triage:** this would also send text off the machine unless the model ran locally, and it would make "why flagged" harder to explain.
+- **Parsing source code into syntax trees:** this would need a parser per language, so code is scanned as text with its comment lines recognized.
+
+### Scan endpoint
+
+`POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged.
+
+- **Concurrency cap:** at most 4 scans run at once. Others wait their turn, so a burst of scans can't starve the rest of the API.
+- **At scale:** scanning in the API process would compete with every other request. The intended production shape avoids that entirely: scanning runs on the client (a CLI or a real local app calling the engine in-process), and the hosted API only serves rule sets. If a hosted scanning service were ever needed, the next steps would be a separate worker pool, then a queue with independently scaled workers.
+
+### MCP server
+
+The API also serves an MCP server at `/mcp` (Streamable HTTP), so an AI agent can read and write the same data the UI will. It has 15 tools:
+
+- **Rules:** `list_rules`, `get_rule`, `create_rule`, `update_rule`, `delete_rule`, `check_rules`
+- **Rule set versions:** `list_rule_set_versions`, `get_rule_set_version`, `create_rule_set_version`, `set_rule_set_version_archived`
+- **Scan sessions and scans:** `list_scan_sessions`, `get_scan_session`, `create_scan_session`, `get_scan`, `run_scan`
+
+The tools follow the same rules as the rest of the API, through a shared storage module (`server/src/store.rs`):
+
+- New rules are drafts and aren't validated. `delete_rule` only deletes drafts; a rule in a version can be disabled or left out of the next version instead.
+- `create_rule_set_version` takes the full list of rule ids, runs the engine's checks on them as a set, and saves nothing if any check fails. Otherwise it snapshots each rule's current definition and clears `drafting`. A saved version can only be archived or restored, and an archived version can't start a new session.
+- `run_scan` uses the same code as the scan endpoint, so the text is never stored or logged, and findings never contain matched values.
+- Scan sessions and scans can be created and read, but there are no tools to delete them, since scan results are kept as history.
+- **Local only:** like the API, the server listens on loopback. It accepts only loopback `Host` headers, which protects against DNS rebinding, and it rejects any request that has an `Origin` header, so a web page can't drive the write tools through the user's browser.
+- **Stateless:** each tool call is one request and one JSON response, with no MCP session to keep.
+
+### Known gaps
+
+- **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.
+- **No REST endpoints for rules, versions, or sessions yet.** The MCP server's tools cover them, and the REST routes can reuse the same storage module.

@@ -2,14 +2,17 @@ use secrets_scanner_api::ApiDoc;
 use utoipa::OpenApi;
 
 #[test]
-fn openapi_documents_health_but_excludes_whiteboard_endpoints() {
+fn openapi_documents_the_api_but_excludes_whiteboard_endpoints() {
     let openapi = ApiDoc::openapi();
     let paths = &openapi.paths.paths;
-    let health = paths
-        .get("/api/health")
-        .expect("health endpoint should be documented");
 
-    assert!(health.get.is_some());
+    assert!(paths["/api/health"].get.is_some());
+    assert!(paths["/api/rules"].post.is_some());
+    assert!(paths["/api/rules/{id}"].put.is_some());
+    assert!(paths["/api/rule-set-versions"].post.is_some());
+    assert!(paths["/api/rule-set-versions/{id}"].patch.is_some());
+    assert!(paths["/api/scan-sessions/{id}"].get.is_some());
+    assert!(!paths.keys().any(|path| path.contains("whiteboard")));
 }
 
 #[test]

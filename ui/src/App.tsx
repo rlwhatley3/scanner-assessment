@@ -23,7 +23,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/instructions" replace />} />
         <Route path="/instructions" element={<InstructionsView />} />
-        <Route path="/playground" element={<PlaygroundView />} />
+        <Route path="/playground/*" element={<PlaygroundView />} />
         <Route path="/submission" element={<SubmissionView />} />
         <Route
           path="/whiteboard"

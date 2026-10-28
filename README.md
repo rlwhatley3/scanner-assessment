@@ -83,6 +83,16 @@ $env:API_PORT = "3011"
 .\start.ps1
 ```
 
+### Connect an MCP client
+
+While the stack is running, the API serves an MCP server at `http://127.0.0.1:3001/mcp` for reading and writing rules, rule set versions, scan sessions, and scans. To add it to Claude Code:
+
+```sh
+claude mcp add --transport http secrets-scanner http://127.0.0.1:3001/mcp
+```
+
+It only accepts loopback connections, and it rejects requests from web pages.
+
 ## Dev Containers
 
 Open this repository in VS Code and choose **Reopen in Container**. The

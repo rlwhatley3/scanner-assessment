@@ -1,3 +1,5 @@
+use crate::checksum::{Checksum, Crc32Checksum};
+use crate::password_shape::PasswordShape;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -85,10 +87,20 @@ pub struct RuleDefinition {
     /// A public prefix every match starts with, shown as the redacted preview.
     pub prefix: Option<String>,
     /// If set, the `key` group (or the whole match) must contain one of these, ignoring case.
+    /// For likely-credential rules, values under these names in parsed JSON, YAML, or `.env`
+    /// text are checked too, even where the pattern alone would miss them.
     pub key_names: Vec<String>,
     /// If set, the `value` group (or the whole match) needs at least this many bits of
     /// entropy per character. Range 0–8.
     pub min_entropy: Option<f64>,
+    /// How the token format's checksum is built, if it has one. The matched value is checked
+    /// against it to tell a real-format secret from a made-up one.
+    pub checksum: Option<Checksum>,
+    /// If set, a value only counts when it looks like a password a person made up, scoring at
+    /// least `min_score` on password-like signals. Values that are clearly not secrets (URLs,
+    /// paths, numbers, regular identifiers) never count. For likely-credential rules, every
+    /// parsed key/value pair is checked too, whatever its key, unless `key_names` narrows it.
+    pub password_shape: Option<PasswordShape>,
     pub remediation: Option<String>,
     /// The model a model rule runs. Other rule types ignore it.
     pub model: Option<ModelRef>,
@@ -143,6 +155,8 @@ pub enum RuleField {
     Prefix,
     KeyNames,
     MinEntropy,
+    Checksum,
+    PasswordShape,
     Remediation,
     Model,
     Threshold,
@@ -227,7 +241,17 @@ pub(crate) struct CompiledRule {
     pub prefix: Option<String>,
     pub key_names: Vec<String>,
     pub min_entropy: Option<f64>,
+    pub checksum: Option<Checksum>,
+    pub password_shape: Option<PasswordShape>,
     pub remediation: String,
+}
+
+impl CompiledRule {
+    /// A rule that judges values by password shape alone, with no key names to narrow it. It is
+    /// a fallback: it only reports values no other rule found.
+    pub(crate) fn is_shape_fallback(&self) -> bool {
+        self.password_shape.is_some() && self.key_names.is_empty()
+    }
 }
 
 /// Checks one rule on its own: required fields, ranges, and whether the pattern compiles.
@@ -304,6 +328,35 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
             RuleField::Severity,
             ErrorCode::Required,
             "A severity is required.",
+            None,
+        ));
+    }
+    if let Some(Checksum::Crc32(checksum)) = definition.checksum
+        && !(checksum.min_length()..=Crc32Checksum::MAX_LENGTH).contains(&checksum.length)
+    {
+        let message = format!(
+            "This checksum needs {} to {} characters to hold its full value.",
+            checksum.min_length(),
+            Crc32Checksum::MAX_LENGTH
+        );
+        check.errors.push(error(
+            RuleField::Checksum,
+            ErrorCode::OutOfRange,
+            &message,
+            None,
+        ));
+    }
+    if let Some(shape) = definition.password_shape
+        && !(1..=PasswordShape::MAX_SCORE).contains(&shape.min_score)
+    {
+        let message = format!(
+            "The minimum password score must be between 1 and {}.",
+            PasswordShape::MAX_SCORE
+        );
+        check.errors.push(error(
+            RuleField::PasswordShape,
+            ErrorCode::OutOfRange,
+            &message,
             None,
         ));
     }
@@ -384,6 +437,8 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
                 .filter(|key| !key.is_empty())
                 .collect(),
             min_entropy: definition.min_entropy,
+            checksum: definition.checksum,
+            password_shape: definition.password_shape,
             remediation: definition.remediation.clone().unwrap_or_default(),
         }),
         _ => None,
