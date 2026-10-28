@@ -228,7 +228,13 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 **Placeholder vs. real is a rule type.** Known fake values (`changeme`, `example`, ...) are rules like any other, edited and versioned the same way. They never create findings of their own; when one matches inside another rule's finding, that finding scores as a likely example. This is the fourth detection type from Phase 1, coming back as a rule type instead of a separate list.
 
 **Deliberately not used:**
-- **Live verification:** asking the provider whether a secret works is the strongest signal, but it sends the secret off the machine.
+- **Live verification:** asking the provider whether a secret works is the strongest signal, but it sends the secret off the machine. Not built for the POC; a production build could offer it for certain rules:
+  - **Opt-in only:** off by default, chosen per scan (or a `--verify` flag in the CLI).
+  - **Only rules with a safe, read-only check:** GitHub (`GET /user`), npm (`whoami`), and GitLab (`GET /api/v4/personal_access_tokens/self`). AWS only when the secret access key is found alongside the key ID. Never for payment cards or Bitcoin keys (checking would mean attempting a charge or transaction), and never for likely credentials or unsafe handling (no provider to ask).
+  - **Built-in verifiers only:** a rule can turn on a verifier the app ships with, never point at its own URL, so a custom rule can't send secrets anywhere.
+  - **Only confident findings:** e.g. GitHub tokens whose checksum passes, not ones in comments or ones that look like examples.
+  - **Runs in the API or CLI, not the engine:** it happens during the scan request, while the text is still in memory, because findings never contain the secret itself. Results come back first and verification statuses fill in after, so a slow provider never holds up a scan.
+  - **Stores a status, never the provider's response:** `active`, `inactive`, `unknown`, or `not attempted`, with when it was checked, in a separate `verifications` table. Active findings would sort first in the UI and get their own CI exit code.
 - **AI or ML triage:** this would also send text off the machine unless the model ran locally, and it would make "why flagged" harder to explain.
 - **Parsing source code into syntax trees:** this would need a parser per language, so code is scanned as text with its comment lines recognized.
 
