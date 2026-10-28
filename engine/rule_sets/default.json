@@ -1,0 +1,80 @@
+{
+  "rules": [
+    {
+      "id": 1,
+      "definition": {
+        "name": "AWS access key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bAKIA[0-9A-Z]{16}\\b",
+        "prefix": "AKIA",
+        "remediation": "Deactivate this key in AWS IAM, create a new one, and load it from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 2,
+      "definition": {
+        "name": "GitHub token",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bghp_[A-Za-z0-9]{36}\\b",
+        "prefix": "ghp_",
+        "remediation": "Revoke this token in GitHub settings and create a new one with only the scopes it needs.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 3,
+      "definition": {
+        "name": "Private key block",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----)?",
+        "prefix": "-----BEGIN",
+        "remediation": "Treat this key as compromised: replace it, revoke the old one, and keep private keys in a key store or secret manager.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 4,
+      "definition": {
+        "name": "Secret-looking assignment",
+        "detectionType": "likely_credential",
+        "severity": "medium",
+        "pattern": "(?P<key>[A-Za-z_][A-Za-z0-9_.-]*)[\"']?\\s*[:=]\\s*[\"']?(?P<value>[^\\s\"'`,;${}()]{8,})",
+        "keyNames": [
+          "password",
+          "passwd",
+          "secret",
+          "api_key",
+          "apikey",
+          "token"
+        ],
+        "minEntropy": 3.0,
+        "remediation": "If this is a real secret, rotate it and load it from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 5,
+      "definition": {
+        "name": "Secret written to a log",
+        "detectionType": "unsafe_handling",
+        "severity": "medium",
+        "pattern": "(?i)\\b(?:console\\.(?:log|info|warn|error|debug)|println!?|print|logger\\.\\w+|log\\.\\w+)\\s*\\([^)\\n]*(?:password|passwd|secret|api_?key|token)",
+        "remediation": "Remove the secret from this log call, or log a fixed placeholder such as \"[redacted]\" instead.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 6,
+      "definition": {
+        "name": "Known placeholder values",
+        "detectionType": "placeholder_vs_real",
+        "pattern": "(?i)your_key_here|changeme|xxxx|example|dummy|test",
+        "enabled": true
+      }
+    }
+  ]
+}

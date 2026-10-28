@@ -75,7 +75,7 @@ The rule set is versioned in the **rule set version control UI**, shown as a sma
 - Covers four detection types:
   - **Direct credentials:** a secret value is present (`AKIA...`, `ghp_...`, `-----BEGIN PRIVATE KEY-----`, `password=hunter2`).
   - **Likely credentials:** high-entropy strings next to suspicious key names, with no known format.
-  - **Placeholder vs. real:** classify a match as an example value (`YOUR_KEY_HERE`, `xxxx`) or as likely real.
+  - **Placeholder vs. real:** classify a match as an example value (`YOUR_KEY_HERE`, `xxxx`) or as likely real. These rules list known fake values and never create findings of their own: a match inside another rule's finding raises that finding's placeholder score.
   - **Unsafe handling, no value present:** code or config that handles a secret unsafely (logging it, putting it in a URL, passing it on the command line). An unsafe handling finding points at a risky pattern, not a secret value, so the finding shape must support both.
 
 **CLI (later):** pulls rule-sets from a hosted API, reads files itself, calls the engine in-process, and returns a well-documented, stable response shape to its local caller (shell, CI step, pre-commit hook). Scan text never goes over a wire.
@@ -140,7 +140,7 @@ These fields live in the finding's `violation` JSON. `violation_pretty` holds th
 **Rules**
 
 - Rules exist on their own and are added into rule set versions, managed in the rule set version control UI and persisted locally. Adding a rule to a version stores a snapshot of its definition with that version, so an old version keeps what it scanned with even if the rule is edited later.
-- A **built-in default rule set** is seeded as the first rule set version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
+- A **built-in default rule set** is seeded as the first rule set version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling, placeholder vs. real). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
 - Rules are edited through **forms**, never raw text, and always saved as canonical **JSON**.
 - Rule ids are assigned by the system, unique, and stable across rule set versions, like a database primary key. A rule keeps its id when renamed or edited; a deleted rule's id is never reused. Users never see or edit ids.
 - A rule gets its real id as soon as it is added in the form, with `drafting` set to true, and is stored right away, so drafts survive a reload. Drafts get no validation. Adding a rule into a rule set version validates it and clears `drafting`. Errors point at the rule's real id, so a new rule needs no temporary key.
@@ -162,7 +162,7 @@ A rule row holds `id`, `drafting`, and a `definition` JSON column. Every other f
 | `minEntropy` | Optional entropy threshold, 0–8 bits/char |
 | `remediation` | Static hint text |
 
-A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set once per rule set version, not per rule, and is used to compute the placeholder vs. real score.
+Known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) are rules of type placeholder vs. real, edited and versioned like any other rule. Severity and remediation don't apply to them.
 
 **Configuration errors**
 
