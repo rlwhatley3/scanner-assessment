@@ -48,6 +48,51 @@
         "name": "Whiteboard",
         "typeName": "page"
       },
+      "shape:1Qn6VWBrbJF_wl9gdfLsh": {
+        "id": "shape:1Qn6VWBrbJF_wl9gdfLsh",
+        "index": "a2",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "UI",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 59,
+        "y": 90
+      },
       "shape:1_-Cm9edpndNMQlPnQ2zO": {
         "id": "shape:1_-Cm9edpndNMQlPnQ2zO",
         "index": "a4",
@@ -143,6 +188,106 @@
         "x": 545,
         "y": 160
       },
+      "shape:1uz-8SEvaCxB2aEPzU6mM": {
+        "id": "shape:1uz-8SEvaCxB2aEPzU6mM",
+        "index": "a6",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": 84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "text + rules",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 461,
+        "y": 112
+      },
+      "shape:2h4TMLQxydl4WKjHXKZEz": {
+        "id": "shape:2h4TMLQxydl4WKjHXKZEz",
+        "index": "a5",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": 84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "text + rule set",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 215,
+        "y": 112
+      },
       "shape:3jiUbGAMUGMk1JH6FdkYm": {
         "id": "shape:3jiUbGAMUGMk1JH6FdkYm",
         "index": "aB",
@@ -159,7 +304,7 @@
               {
                 "content": [
                   {
-                    "text": "• Checks match against config placeholder list (YOUR_KEY_HERE, changeme…)",
+                    "text": "• Checks match against rule set placeholder list (YOUR_KEY_HERE, changeme…)",
                     "type": "text"
                   }
                 ],
@@ -205,6 +350,51 @@
         "typeName": "shape",
         "x": 508,
         "y": 200
+      },
+      "shape:43I38jCXQBTxHUp4AZMTs": {
+        "id": "shape:43I38jCXQBTxHUp4AZMTs",
+        "index": "a4",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Engine",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 551,
+        "y": 90
       },
       "shape:4zlkhksjIoAk-ZoEr5K3k": {
         "id": "shape:4zlkhksjIoAk-ZoEr5K3k",
@@ -284,7 +474,7 @@
               {
                 "content": [
                   {
-                    "text": "text + config",
+                    "text": "text + rule set",
                     "type": "text"
                   }
                 ],
@@ -456,6 +646,69 @@
         "x": 305,
         "y": 90
       },
+      "shape:A9YFoRnk3REmT8IJz7Sbi": {
+        "id": "shape:A9YFoRnk3REmT8IJz7Sbi",
+        "index": "aB",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "• One finding per occurrence",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Byte offsets + line/col per finding",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Returns every overlapping match",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Caps at 1,000; flags truncated",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 508,
+        "y": 200
+      },
       "shape:AzjuJfrW6LL-llDzAIqHY": {
         "id": "shape:AzjuJfrW6LL-llDzAIqHY",
         "index": "a8",
@@ -541,6 +794,87 @@
         "typeName": "shape",
         "x": 16,
         "y": 424
+      },
+      "shape:CkoHo2tivNIuYvHWtPTDD": {
+        "id": "shape:CkoHo2tivNIuYvHWtPTDD",
+        "index": "a9",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "• Zero: \"Nothing relevant found\" + rule set version used",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• No rules enabled: scan blocked, never \"clean\"",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Partial: findings + broken rules named",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Overlap: one purple highlight; click shows all",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• List by position; sort by severity",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Over 1,000: truncated notice",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 200
       },
       "shape:E15yzjCMD6bjBtgXQ2Rap": {
         "id": "shape:E15yzjCMD6bjBtgXQ2Rap",
@@ -665,7 +999,7 @@
               {
                 "content": [
                   {
-                    "text": "text + config",
+                    "text": "text + rule set",
                     "type": "text"
                   }
                 ],
@@ -847,7 +1181,7 @@
               {
                 "content": [
                   {
-                    "text": "• Returns errors keyed by rule + field",
+                    "text": "• Returns errors keyed by rule id + field",
                     "type": "text"
                   }
                 ],
@@ -866,6 +1200,51 @@
         "typeName": "shape",
         "x": 508,
         "y": 200
+      },
+      "shape:N2CmgaoRxDCs41KIAH4_7": {
+        "id": "shape:N2CmgaoRxDCs41KIAH4_7",
+        "index": "aC",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Each finding: location, rule, severity icon, scores, why flagged, remediation hint (next step).",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Open: does the engine or the UI group overlapping ranges?",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 728
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 464
       },
       "shape:N45xEl3NVvwadUYkNMr2C": {
         "id": "shape:N45xEl3NVvwadUYkNMr2C",
@@ -892,7 +1271,7 @@
               {
                 "content": [
                   {
-                    "text": "• Inline errors next to the field as you type",
+                    "text": "• Inline errors as you type (not on drafts)",
                     "type": "text"
                   }
                 ],
@@ -938,6 +1317,51 @@
         "typeName": "shape",
         "x": 16,
         "y": 200
+      },
+      "shape:P2O2eh_vFttrlkBYwmCMG": {
+        "id": "shape:P2O2eh_vFttrlkBYwmCMG",
+        "index": "a3",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "API",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 305,
+        "y": 90
       },
       "shape:Qu_ukC4-lJamxSlVFEVYH": {
         "id": "shape:Qu_ukC4-lJamxSlVFEVYH",
@@ -1009,7 +1433,7 @@
               {
                 "content": [
                   {
-                    "text": "Open: keep an unsaved draft across reload?",
+                    "text": "Drafts (draft = true) live in the rule set working copy and survive reload.",
                     "type": "text"
                   }
                 ],
@@ -1137,6 +1561,60 @@
         "typeName": "shape",
         "x": 16,
         "y": 424
+      },
+      "shape:cTDMmHYaHvZhljjY4fp7C": {
+        "id": "shape:cTDMmHYaHvZhljjY4fp7C",
+        "index": "aA",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "• Same scan path as use case 1",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Saves inspection: outcome, truncated flag, findings",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Past session: findings list only, no text",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 262,
+        "y": 200
       },
       "shape:eDifOjc5_1SbRVXsxJKSJ": {
         "id": "shape:eDifOjc5_1SbRVXsxJKSJ",
@@ -1547,6 +2025,106 @@
         "x": 305,
         "y": 90
       },
+      "shape:hTV91hUgjd2tz7OAs6WoD": {
+        "id": "shape:hTV91hUgjd2tz7OAs6WoD",
+        "index": "a8",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": -84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "outcome",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 299,
+        "y": 160
+      },
+      "shape:hqO_TkmSzziMcU_OkatkK": {
+        "id": "shape:hqO_TkmSzziMcU_OkatkK",
+        "index": "a7",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": -84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "findings",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 545,
+        "y": 160
+      },
       "shape:jkoeHtKwzzU2mmQmAq_2s": {
         "id": "shape:jkoeHtKwzzU2mmQmAq_2s",
         "index": "a6",
@@ -1731,72 +2309,13 @@
         "opacity": 1,
         "parentId": "page:page",
         "props": {
-          "align": "start",
           "color": "green",
-          "dash": "draw",
-          "fill": "semi",
-          "flipX": false,
-          "flipY": false,
-          "font": "sans",
-          "geo": "rectangle",
-          "growY": 0,
-          "h": 348,
-          "labelColor": "black",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "USE CASE 4  -  Review zero or many results",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "A scan has no findings or returns overlapping matches. Design how users understand locations, context, and next steps.",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "SKETCH YOUR DESIGN",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "Add the flow, states, and edge cases below -",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "m",
-          "url": "",
-          "verticalAlign": "start",
-          "w": 562
+          "h": 540,
+          "name": "USE CASE 4  -  Review zero or many results",
+          "w": 760
         },
         "rotation": 0,
-        "type": "geo",
+        "type": "frame",
         "typeName": "shape",
         "x": 1058,
         "y": 760
@@ -1946,6 +2465,42 @@
         "x": 545,
         "y": 160
       },
+      "shape:rLFdNyR2TsoozdHmS8nUE": {
+        "id": "shape:rLFdNyR2TsoozdHmS8nUE",
+        "index": "a1",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "A scan has no findings or returns overlapping matches. How users understand locations, context, and next steps:",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 728
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 16
+      },
       "shape:s3vYdFpx05iZOyl12yRE6": {
         "id": "shape:s3vYdFpx05iZOyl12yRE6",
         "index": "aA",
@@ -2025,7 +2580,7 @@
               {
                 "content": [
                   {
-                    "text": "• Save: re-validates; valid → new config version (JSON)",
+                    "text": "• Apply: validates drafts too; valid → new rule set version (JSON), draft = false",
                     "type": "text"
                   }
                 ],
@@ -2034,7 +2589,7 @@
               {
                 "content": [
                   {
-                    "text": "• Assigns rule ids",
+                    "text": "• Assigns a real rule id on add (draft = true)",
                     "type": "text"
                   }
                 ],

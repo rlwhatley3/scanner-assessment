@@ -32,16 +32,16 @@ Use case 1: scan a source file. An engineer pastes a configuration file that may
    - **Cancelled:** back to ready, text intact, no results.
    - **Error:** API unreachable, 5xx, or input rejected. Error message shown, text intact, Scan re-enabled.
 5. Text is read-only after a scan. To fix an issue and rescan, start a New inspection in the same scan session and paste the fixed content into a fresh input. In-place editing (with results marked stale) is not ruled out for later.
-6. Reload: no inspection is open. Inspection text does not persist; inspection results do. A past scan session can be reopened: it shows each inspection's broken rules and locations, but no content, and new inspections can be added to it. Config versions in the config version control UI also persist.
+6. Reload: no inspection is open. Inspection text does not persist; inspection results do. A past scan session can be reopened: it shows each inspection's broken rules and locations, but no content, and new inspections can be added to it. Rule set versions in the rule set version control UI also persist.
 7. One active scan session at a time, and one inspection at a time: due to non-persistence of potentially live creds.
 
-Rule config is versioned in the **config version control UI**, shown as a small timeline: persisted locally, each version viewable with its attached scan results, re-usable as the basis for a new version, and archivable (hidden from the timeline, not deleted).
+The rule set is versioned in the **rule set version control UI**, shown as a small timeline: persisted locally, each version viewable with its attached scan results, re-usable as the basis for a new version, and archivable (hidden from the timeline, not deleted).
 
 **States**
 
 | State | Trigger | What the user sees |
 |---|---|---|
-| No inspection | Page load / reload | Config version control UI, past scan sessions, New inspection button |
+| No inspection | Page load / reload | Rule set version control UI, past scan sessions, New inspection button |
 | Empty | New inspection | Empty text box, Scan disabled |
 | Ready | Text present | Scan enabled |
 | Scanning | Scan clicked | Cancel button (5 s window), progress indicator, do-not-refresh warning |
@@ -56,16 +56,16 @@ Rule config is versioned in the **config version control UI**, shown as a small 
 - Input: empty or whitespace-only text; very large paste or one extremely long line; non-UTF-8 or binary pasted by accident; mixed line endings; Unicode near a match shifting highlight offsets.
 - Matching: two rules match the same or overlapping text; the same secret appears multiple times; a match spans a line break; an obvious placeholder (`YOUR_API_KEY_HERE`) matches a pattern; a real credential with unusual formatting that no rule catches.
 - Scan lifecycle: Cancel clicked as results arrive; browser reload mid-scan; API returns results for a different (stale) request.
-- Rules: no rules enabled, so "clean" would be misleading; a rule's regex is invalid or catastrophically slow; config version changed between two scans of the same text.
+- Rules: no rules enabled, so "clean" would be misleading; a rule's regex is invalid or catastrophically slow; rule set version changed between two scans of the same text.
 - Output safety: highlight or list shows the full secret value on screen; error messages echo the input back.
 
 **Still undefined:** which actions exist on a finding. Clicking and overlap are defined in entry 4.
 
 ### 3. Frontend, API, and detection-engine boundaries
 
-**Frontend (`ui/`):** the inspection UI and the config version control UI. Sends inspection text and config to the API over loopback. Contains no detection logic.
+**Frontend (`ui/`):** the inspection UI and the rule set version control UI. Sends inspection text and the rule set to the API over loopback. Contains no detection logic.
 
-**API (`server/`):** keeps its current structure, with local storage for config versions. Calls the engine in-process (a function call, not a network hop). Never logs request content. Generates a log id per scan, passes it to the engine, and writes the engine's log events so the two can be correlated.
+**API (`server/`):** keeps its current structure, with local storage for rule set versions. Calls the engine in-process (a function call, not a network hop). Never logs request content. Generates a log id per scan, passes it to the engine, and writes the engine's log events so the two can be correlated.
 
 **Engine (`engine/`, top-level Rust crate):** a pure library with no HTTP, disk, or network access. `server/` depends on it by path; a future CLI will too.
 
@@ -95,7 +95,7 @@ CLI  <--rule-sets--  hosted API
 
 ```
 scan session (id)                        : one active at a time, reopenable
-  └─ inspection (id, timestamp, config version, log id, outcome)
+  └─ inspection (id, timestamp, rule set version, log id, outcome)
        └─ finding
        └─ rule errors
 ```
@@ -133,16 +133,18 @@ Never stored: the inspection text, matched values, or a hash of the input. A has
 
 **Rules**
 
-- Rules live in config versions, managed in the config version control UI and persisted locally.
-- A **built-in default rule set** is seeded as the first config version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
+- Rules live in rule set versions, managed in the rule set version control UI and persisted locally.
+- A **built-in default rule set** is seeded as the first rule set version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
 - Rules are edited through **forms**, never raw text, and always saved as canonical **JSON**.
-- Rule ids are assigned by the system, unique, and stable across config versions, like a database primary key. A rule keeps its id when renamed or edited; a deleted rule's id is never reused. Users never see or edit ids.
+- Rule ids are assigned by the system, unique, and stable across rule set versions, like a database primary key. A rule keeps its id when renamed or edited; a deleted rule's id is never reused. Users never see or edit ids.
+- A rule gets its real id as soon as it is added in the form, with `draft` set to true. Drafts live inside the rule set's single editable working copy, so they survive a reload. Drafts get no validation. Applying the working copy as a new rule set version clears the flag and validates them; saved versions never contain drafts. Errors point at the rule's real id, so a new rule needs no temporary key.
 - Severity is fixed per rule by the rule author.
 
 | Field | Purpose |
 |---|---|
 | `id` | Assigned by the system |
 | `name` | Shown in findings |
+| `draft` | True while the rule is only in the working copy; cleared when applied into a rule set version |
 | `enabled` | Disable without deleting |
 | `detectionType` | Direct credential, likely credential, or unsafe handling |
 | `severity` | High, medium, or low |
@@ -152,22 +154,26 @@ Never stored: the inspection text, matched values, or a hash of the input. A has
 | `minEntropy` | Optional entropy threshold, 0–8 bits/char |
 | `remediation` | Static hint text |
 
-A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set once per config version, not per rule, and is used to compute the placeholder vs. real score.
+A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set once per rule set version, not per rule, and is used to compute the placeholder vs. real score.
 
 **Configuration errors**
 
 - **Validated in three places:**
-  - inline in the form, field by field, as the user types;
-  - on save: an invalid config version cannot be saved, so every saved version is valid;
+  - inline in the form, field by field, as the user types, except on draft rules, which are not validated until they are applied;
+  - on save: an invalid rule set version cannot be saved, so every saved version is valid;
   - in the engine at scan time, as a safety net for config from other sources (such as the CLI pulling from a hosted API). Errors are reported per rule and the scan returns a Partial outcome.
 - **Errors:** a missing required field (name, detection type, severity, pattern); an invalid regex; a pattern too large to compile (the `regex` crate's size limit); a threshold out of range (entropy outside 0–8 bits/char, scores outside 0–100); two rules in the same version with the same name.
 - **Warning, not an error:** a pattern that can match an empty string, which would flood results.
-- **No rules enabled:** the scan is blocked. The Scan button is disabled with "No rules enabled in this config version," because "clean" would be misleading.
+- **No rules enabled:** the scan is blocked. The Scan button is disabled with "No rules enabled in this rule set version," because "clean" would be misleading.
+- **How a compile error reaches the user:**
+  - *While editing:* validate and save both run the engine's compile step. The error comes back keyed by rule id and field and is shown under the pattern input, with the bad spot underlined when the engine knows it. Save stays disabled, so an uncompilable rule cannot get into a saved version from the form.
+  - *At scan time:* a saved rule can still fail later (an engine update tightens a limit, or the CLI pulls a rule set the UI never validated). The engine skips that rule, runs the rest, and adds a rule error (rule id, field, code, message, and the byte span when known) to the scan result. The API returns these as `ruleErrors` with the findings and saves every one of those fields with the inspection, so a reopened session can still point at the exact field. The UI shows the Partial outcome with a warning naming each broken rule and its error, on the live inspection and when reopening the session. The CLI (later) prints the rule errors and exits with a distinct code, so CI cannot treat the scan as clean.
+  - *Acting on it:* the Partial warning links straight to that rule in the rule set version control UI, with the form open on the error. Fixing it saves a new rule set version; the user then starts a new inspection to rescan.
 - Rust's `regex` crate runs in linear time, so catastrophic backtracking cannot happen. Size limits still apply to patterns and inputs.
 
 **Scan results**
 
-- **Deterministic:** the same text and the same config version always give the same results.
+- **Deterministic:** the same text and the same rule set version always give the same results.
 - **Repeated secret:** one finding per occurrence, since each location must be fixed.
 - **Ordering:** by position in the text. The findings list can be sorted by severity in the UI.
 - **Limits:** 1 MB maximum input, rejected with a clear message. Findings are capped at 1,000 per scan; anything over the cap is reported as truncated, never silently dropped.
@@ -187,10 +193,10 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 
 **Left out of the POC**
 
-1. **A real storage database, CLI usage, and hosted API concepts.** Config versions and scan sessions persist as local JSON files, the same way the whiteboard does.
+1. **A real storage database, CLI usage, and hosted API concepts.** A local SQLite file (`server/data/scanner.sqlite3`, git-ignored) stands in for a real database: rule set versions, scan sessions, inspections, findings, and rule errors persist there. The whiteboard still saves as a JSON file.
 2. **Editing in place:** input is copy/paste only for now, so it would not be helpful.
 3. **Follow-up actions like dismiss or suppress:** again, input is copy/paste only, so these are not that helpful yet.
 4. **File or repository scanning:** this becomes the most likely MVP point to tackle next.
 5. **WASM in the browser:** it has use cases, like building a local pre-check model, but it is large and specialized. I think the better solution is a real local application anyway, and I really dislike this whole concept being in a browser.
 6. **Auth and multiple users:** these go with the hosted API.
-7. **Compiled-rule caching:** config versions never change once saved, so the compiled rules could be cached per version instead of recompiled on every scan. That's an optimization, not a requirement for the POC, but likely needed for a production app.
+7. **Compiled-rule caching:** rule set versions never change once saved, so the compiled rules could be cached per version instead of recompiled on every scan. That's an optimization, not a requirement for the POC, but likely needed for a production app.
