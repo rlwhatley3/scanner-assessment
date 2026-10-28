@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maven settings with repository credentials -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <servers>
+    <server>
+      <id>internal-releases</id>
+      <username>ci-publisher</username>
+      <password>M4ven-Rel3ase-Pa$$</password>
+    </server>
+    <server>
+      <id>github</id>
+      <username>ci-bot</username>
+      <password>ghp_oVcqiE2v9uBTzAHssdhM5bcsZk9I8Axg9YcA</password>
+    </server>
+    <server>
+      <id>encrypted</id>
+      <username>deployer</username>
+      <!-- Maven-encrypted value, arguably not plaintext -->
+      <password>{COQLCE6DU6GtcS5P=}</password>
+    </server>
+  </servers>
+  <profiles>
+    <profile>
+      <id>cloud</id>
+      <properties>
+        <aws.secret attr="x">WiLKgmKIw2ZZZtGrFWnKA6zBfjTFlvMpT3mAXd40</aws.secret>
+        <api.key><![CDATA[sk-proj-BPREljZqOFtuONY-Fqi1PxwifXZuJgGyjitm5Jar6KyHOkTy]]></api.key>
+        <db.password>&lt;none&gt;</db.password>
+      </properties>
+    </profile>
+  </profiles>
+</settings>
