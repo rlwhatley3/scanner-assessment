@@ -583,3 +583,107 @@ fn a_bitcoin_private_key_is_checked_with_base58check() {
     let result = run(&format!("wallet_key: {changed}\n"));
     assert_eq!(from_rule(&result, 11)[0].checksum_valid, Some(false));
 }
+
+/// The values each rule reported, as (rule id, value) in text order.
+fn reported_values<'t>(text: &'t str, result: &ScanResult) -> Vec<(i64, &'t str)> {
+    result
+        .findings
+        .iter()
+        .zip(matches(result))
+        .map(|(finding, details)| {
+            let location = details.location;
+            (
+                finding.rule_id,
+                &text[location.start_byte..location.end_byte],
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_made_up_passwords_yaml_sample_reports_each_password_once() {
+    let text = include_str!("../../tests/made-up-passwords.yaml");
+    let result = run(text);
+    assert_eq!(result.format, Format::Yaml);
+    assert_eq!(
+        reported_values(text, &result),
+        [
+            (12, "myUnencryptedPWHERE"),
+            (12, "Summer2024!"),
+            (12, "Tr0ub4dor&3"),
+            (12, "s3cretSauce99"),
+            (12, "P@ssw0rd!"),
+            (12, "hunter2"),
+            (12, "Welcome123!"),
+            (4, "Xk9mQ2vL7pR4w!"),
+        ]
+    );
+    assert!(
+        matches(&result)
+            .iter()
+            .filter(|details| details.rule_name == "Password-shaped value")
+            .all(|details| details.severity.to_string() == "low")
+    );
+}
+
+#[test]
+fn the_made_up_passwords_json_sample_reports_each_password_once() {
+    let text = include_str!("../../tests/made-up-passwords.json");
+    let result = run(text);
+    assert_eq!(result.format, Format::Json);
+    assert_eq!(
+        reported_values(text, &result),
+        [
+            (12, "myUnencryptedPWHERE"),
+            (12, "Tr0ub4dor&3"),
+            (12, "Summer2024!"),
+        ]
+    );
+}
+
+#[test]
+fn the_made_up_passwords_env_sample_reports_each_password_once() {
+    let text = include_str!("../../tests/made-up-passwords.env");
+    let result = run(text);
+    assert_eq!(result.format, Format::Dotenv);
+    assert_eq!(
+        reported_values(text, &result),
+        [
+            (12, "myUnencryptedPWHERE"),
+            (12, "Kitt3nsRule!"),
+            (12, "Welcome123!"),
+        ]
+    );
+}
+
+#[test]
+fn the_password_lookalikes_sample_is_clean() {
+    let text = include_str!("../../tests/password-lookalikes.yaml");
+    let result = run(text);
+    assert_eq!(result.format, Format::Yaml);
+    assert_eq!(reported_values(text, &result), []);
+}
+
+#[test]
+fn no_other_sample_has_password_shaped_findings() {
+    let samples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests");
+    let mut scanned = 0;
+    for entry in std::fs::read_dir(samples).expect("tests/ should be readable") {
+        let path = entry.expect("entry should be readable").path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if name.starts_with("made-up-passwords") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("samples are UTF-8");
+        let Ok(result) = scan(1, &text, &default_rule_set()) else {
+            continue;
+        };
+        scanned += 1;
+        let shaped: Vec<_> = reported_values(&text, &result)
+            .into_iter()
+            .filter(|&(rule_id, _)| rule_id == 12)
+            .collect();
+        assert_eq!(shaped, [], "{name}");
+    }
+    assert!(scanned >= 21, "scanned only {scanned} samples");
+}

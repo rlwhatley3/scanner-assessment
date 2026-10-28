@@ -132,6 +132,7 @@ patterns! {
     EMAIL = r"^[^@]+@[^@]+\.[A-Za-z]{2,}$";
     UUID = r"^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$";
     HEX = r"^(0x)?[0-9a-fA-F]+$";
+    HEX_COLOR = r"^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$";
     LOWER_WORDS = r"^[a-z][a-z0-9]*([_.\-][a-z0-9]+)*$";
     UPPER_WORDS = r"^[A-Z][A-Z0-9]*([_.\-][A-Z0-9]+)*$";
     CAMEL_CASE = r"^[a-z]+([A-Z][a-z]+)+$";
@@ -212,7 +213,7 @@ pub(crate) fn assess(value: &str) -> Option<Assessment> {
     })
 }
 
-/// URLs, paths, emails, numbers, versions, hashes, template references, and identifiers in a
+/// URLs, paths, emails, numbers, versions, hashes, colors, template references, and identifiers in a
 /// regular naming style (`snake_case`, `kebab-case`, `ALL_CAPS`, `camelCase`, `PascalCase`).
 fn is_clearly_not_a_secret(value: &str) -> bool {
     let reference = value.starts_with(['$', '%']) || value.contains("{{") || value.contains("${");
@@ -230,6 +231,7 @@ fn is_clearly_not_a_secret(value: &str) -> bool {
             &EMAIL,
             &UUID,
             &HEX,
+            &HEX_COLOR,
             &LOWER_WORDS,
             &UPPER_WORDS,
             &CAMEL_CASE,
@@ -287,6 +289,7 @@ mod tests {
             "1.24.3",
             "1f3a7c2e-8b4d-4e6f-9a1b-2c3d4e5f6a7b",
             "d41d8cd98f00b204e9800998ecf8427e",
+            "#FF5733CC",
             "production",
             "catalog-db",
             "us-east-1",

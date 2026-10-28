@@ -147,13 +147,15 @@ A value equal to one of about 60 very common passwords that include a digit or s
 
 Values never count when they are clearly something else:
 - **Lengths:** under 8 characters (6 for the common list), over 64, or containing whitespace.
-- **Not secrets:** URLs, paths, emails, numbers, dates, versions, IP addresses, UUIDs, hex strings, and template references (`${…}`, `{{…}}`).
+- **Not secrets:** URLs, paths, emails, numbers, dates, versions, IP addresses, UUIDs, hex strings, hex colors (`#FF5733`), and template references (`${…}`, `{{…}}`).
 - **Regular names:** `snake_case`, `kebab-case`, `dotted.names`, `ALL_CAPS`, `camelCase`, and `PascalCase`.
 - **Machine-made tokens:** 20+ characters with at least 4 bits of entropy per character. Format and key-name rules are for those.
 
 A likely-credential rule with a password shape also checks every parsed key/value pair, whatever its key, unless its `keyNames` narrows it. With no key names it is a fallback: it doesn't report a value that overlaps another rule's finding, so a password under `password:` is reported once, by the assignment rule.
 
-Its "why flagged" note lists the signals that fired and never quotes the value. The trade-off is reach versus noise: the exclusions keep ordinary config values out (the `tests/` samples produce no password-shape findings, including the expected-clean file), but a made-up password that happens to look like a regular name, or is all lowercase, is missed.
+Its "why flagged" note lists the signals that fired and never quotes the value. The trade-off is reach versus noise: the exclusions keep ordinary config values out, but a made-up password that happens to look like a regular name, or is all lowercase, is missed.
+
+The samples under `tests/` pin this down, and engine tests scan them: `made-up-passwords.yaml`, `.json`, and `.env` must report exactly their made-up passwords, once each; `password-lookalikes.yaml` and `clean-lookalikes.yaml` must report nothing from this rule; and the other samples add no password-shape findings.
 
 ## File format parsing
 
