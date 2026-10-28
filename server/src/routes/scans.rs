@@ -23,7 +23,7 @@ pub struct CreateScanRequest {
     text: String,
 }
 
-#[derive(Serialize, utoipa::ToSchema)]
+#[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanResponse {
     scan_id: i64,
@@ -35,7 +35,7 @@ pub struct ScanResponse {
     findings: Vec<FindingResponse>,
 }
 
-#[derive(Serialize, utoipa::ToSchema)]
+#[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FindingResponse {
     id: i64,
@@ -59,6 +59,19 @@ pub enum ApiError {
     TooLarge(String),
     Unprocessable(String),
     Internal(String),
+}
+
+impl ApiError {
+    /// The message sent back to the caller.
+    pub fn message(&self) -> &str {
+        match self {
+            ApiError::NotFound(error)
+            | ApiError::BadRequest(error)
+            | ApiError::TooLarge(error)
+            | ApiError::Unprocessable(error)
+            | ApiError::Internal(error) => error,
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -111,6 +124,17 @@ pub async fn create_scan(
     Path(scan_session_id): Path<i64>,
     Json(request): Json<CreateScanRequest>,
 ) -> Result<(StatusCode, Json<ScanResponse>), ApiError> {
+    let response = scan_in_session(&state, scan_session_id, request.text).await?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+/// Scans `text` with the session's rule set version and saves the scan and its findings. Shared
+/// by the REST endpoint and the MCP `run_scan` tool. The text itself is never stored or logged.
+pub async fn scan_in_session(
+    state: &AppState,
+    scan_session_id: i64,
+    text: String,
+) -> Result<ScanResponse, ApiError> {
     let rule_set = state
         .db
         .call(move |connection| load_rule_set(connection, scan_session_id))
@@ -132,7 +156,7 @@ pub async fn create_scan(
         .await
         .map_err(internal)?;
 
-    let result = run_scan(&state, scan_id, request.text, rule_set).await;
+    let result = run_scan(state, scan_id, text, rule_set).await;
     let result = match result {
         Ok(result) => result,
         Err(error) => {
@@ -151,8 +175,7 @@ pub async fn create_scan(
         eprintln!("[scan {}] {}", event.scan_id, event.message);
     }
 
-    let response = save_results(&state, scan_session_id, scan_id, result).await?;
-    Ok((StatusCode::CREATED, Json(response)))
+    save_results(state, scan_session_id, scan_id, result).await
 }
 
 /// Runs the engine off the async runtime, behind the concurrency cap.
@@ -242,6 +265,50 @@ async fn save_results(
         })
         .await
         .map_err(internal)
+}
+
+/// A saved scan and its findings, in the same shape the scan endpoint returns. `None` if the
+/// scan doesn't exist.
+pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Option<ScanResponse>> {
+    let Some((scan_session_id, truncated)) = connection
+        .query_row(
+            "SELECT scan_session_id, truncated FROM scans WHERE id = ?1",
+            [scan_id],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?)),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    let mut statement = connection.prepare(
+        "SELECT id, rule_id, kind, violation, violation_pretty FROM findings
+         WHERE scan_id = ?1 ORDER BY id",
+    )?;
+    let findings = statement
+        .query_map([scan_id], |row| {
+            let violation: String = row.get(3)?;
+            Ok(FindingResponse {
+                id: row.get(0)?,
+                rule_id: row.get(1)?,
+                kind: row.get(2)?,
+                violation: serde_json::from_str(&violation).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?,
+                violation_pretty: row.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(Some(ScanResponse {
+        scan_id,
+        scan_session_id,
+        truncated,
+        partial: findings.iter().any(|finding| finding.kind == "rule_error"),
+        findings,
+    }))
 }
 
 /// The session's rule set version, in the engine's contract shape. `None` if the session

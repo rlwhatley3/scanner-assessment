@@ -40,6 +40,7 @@ impl FromRef<AppState> for Db {
 }
 
 pub fn router(db: Db) -> Router {
+    let state = AppState::new(db);
     Router::new()
         .route("/api/health", get(health::health))
         .nest("/api/rules", rules::router())
@@ -49,5 +50,6 @@ pub fn router(db: Db) -> Router {
             scan_sessions::router().merge(scans::router()),
         )
         .nest("/api/whiteboards", whiteboard::router())
-        .with_state(AppState::new(db))
+        .nest_service("/mcp", crate::mcp::service(state.clone()))
+        .with_state(state)
 }
