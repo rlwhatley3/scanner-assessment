@@ -224,19 +224,27 @@ pub fn create_rule(
     get_rule(connection, connection.last_insert_rowid())
 }
 
-/// Replaces a rule's definition. Versions that already hold the rule keep their snapshots.
+/// Replaces a rule's definition. A draft saves as-is; a rule that has been added into a version
+/// must pass the engine's checks, or nothing is saved and the errors come back. Versions that
+/// already hold the rule keep their snapshots.
 pub fn update_rule(
     connection: &Connection,
     rule_id: i64,
     definition: &RuleDefinition,
 ) -> StoreResult<RuleRecord> {
-    let updated = connection.execute(
+    if !get_rule(connection, rule_id)?.drafting {
+        let check = check_rule_set(&[Rule {
+            id: rule_id,
+            definition: definition.clone(),
+        }]);
+        if !check.is_valid() {
+            return Err(StoreError::RulesInvalid(check));
+        }
+    }
+    connection.execute(
         &format!("UPDATE rules SET definition = ?1, updated_at = {NOW} WHERE id = ?2"),
         rusqlite::params![to_json(definition), rule_id],
     )?;
-    if updated == 0 {
-        return Err(StoreError::NotFound(format!("Rule {rule_id} not found.")));
-    }
     get_rule(connection, rule_id)
 }
 

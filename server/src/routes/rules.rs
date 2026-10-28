@@ -157,18 +157,14 @@ pub async fn update(
 }
 
 fn save(connection: &Connection, id: i64, definition: Value) -> Result<RuleResponse, ApiError> {
-    // Drafts aren't checked until they join a version; other rules must stay valid.
-    if !store::get_rule(connection, id)?.drafting {
-        let check = check_definition(id, definition.clone())?;
-        if !check.is_valid() {
-            return Err(ApiError::Invalid {
-                message: "Fix the rule's errors before saving.".to_owned(),
-                errors: check.errors,
-            });
-        }
-    }
     let definition = store::parse_definition(definition)?;
-    let rule = store::update_rule(connection, id, &definition)?;
+    let rule = store::update_rule(connection, id, &definition).map_err(|error| match error {
+        StoreError::RulesInvalid(check) => ApiError::Invalid {
+            message: "Fix the rule's errors before saving.".to_owned(),
+            errors: check.errors,
+        },
+        error => error.into(),
+    })?;
     Ok(with_versions(connection, rule)?)
 }
 

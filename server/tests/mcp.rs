@@ -237,6 +237,24 @@ async fn rules_in_a_version_cannot_be_deleted() {
 }
 
 #[tokio::test]
+async fn a_rule_in_a_version_must_stay_valid_when_updated() {
+    let (app, _) = app().await;
+    let before = ok(&app, "get_rule", json!({"ruleId": 1})).await;
+
+    let error = err(
+        &app,
+        "update_rule",
+        json!({"ruleId": 1, "definition": {"name": "Broken", "pattern": "(unclosed"}}),
+    )
+    .await;
+    assert!(error.contains("nothing was saved"), "{error}");
+    assert!(error.contains("invalid_regex"), "{error}");
+
+    let after = ok(&app, "get_rule", json!({"ruleId": 1})).await;
+    assert_eq!(after["definition"], before["definition"]);
+}
+
+#[tokio::test]
 async fn an_invalid_rule_set_saves_no_version() {
     let (app, db) = app().await;
     let draft = ok(
@@ -253,7 +271,7 @@ async fn an_invalid_rule_set_saves_no_version() {
         json!({"ruleSetId": 1, "parentId": 1, "ruleIds": [1, id]}),
     )
     .await;
-    assert!(error.contains("no version was saved"), "{error}");
+    assert!(error.contains("nothing was saved"), "{error}");
     assert!(error.contains(&format!("\"ruleId\": {id}")), "{error}");
 
     let versions: i64 = db
