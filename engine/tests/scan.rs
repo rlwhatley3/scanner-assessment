@@ -287,3 +287,38 @@ fn locations_survive_unicode_and_mixed_line_endings() {
         (3, 5)
     );
 }
+
+#[cfg(not(feature = "ml"))]
+#[test]
+fn without_the_ml_feature_a_model_rule_is_a_rule_error() {
+    use secrets_scanner_engine::{DetectionType, ModelRef};
+
+    let mut rule_set = default_rule_set();
+    rule_set.rules.push(Rule {
+        id: 7,
+        definition: RuleDefinition {
+            name: Some("Model rule".into()),
+            detection_type: Some(DetectionType::ModelAssessment),
+            model: Some(ModelRef {
+                id: None,
+                sha256: Some("0".repeat(64)),
+            }),
+            threshold: Some(50),
+            ..RuleDefinition::default()
+        },
+    });
+    let result = scan(1, &format!("key: {AWS_KEY}"), &rule_set).expect("scan should run");
+    assert_eq!(matches(&result).len(), 1);
+    let error = match &result.findings.last().unwrap().violation {
+        Violation::RuleError(error) => error,
+        Violation::Match(_) => panic!("expected a rule error last"),
+    };
+    assert_eq!(
+        (error.rule_id, error.field, error.code),
+        (7, RuleField::Model, ErrorCode::ModelUnavailable)
+    );
+    assert_eq!(
+        error.message,
+        "This engine was built without model support."
+    );
+}
