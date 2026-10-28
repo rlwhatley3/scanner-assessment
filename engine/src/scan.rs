@@ -23,6 +23,10 @@ pub const MAX_FINDINGS: usize = 200;
 /// not a secret.
 pub const MIN_DETECTION_BYTES: usize = 8;
 
+/// The most a value classifier can raise a match's confidence to: a model alone is never surer
+/// than a known format.
+const MAX_CLASSIFIER_CONFIDENCE: u8 = 95;
+
 /// The confidence a match keeps when its value classifier doesn't rate the value a credential,
 /// the same as commented-out code.
 const NOT_A_CREDENTIAL_CONFIDENCE: u8 = 30;
@@ -171,6 +175,9 @@ struct Candidate<'r> {
     start: usize,
     end: usize,
     entropy: Option<f64>,
+    /// The most entropy a value this long can have: log2 of its length, reached when every
+    /// character differs.
+    max_entropy: f64,
     checksum_valid: Option<bool>,
     /// How password-like the value is, for rules with a password shape setting.
     shape: Option<password_shape::Assessment>,
@@ -511,6 +518,7 @@ fn candidate<'r>(
         start,
         end,
         entropy,
+        max_entropy: max_entropy(value),
         checksum_valid: rule.checksum.map(|checksum| checksum.is_valid(value)),
         shape,
         // Both set once every rule has run and the text has been parsed.
@@ -703,6 +711,7 @@ fn detect<'r>(
             start,
             end,
             entropy: Some(shannon_entropy(&text[start..end])),
+            max_entropy: max_entropy(&text[start..end]),
             checksum_valid: None,
             shape: None,
             // Both set once every rule has run and the text has been parsed.
@@ -849,9 +858,21 @@ fn match_details(
             (confidence, why)
         }
         (DetectionType::LikelyCredential, Some(entropy)) => {
+            // Judged against the most a value this long can have, since a short value can't
+            // reach a long one's entropy however random it is: 50 when it has none, 90 when
+            // every character differs.
+            let randomness = if candidate.max_entropy > 0.0 {
+                (entropy / candidate.max_entropy).min(1.0)
+            } else {
+                0.0
+            };
+            let confidence = (50.0 + 40.0 * randomness).round() as u8;
             let minimum = rule.min_entropy.unwrap_or(0.0);
-            let confidence = (50.0 + (entropy - minimum).max(0.0) * 15.0).min(90.0) as u8;
-            let mut why = format!("High-entropy value ({entropy:.1} bits per character");
+            let mut why = format!(
+                "High-entropy value ({entropy:.1} of a possible {:.1} bits per character for \
+                 its length",
+                candidate.max_entropy
+            );
             if rule.min_entropy.is_some() {
                 why.push_str(&format!(", threshold {minimum:.1}"));
             }
@@ -912,6 +933,16 @@ fn match_details(
                 " The value classifier doesn't rate it a credential (score {}, minimum {}){looks_like}.",
                 class.credential, setting.min_score
             ));
+        } else if class.credential > confidence && confidence < MAX_CLASSIFIER_CONFIDENCE {
+            // Halfway from the rule's confidence to the classifier's score.
+            let raised =
+                (confidence + (class.credential - confidence) / 2).min(MAX_CLASSIFIER_CONFIDENCE);
+            why.push_str(&format!(
+                " The value classifier rates it a credential (score {}), raising confidence from \
+                 {confidence} to {raised}.",
+                class.credential
+            ));
+            confidence = raised;
         } else {
             why.push_str(&format!(
                 " The value classifier rates it a credential (score {}).",
@@ -957,6 +988,11 @@ fn match_details(
         in_comment: candidate.in_comment,
         checksum_valid: candidate.checksum_valid,
     }
+}
+
+/// The most entropy per character a value this long can have: log2 of its length in characters.
+fn max_entropy(value: &str) -> f64 {
+    (value.chars().count() as f64).log2().max(0.0)
 }
 
 /// Shannon entropy in bits per character.

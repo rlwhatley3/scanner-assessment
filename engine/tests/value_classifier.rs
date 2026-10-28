@@ -60,6 +60,7 @@ fn credentials_are_rated_credentials_and_keep_their_confidence() {
         assert_eq!(label(&details), ValueLabel::Credential, "{text:?}");
         assert!(details.confidence > 30, "{text:?}: {}", details.confidence);
         assert!(details.why_flagged.contains("rates it a credential"));
+        assert!(details.confidence <= 95, "{text:?}: {}", details.confidence);
     }
 }
 
@@ -148,4 +149,16 @@ fn other_lines_do_not_change_a_value_s_class() {
         })
         .expect("the placeholder line should be a finding");
     assert_eq!(placeholder.value_class, alone.value_class);
+}
+
+#[test]
+fn a_credential_score_above_the_rule_s_confidence_raises_it_halfway() {
+    let details = finding("database:\n  password: q8Z!fP2xL7mR\n");
+    let class = details.value_class.unwrap();
+    assert!(class.credential > 90, "{class:?}");
+    assert_eq!(details.confidence, 90 + (class.credential - 90) / 2);
+    assert!(details.why_flagged.contains(&format!(
+        "raising confidence from 90 to {}",
+        details.confidence
+    )));
 }

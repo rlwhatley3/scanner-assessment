@@ -107,7 +107,7 @@ A pattern rule can run a model on its own matches to say what each matched value
 ```
 
 - **Input and output:** the same value-between-markers input as a model assessment, but built from the value's own line only, so the name it's assigned to counts and other lines don't. The output is three scores, `float[1, 3]`, that sum to 1: credential, non-secret, placeholder.
-- **What it changes:** a value whose credential score (0–100) is below `minScore` keeps its finding, but its confidence drops to 30, the same as commented-out code, and "why flagged" says what the value looks like instead. A value rated a placeholder also counts as an example signal for the placeholder score. The finding records the scores as `valueClass`.
+- **What it changes:** a value whose credential score (0–100) is below `minScore` keeps its finding, but its confidence drops to 30, the same as commented-out code, and "why flagged" says what the value looks like instead. A credential score above the rule's own confidence raises it halfway toward that score, up to 95, so a model alone is never surer than a known format. A value rated a placeholder also counts as an example signal for the placeholder score. The finding records the scores as `valueClass`.
 - **Where it helps:** rules that match by randomness or password shape, which can't tell a password from a commit hash, UUID, or digest under a secret-sounding name. Fixed-format rules (`AKIA…`, `ghp_…`) don't need it.
 - **Checked like a checksum:** `model.sha256` must be 64 hexadecimal characters and `minScore` 0–100. A model that wasn't loaded or doesn't return three scores makes the rule a `rule_error` (field `value_classifier`), so none of its matches are reported. Each value is classified once per model, after the 200-finding cap. Rules with no value (unsafe handling) ignore the setting.
 
@@ -149,7 +149,8 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 
 - **Confidence (0–100):** how sure the engine is that this is a secret of the rule's kind.
   - Direct credentials: 95, or 99 when the checksum passes and 50 when it fails.
-  - Likely credentials: 50–90, rising with entropy above the rule's threshold. With a password shape setting, 35–80, rising with the shape score.
+  - Likely credentials: 50–90, rising with how random the value is for its length: its entropy compared with the most a value that long can have (log2 of its length, when every character differs). A short value with no repeated characters scores as high as a long random one. With a password shape setting, 35–80, rising with the shape score.
+  - With a value classifier: a credential score above the rule's confidence raises it halfway toward that score, up to 95; a score below the setting's minimum lowers it to 30.
   - Unsafe handling: 70, or 30 when it's commented out.
 - **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
 
@@ -243,7 +244,7 @@ Source code isn't parsed into a syntax tree. That would need a parser per langua
 
 ## Trade-offs
 
-- **Regex plus entropy, checksums, and format parsing first, machine learning as an optional extra:** the built-in rules are predictable, explainable, and fast, so every finding can say exactly why it was flagged. Checksums and format parsing reduce false positives and misses without leaving the machine. The cost is remaining false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness. Models target both, but only when a rule set includes them: model rules' verdicts sit beside the other rules' scores, and a value classifier only lowers a match's confidence, never drops it.
+- **Regex plus entropy, checksums, and format parsing first, machine learning as an optional extra:** the built-in rules are predictable, explainable, and fast, so every finding can say exactly why it was flagged. Checksums and format parsing reduce false positives and misses without leaving the machine. The cost is remaining false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness. Models target both, but only when a rule set includes them: model rules' verdicts sit beside the other rules' scores, and a value classifier only moves a match's confidence, never drops it.
 - **No live verification:** asking a provider whether a secret works (as TruffleHog does) is the strongest signal, but it sends the secret off the machine, which this design rules out.
 - **Narrow formats over broad ones:** the direct-credential rules match exact, well-known formats, so they rarely fire by mistake. The assignment rule casts the wider net and is ranked lower.
 - **Signals only in explanations:** "why flagged" notes and log events never quote the input, so they're safe to store and log. The cost is that an explanation can't say *which* key name triggered it.

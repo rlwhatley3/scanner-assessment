@@ -52,7 +52,7 @@ Model rules take model ({\"id\": name, \"sha256\": hash}, from list_models) and 
 100: a model score at or above it counts as a secret) instead of a pattern. valueClassifier \
 ({\"model\": {\"id\": name, \"sha256\": hash}, \"minScore\": 0 to 100}) runs a value classifier \
 model on the rule's matches: values it rates below minScore as a credential get lower \
-confidence.";
+confidence, and a credential score above the rule's confidence raises it.";
 
 /// The MCP service, ready to mount on the API router.
 pub fn service(state: AppState) -> StreamableHttpService<ScannerMcp, LocalSessionManager> {

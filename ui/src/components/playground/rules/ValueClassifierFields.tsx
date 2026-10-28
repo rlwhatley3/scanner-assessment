@@ -55,7 +55,8 @@ export default function ValueClassifierFields({
       <p className="field-hint">
         Optional. A model reads each value this rule matches and says whether it's a credential, a
         non-secret random string (a hash, ID, or encoded data), or a placeholder. Values it doesn't
-        rate as a credential are still reported, with lower confidence.
+        rate as a credential are still reported, with lower confidence; a strong credential score
+        raises confidence.
       </p>
       <label className="field field-checkbox">
         <input
