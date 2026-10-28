@@ -21,7 +21,8 @@
         "pattern": "\\bghp_[A-Za-z0-9]{36}\\b",
         "prefix": "ghp_",
         "remediation": "Revoke this token in GitHub settings and create a new one with only the scopes it needs.",
-        "enabled": true
+        "enabled": true,
+        "checksum": "github_crc32"
       }
     },
     {

@@ -617,6 +617,7 @@ dependencies = [
 name = "secrets-scanner-engine"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "regex",
  "regex-syntax",
  "serde",

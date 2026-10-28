@@ -1,3 +1,4 @@
+use crate::checksum::Checksum;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -68,10 +69,14 @@ pub struct RuleDefinition {
     /// A public prefix every match starts with, shown as the redacted preview.
     pub prefix: Option<String>,
     /// If set, the `key` group (or the whole match) must contain one of these, ignoring case.
+    /// For likely-credential rules, values under these names in parsed JSON, YAML, or `.env`
+    /// text are checked too, even where the pattern alone would miss them.
     pub key_names: Vec<String>,
     /// If set, the `value` group (or the whole match) needs at least this many bits of
     /// entropy per character. Range 0–8.
     pub min_entropy: Option<f64>,
+    /// A checksum the matched value must pass to count as a real-format secret.
+    pub checksum: Option<Checksum>,
     pub remediation: Option<String>,
 }
 
@@ -175,6 +180,7 @@ pub(crate) struct CompiledRule {
     pub prefix: Option<String>,
     pub key_names: Vec<String>,
     pub min_entropy: Option<f64>,
+    pub checksum: Option<Checksum>,
     pub remediation: String,
 }
 
@@ -316,6 +322,7 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
                 .filter(|key| !key.is_empty())
                 .collect(),
             min_entropy: definition.min_entropy,
+            checksum: definition.checksum,
             remediation: definition.remediation.clone().unwrap_or_default(),
         }),
         _ => None,

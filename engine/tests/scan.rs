@@ -1,6 +1,7 @@
 use secrets_scanner_engine::{
-    ErrorCode, FindingKind, MAX_FINDINGS, MAX_INPUT_BYTES, MatchDetails, Rule, RuleDefinition,
-    RuleField, ScanError, ScanResult, Violation, default_rule_set, scan,
+    ErrorCode, FindingKind, Format, MAX_FINDINGS, MAX_INPUT_BYTES, MatchDetails, Rule,
+    RuleDefinition, RuleField, ScanError, ScanResult, Violation, default_rule_set, github_checksum,
+    scan,
 };
 
 const AWS_KEY: &str = "AKIAZ7Q3LMN4XWY2PRT6";
@@ -286,4 +287,96 @@ fn locations_survive_unicode_and_mixed_line_endings() {
         (found[0].location.start_line, found[0].location.start_column),
         (3, 5)
     );
+}
+
+/// A GitHub token whose checksum is valid, built at run time so no real-looking token is
+/// committed.
+fn valid_github_token() -> String {
+    let random = "Zq7Lm2Xc9Vb4Nn6Tt1Rr8Pp3Kk5Hh0";
+    format!("ghp_{random}{}", github_checksum(random))
+}
+
+#[test]
+fn a_token_with_a_valid_checksum_is_high_confidence() {
+    let result = run(&format!("gh = {}", valid_github_token()));
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].checksum_valid, Some(true));
+    assert_eq!(found[0].confidence, 99);
+    assert_eq!(found[0].placeholder_score, Some(5));
+    assert!(found[0].why_flagged.contains("checksum is valid"));
+}
+
+#[test]
+fn a_token_whose_checksum_fails_is_likely_made_up() {
+    let result = run(&format!("gh = {GITHUB_TOKEN}"));
+    let found = matches(&result);
+    assert_eq!(found[0].checksum_valid, Some(false));
+    assert_eq!(found[0].confidence, 50);
+    assert_eq!(found[0].placeholder_score, Some(70));
+    assert!(found[0].why_flagged.contains("checksum doesn't match"));
+}
+
+#[test]
+fn rules_without_a_checksum_report_none() {
+    let result = run(&format!("k = {AWS_KEY}"));
+    assert_eq!(matches(&result)[0].checksum_valid, None);
+}
+
+#[test]
+fn parsing_json_catches_a_quoted_secret_the_pattern_alone_misses() {
+    let secret = "Xk9$mQ2;vL7#pR4w";
+    let text = format!("{{\n  \"db\": {{\n    \"password\":\n      \"{secret}\"\n  }}\n}}");
+    let result = run(&text);
+    assert_eq!(result.format, Format::Json);
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    assert_eq!(result.findings[0].rule_id, 4);
+    let location = found[0].location;
+    assert_eq!(&text[location.start_byte..location.end_byte], secret);
+    assert_eq!(location.start_line, 4);
+}
+
+#[test]
+fn a_yaml_value_stops_before_its_trailing_comment() {
+    let text = format!("db:\n  password: \"{RANDOM_PASSWORD}\"  # rotate monthly\n");
+    let result = run(&text);
+    assert_eq!(result.format, Format::Yaml);
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    let location = found[0].location;
+    assert_eq!(
+        &text[location.start_byte..location.end_byte],
+        RANDOM_PASSWORD
+    );
+    assert!(!found[0].in_comment);
+}
+
+#[test]
+fn a_secret_in_a_comment_still_counts_but_looks_like_an_example() {
+    let result = run(&format!(
+        "# old key, do not use: {AWS_KEY}\nREGION=us-east-1\n"
+    ));
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].in_comment);
+    assert_eq!(found[0].placeholder_score, Some(70));
+    assert!(found[0].why_flagged.contains("in a comment"));
+}
+
+#[test]
+fn commented_out_logging_is_low_confidence() {
+    let result = run("// console.log(\"debug\", token)\nrun();\n");
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].in_comment);
+    assert_eq!(found[0].confidence, 30);
+}
+
+#[test]
+fn the_result_says_which_format_the_text_was_read_as() {
+    assert_eq!(run("A=1\nB=2\n").format, Format::Dotenv);
+    assert_eq!(run("a: 1\nb: 2\n").format, Format::Yaml);
+    assert_eq!(run("[1, 2]").format, Format::Json);
+    assert_eq!(run("hello there").format, Format::Text);
 }

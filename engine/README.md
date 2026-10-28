@@ -51,10 +51,11 @@ The built-in rule set lives in [`rule_sets/default.json`](rule_sets/default.json
 
 1. **Reject bad input.** Empty text, text over 1 MB, or a rule set with no enabled rules that create findings is an error, not a scan.
 2. **Check and compile each enabled rule.** Required fields, value ranges, duplicate names, and whether the pattern compiles (with a size limit). A rule that fails is skipped and reported as a `rule_error` finding pointing at the exact field. The other rules still run, and the scan counts as partial.
-3. **Match.** Each rule's regex runs over the text. A rule can narrow a match with a named `value` group (the secret itself) and a named `key` group (the name it's assigned to), then filter on `keyNames` and `minEntropy`. Placeholder vs. real rules run too, and any finding with one of their matches inside it is marked as a likely example.
-4. **Cap.** Matches are sorted by position. Beyond 200, the rest are dropped and `truncated` is set.
-5. **Group overlaps.** Matches whose ranges overlap share an `overlap_group`, so every caller draws them as one highlight.
-6. **Describe each match** with its location (byte offsets, plus 1-based line and column counted in characters, for `\n`, `\r\n`, and lone `\r`), scores, a redacted preview, a "why flagged" note built only from signals, and the rule's remediation hint.
+3. **Read the format.** The text is read as JSON, YAML, `.env`, or plain text (see [File format parsing](#file-format-parsing)). This finds its comments and its real key/value pairs.
+4. **Match.** Each rule's regex runs over the text. A rule can narrow a match with a named `value` group (the secret itself) and a named `key` group (the name it's assigned to), then filter on `keyNames` and `minEntropy`. Likely-credential rules also check the parsed key/value pairs. A rule with a `checksum` checks each match against it. Placeholder vs. real rules run too, and any finding with one of their matches inside it is marked as a likely example.
+5. **Cap.** Matches are sorted by position. Beyond 200, the rest are dropped and `truncated` is set.
+6. **Group overlaps.** Matches whose ranges overlap share an `overlap_group`, so every caller draws them as one highlight.
+7. **Describe each match** with its location (byte offsets, plus 1-based line and column counted in characters, for `\n`, `\r\n`, and lone `\r`), scores, a redacted preview, a "why flagged" note built only from signals, and the rule's remediation hint.
 
 Rust's `regex` crate runs in linear time, so no pattern can backtrack catastrophically.
 
@@ -65,7 +66,7 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 | Rule | Detection type | Severity | Catches | Misses / limits |
 |---|---|---|---|---|
 | AWS access key | Direct credential | High | `AKIA` followed by 16 uppercase letters or digits | Other AWS key prefixes (`ASIA` temporary keys); secret access keys, which have no fixed format |
-| GitHub token | Direct credential | High | `ghp_` followed by 36 letters or digits | Other GitHub token types (`gho_`, `ghs_`, `github_pat_`) |
+| GitHub token | Direct credential | High | `ghp_` followed by 36 letters or digits, checked with GitHub's CRC32 checksum | Other GitHub token types (`gho_`, `ghs_`, `github_pat_`) |
 | Private key block | Direct credential | High | A `-----BEGIN … PRIVATE KEY-----` block, through its END line when present, otherwise just the header | Keys stored without PEM armor (raw base64, JWKs) |
 | Secret-looking assignment | Likely credential | Medium | A value of 8+ characters assigned with `=` or `:` to a name containing `password`, `passwd`, `secret`, `api_key`, `apikey`, or `token`, with at least 3.0 bits of entropy per character | Short or low-randomness secrets; secrets under other names. Values starting with `$`, `{`, or `(` are treated as references (`${DB_PASSWORD}`) and skipped |
 | Secret written to a log | Unsafe handling | Medium | `console.log`/`info`/`warn`/`error`/`debug`, `print`, `println!`, `logger.*`, or `log.*` with a secret-sounding name among its arguments | Calls split across lines; secrets passed through a renamed variable |
@@ -73,11 +74,46 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 
 ## Scores
 
-- **Confidence (0–100):** how sure the engine is that this is a secret of the rule's kind. Direct credentials score 95, unsafe handling 70, and likely credentials 50–90, rising with entropy above the rule's threshold.
-- **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value, 70 when it has very little randomness (under 2 bits per character), otherwise 5. There is no score for unsafe handling, which has no value.
+- **Confidence (0–100):** how sure the engine is that this is a secret of the rule's kind.
+  - Direct credentials: 95, or 99 when the checksum passes and 50 when it fails.
+  - Likely credentials: 50–90, rising with entropy above the rule's threshold.
+  - Unsafe handling: 70, or 30 when it's commented out.
+- **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
+
+Every match also reports `inComment` and `checksumValid` (absent when the rule has no checksum), and the scan result reports the `format` the text was read as.
+
+## Checksums
+
+Some token formats carry a checksum, so a match can be checked offline, with no network call: a real-format token passes, and a made-up one (an example, a test value, random text) almost always fails. A rule opts in with its `checksum` field.
+
+| `checksum` | Format |
+|---|---|
+| `github_crc32` | GitHub tokens: a prefix like `ghp_`, 30 random base62 characters, then the CRC32 of those 30 characters in base62 (`0-9A-Za-z`), zero-padded to 6 characters |
+
+A failed checksum lowers confidence and raises the placeholder score; it does not drop the finding. GitHub hasn't published a test token, so the check follows [GitHub's description](https://github.blog/engineering/behind-githubs-new-authentication-token-formats/) and existing open-source validators. If the digit order were ever wrong, real tokens would still be reported, just at lower confidence.
+
+## File format parsing
+
+Before matching, the text is read as the format it is:
+
+| Format | Detected when | What's parsed |
+|---|---|---|
+| JSON | It starts with `{` or `[` and parses as JSON | Every `"key": "string value"` pair, at any depth, even split across lines |
+| `.env` | At least half the lines are `KEY=value` (optionally `export KEY=value`) | `KEY=value` pairs; `#` comment lines and trailing ` # comments` |
+| YAML | At least half the lines are `key: value` | `key: value` pairs; `#` comment lines and trailing ` # comments` |
+| Text | Anything else | `#` and `//` comment lines only |
+
+Quotes are stripped from parsed values, and a `#` inside quotes is not a comment. All positions stay exact byte ranges into the original text.
+
+What it changes:
+- **Fewer misses:** likely-credential rules also check parsed values under suspicious key names, so a quoted value containing `$` or `;`, or a JSON key and value on separate lines, is still caught. A value found both ways is reported once.
+- **Fewer false alarms:** a secret inside a comment is still reported, but it scores as a likely example, since comments are where examples live. Commented-out code that logs a secret drops to low confidence, since it doesn't run.
+
+Source code isn't parsed into a syntax tree. That would need a parser per language (e.g. tree-sitter), so code is only scanned as text, with its `//` and `#` comment lines recognized.
 
 ## Trade-offs
 
-- **Regex plus entropy, not machine learning:** predictable, explainable, and fast, so every finding can say exactly why it was flagged. The cost is false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness.
+- **Regex plus entropy, checksums, and format parsing, not machine learning:** predictable, explainable, and fast, so every finding can say exactly why it was flagged. Checksums and format parsing reduce false positives and misses without leaving the machine. The cost is remaining false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness.
+- **No live verification:** asking a provider whether a secret works (as TruffleHog does) is the strongest signal, but it sends the secret off the machine, which this design rules out.
 - **Narrow formats over broad ones:** the direct-credential rules match exact, well-known formats, so they rarely fire by mistake. The assignment rule casts the wider net and is ranked lower.
 - **Signals only in explanations:** "why flagged" notes and log events never quote the input, so they're safe to store and log. The cost is that an explanation can't say *which* key name triggered it.

@@ -178,7 +178,7 @@ fn a_definition_reads_from_the_forms_camel_case_json() {
     let definition: RuleDefinition = serde_json::from_str(
         r#"{"name": "Slack token", "enabled": false, "detectionType": "direct_credential",
             "severity": "medium", "pattern": "xoxb-[0-9a-z-]+", "keyNames": ["slack"],
-            "minEntropy": 2.5}"#,
+            "minEntropy": 2.5, "checksum": "github_crc32"}"#,
     )
     .expect("definition should parse");
     assert!(!definition.is_enabled());
@@ -186,4 +186,10 @@ fn a_definition_reads_from_the_forms_camel_case_json() {
     assert_eq!(definition.key_names, ["slack"]);
     assert_eq!(definition.min_entropy, Some(2.5));
     assert!(check_rule(&rule(1, definition)).is_valid());
+}
+
+#[test]
+fn an_unknown_checksum_is_rejected_by_the_contract() {
+    let json = r#"{"rules": [{"id": 1, "definition": {"checksum": "md5"}}]}"#;
+    assert!(serde_json::from_str::<RuleSet>(json).is_err());
 }

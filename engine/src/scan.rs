@@ -1,3 +1,4 @@
+use crate::format::{self, Format, Structure};
 use crate::location::{LineIndex, Location};
 use crate::rules::{
     CompiledRule, DetectionType, Rule, RuleError, RuleSet, Severity, check_and_compile,
@@ -41,6 +42,10 @@ pub struct MatchDetails {
     pub remediation: String,
     /// Findings whose ranges overlap share a group id, so callers draw them as one highlight.
     pub overlap_group: Option<u32>,
+    /// Whether the match sits inside a comment, where examples and dead code usually live.
+    pub in_comment: bool,
+    /// Whether the value passed the rule's checksum; absent when the rule has none.
+    pub checksum_valid: Option<bool>,
 }
 
 /// The machine-readable details of a finding: match details or the rule error.
@@ -76,6 +81,8 @@ pub struct ScanResult {
     pub findings: Vec<Finding>,
     /// True when there were more than `MAX_FINDINGS` matches and the rest were dropped.
     pub truncated: bool,
+    /// The format the text was read as.
+    pub format: Format,
     pub log: Vec<LogEvent>,
 }
 
@@ -106,7 +113,9 @@ struct Candidate<'r> {
     start: usize,
     end: usize,
     entropy: Option<f64>,
+    checksum_valid: Option<bool>,
     placeholder_hit: bool,
+    in_comment: bool,
 }
 
 /// Scans `text` with the enabled rules. Rules that fail their checks are skipped and reported
@@ -153,6 +162,13 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
         rule_errors.len()
     ));
 
+    let structure = format::parse(text);
+    log_line(format!(
+        "read as {:?} with {} key/value pairs",
+        structure.format,
+        structure.pairs.len()
+    ));
+
     let (finding_rules, placeholder_rules): (Vec<_>, Vec<_>) = compiled
         .iter()
         .partition(|rule| rule.detection_type.creates_findings());
@@ -164,14 +180,17 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
         .collect();
     let mut candidates: Vec<Candidate> = finding_rules
         .into_iter()
-        .flat_map(|rule| find_candidates(rule, text))
+        .flat_map(|rule| find_candidates(rule, text, &structure))
         .collect();
+    candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.rule.id));
+    // A value found both by a rule's pattern and by parsing is one finding.
+    candidates.dedup_by(|a, b| (a.rule.id, a.start, a.end) == (b.rule.id, b.start, b.end));
     for candidate in &mut candidates {
         candidate.placeholder_hit = placeholder_ranges
             .iter()
             .any(|&(start, end)| candidate.start <= start && end <= candidate.end);
+        candidate.in_comment = structure.in_comment(candidate.start, candidate.end);
     }
-    candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.rule.id));
 
     let truncated = candidates.len() > MAX_FINDINGS;
     if truncated {
@@ -235,11 +254,16 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
     Ok(ScanResult {
         findings,
         truncated,
+        format: structure.format,
         log,
     })
 }
 
-fn find_candidates<'r>(rule: &'r CompiledRule, text: &str) -> Vec<Candidate<'r>> {
+fn find_candidates<'r>(
+    rule: &'r CompiledRule,
+    text: &str,
+    structure: &Structure,
+) -> Vec<Candidate<'r>> {
     let mut candidates = Vec::new();
     for captures in rule.regex.captures_iter(text) {
         let whole = captures.get(0).expect("group 0 always matches");
@@ -261,23 +285,53 @@ fn find_candidates<'r>(rule: &'r CompiledRule, text: &str) -> Vec<Candidate<'r>>
                 continue;
             }
         }
-        let entropy = (rule.detection_type != DetectionType::UnsafeHandling)
-            .then(|| shannon_entropy(value.as_str()));
-        if let (Some(minimum), Some(entropy)) = (rule.min_entropy, entropy)
-            && entropy < minimum
-        {
-            continue;
+        candidates.extend(candidate(rule, text, value.start(), value.end()));
+    }
+
+    // Parsed key/value pairs catch values the pattern can't, such as quoted values containing
+    // `$` or `;`, and keys and values split across lines in JSON.
+    if rule.detection_type == DetectionType::LikelyCredential && !rule.key_names.is_empty() {
+        for pair in &structure.pairs {
+            let key = text[pair.key.0..pair.key.1].to_lowercase();
+            let value = &text[pair.value.0..pair.value.1];
+            let suspicious = rule
+                .key_names
+                .iter()
+                .any(|name| key.contains(name.as_str()));
+            let reference = value.starts_with(['$', '{', '(']);
+            if suspicious && !reference && value.chars().count() >= 8 {
+                candidates.extend(candidate(rule, text, pair.value.0, pair.value.1));
+            }
         }
-        candidates.push(Candidate {
-            rule,
-            start: value.start(),
-            end: value.end(),
-            entropy,
-            // Set once placeholder rules have run.
-            placeholder_hit: false,
-        });
     }
     candidates
+}
+
+/// A candidate for the value at `start..end`, unless it falls short of the rule's entropy.
+fn candidate<'r>(
+    rule: &'r CompiledRule,
+    text: &str,
+    start: usize,
+    end: usize,
+) -> Option<Candidate<'r>> {
+    let value = &text[start..end];
+    let entropy =
+        (rule.detection_type != DetectionType::UnsafeHandling).then(|| shannon_entropy(value));
+    if let (Some(minimum), Some(entropy)) = (rule.min_entropy, entropy)
+        && entropy < minimum
+    {
+        return None;
+    }
+    Some(Candidate {
+        rule,
+        start,
+        end,
+        entropy,
+        checksum_valid: rule.checksum.map(|checksum| checksum.is_valid(value)),
+        // Both set once every rule has run and the text has been parsed.
+        placeholder_hit: false,
+        in_comment: false,
+    })
 }
 
 /// Gives every run of overlapping candidates (sorted by start) a shared group id, numbered from
@@ -313,17 +367,48 @@ fn match_details(
     overlap_group: Option<u32>,
 ) -> MatchDetails {
     let rule = candidate.rule;
-    let placeholder_score = candidate.entropy.map(|entropy| {
+    // Signals that a value is an example rather than a real secret. A known placeholder value is
+    // the strongest; the others each make an example likely.
+    let example_signals: Vec<&str> = [
+        (
+            candidate.placeholder_hit,
+            "contains a known placeholder value",
+        ),
+        (
+            candidate.entropy.is_some_and(|entropy| entropy < 2.0),
+            "very little randomness",
+        ),
+        (
+            candidate.checksum_valid == Some(false),
+            "its checksum doesn't match, so it's likely made up",
+        ),
+        (candidate.in_comment, "it's in a comment"),
+    ]
+    .into_iter()
+    .filter_map(|(present, signal)| present.then_some(signal))
+    .collect();
+    let placeholder_score = candidate.entropy.map(|_| {
         if candidate.placeholder_hit {
             95
-        } else if entropy < 2.0 {
+        } else if !example_signals.is_empty() {
             70
         } else {
             5
         }
     });
     let (confidence, mut why) = match (rule.detection_type, candidate.entropy) {
-        (DetectionType::DirectCredential, _) => (95, format!("Matches the {} format.", rule.name)),
+        (DetectionType::DirectCredential, _) => {
+            let confidence = match candidate.checksum_valid {
+                Some(true) => 99,
+                Some(false) => 50,
+                None => 95,
+            };
+            let mut why = format!("Matches the {} format.", rule.name);
+            if candidate.checksum_valid == Some(true) {
+                why.push_str(" Its checksum is valid, so it's a real-format token.");
+            }
+            (confidence, why)
+        }
         (DetectionType::LikelyCredential, Some(entropy)) => {
             let minimum = rule.min_entropy.unwrap_or(0.0);
             let confidence = (50.0 + (entropy - minimum).max(0.0) * 15.0).min(90.0) as u8;
@@ -338,6 +423,13 @@ fn match_details(
             why.push('.');
             (confidence, why)
         }
+        _ if candidate.in_comment => (
+            30,
+            format!(
+                "Matches the {} pattern, but it's commented out, so it doesn't run.",
+                rule.name
+            ),
+        ),
         _ => (
             70,
             format!(
@@ -346,11 +438,15 @@ fn match_details(
             ),
         ),
     };
-    match placeholder_score {
-        Some(95) => why.push_str(" Looks like an example: contains a known placeholder value."),
-        Some(70) => why.push_str(" Looks like an example: very little randomness."),
-        Some(_) => why.push_str(" Does not look like a placeholder."),
-        None => {}
+    if placeholder_score.is_some() {
+        if example_signals.is_empty() {
+            why.push_str(" Does not look like a placeholder.");
+        } else {
+            why.push_str(&format!(
+                " Looks like an example: {}.",
+                example_signals.join("; ")
+            ));
+        }
     }
 
     MatchDetails {
@@ -366,6 +462,8 @@ fn match_details(
         why_flagged: why,
         remediation: rule.remediation.clone(),
         overlap_group,
+        in_comment: candidate.in_comment,
+        checksum_valid: candidate.checksum_valid,
     }
 }
 

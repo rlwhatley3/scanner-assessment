@@ -209,3 +209,35 @@ Known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) are rules of type pl
 5. **WASM in the browser:** it has use cases, like building a local pre-check model, but it is large and specialized. I think the better solution is a real local application anyway, and I really dislike this whole concept being in a browser.
 6. **Auth and multiple users:** these go with the hosted API.
 7. **Compiled-rule caching:** rule set versions never change once saved, so the compiled rules could be cached per version instead of recompiled on every scan. That's an optimization, not a requirement for the POC, but likely needed for a production app.
+
+## Phase 2: Core implementation
+
+Phase 2 notes so far. The UI and the rest of the API are still to come.
+
+### Detection approach
+
+The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a pure Rust library: no network, disk, or HTTP. It layers four techniques, all running locally:
+
+1. **Regex rules** for known formats (AWS access keys, GitHub tokens, private key blocks) and for risky code (secrets written to logs).
+2. **Entropy** for likely credentials: a random-looking value (at least 3 bits per character) assigned to a name like `password`, `secret`, or `token`.
+3. **Checksums:** some token formats carry one. GitHub tokens end in a CRC32 checksum of their random part, so the engine can tell a real-format token from a made-up one offline. A valid checksum raises confidence to 99; a failed one drops it to 50 and marks the finding as a likely example. A failed checksum never hides a finding, because GitHub hasn't published a test token to confirm the exact encoding against.
+4. **File format parsing:** the text is read as JSON, YAML, `.env`, or plain text. Parsed key/value pairs catch secrets a pattern alone misses (a quoted value containing `$` or `;`, a JSON key and value on separate lines). Comments are recognized, so a secret in a comment scores as a likely example, and commented-out code that logs a secret drops to low confidence.
+
+**Placeholder vs. real is a rule type.** Known fake values (`changeme`, `example`, ...) are rules like any other, edited and versioned the same way. They never create findings of their own; when one matches inside another rule's finding, that finding scores as a likely example. This is the fourth detection type from Phase 1, coming back as a rule type instead of a separate list.
+
+**Deliberately not used:**
+- **Live verification:** asking the provider whether a secret works is the strongest signal, but it sends the secret off the machine.
+- **AI or ML triage:** this would also send text off the machine unless the model ran locally, and it would make "why flagged" harder to explain.
+- **Parsing source code into syntax trees:** this would need a parser per language, so code is scanned as text with its comment lines recognized.
+
+### Scan endpoint
+
+`POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged.
+
+- **Concurrency cap:** at most 4 scans run at once. Others wait their turn, so a burst of scans can't starve the rest of the API.
+- **At scale:** scanning in the API process would compete with every other request. The intended production shape avoids that entirely: scanning runs on the client (a CLI or a real local app calling the engine in-process), and the hosted API only serves rule sets. If a hosted scanning service were ever needed, the next steps would be a separate worker pool, then a queue with independently scaled workers.
+
+### Known gaps
+
+- **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.
+- **No endpoint to create a scan session yet.**

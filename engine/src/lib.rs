@@ -4,12 +4,16 @@
 //! rules, and get back findings plus log events to write wherever they like. Nothing it returns
 //! contains the scanned text or a matched value.
 
+mod checksum;
 mod defaults;
+mod format;
 mod location;
 mod rules;
 mod scan;
 
+pub use checksum::{Checksum, github_checksum};
 pub use defaults::default_rule_set;
+pub use format::Format;
 pub use location::Location;
 pub use rules::{
     DetectionType, ErrorCode, Rule, RuleCheck, RuleDefinition, RuleError, RuleField, RuleSet,
