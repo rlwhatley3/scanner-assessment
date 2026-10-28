@@ -488,7 +488,7 @@
         "parentId": "page:page",
         "props": {
           "color": "violet",
-          "h": 622,
+          "h": 646,
           "name": "USE CASE 3  -  Configure a detection rule",
           "w": 760
         },
@@ -732,11 +732,11 @@
                         "type": "bold"
                       }
                     ],
-                    "text": "Why this answers it:",
+                    "text": "Usage summary:",
                     "type": "text"
                   },
                   {
-                    "text": " zero results is a confident, explained \"clean\"; many or overlapping results stay readable, and each one says where it is, what it is, and what to do next.",
+                    "text": " the scan takes the same path as use case 1, and the API saves the outcome so the session can be reopened. With no findings, the engineer sees \"Nothing relevant found\" and the rule set used; overlapping matches share one purple highlight that opens each one; past 1,000 matches, the list says it was cut short.",
                     "type": "text"
                   }
                 ],
@@ -926,11 +926,11 @@
                         "type": "bold"
                       }
                     ],
-                    "text": "Why this answers it:",
+                    "text": "Usage summary:",
                     "type": "text"
                   },
                   {
-                    "text": " a malformed rule is pointed out at the field that's wrong, the engineer's edits are never lost (even on reload), and a broken rule can never be saved.",
+                    "text": " the engineer edits a rule field, and the API asks the engine to check it without saving. A pattern that won't compile or a value out of range comes back pinned to that rule and field, with the typed input left in place. Apply checks again and saves a new version only when every rule is valid.",
                     "type": "text"
                   }
                 ],
@@ -1659,11 +1659,11 @@
                         "type": "bold"
                       }
                     ],
-                    "text": "Why this answers it:",
+                    "text": "Usage summary:",
                     "type": "text"
                   },
                   {
-                    "text": " the engineer can tell at a glance which matches are probably harmless examples and why, so their attention goes to the real ones. Nothing is auto-dismissed in the POC.",
+                    "text": " the scan takes the same path as use case 1. The engine checks each match against known placeholders and measures its randomness, the API saves the resulting score and reason (never the value), and the engineer sees every finding, examples included, with its score and a plain reason.",
                     "type": "text"
                   }
                 ],
@@ -1692,7 +1692,7 @@
         "parentId": "page:page",
         "props": {
           "color": "blue",
-          "h": 622,
+          "h": 646,
           "name": "USE CASE 1  -  Scan a source file",
           "w": 760
         },
@@ -1723,11 +1723,11 @@
                         "type": "bold"
                       }
                     ],
-                    "text": "Why this answers it:",
+                    "text": "Usage summary:",
                     "type": "text"
                   },
                   {
-                    "text": " the engineer goes from paste, to a highlighted finding, to a fix hint on one screen, and the credential is never saved or sent off the machine.",
+                    "text": " the engineer pastes the file and clicks Scan. The API checks the size and hands the text and rules to the engine, which returns each match with its line, column, and score. Only the rule and position are saved; the UI highlights each finding by severity, and a click shows how to fix it.",
                     "type": "text"
                   }
                 ],
@@ -2545,7 +2545,7 @@
         "parentId": "page:page",
         "props": {
           "color": "green",
-          "h": 718,
+          "h": 742,
           "name": "USE CASE 4  -  Review zero or many results",
           "w": 760
         },
@@ -2840,7 +2840,7 @@
         "parentId": "page:page",
         "props": {
           "color": "yellow",
-          "h": 526,
+          "h": 550,
           "name": "USE CASE 2  -  Triage an example",
           "w": 760
         },
