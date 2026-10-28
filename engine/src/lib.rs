@@ -8,6 +8,7 @@ mod checksum;
 mod defaults;
 mod format;
 mod location;
+mod models;
 mod password_shape;
 mod rules;
 mod scan;
@@ -16,12 +17,14 @@ pub use checksum::{Checksum, ChecksumEncoding, Crc32Checksum};
 pub use defaults::default_rule_set;
 pub use format::Format;
 pub use location::Location;
+pub use models::{ModelLoadError, Models};
 pub use password_shape::PasswordShape;
 pub use rules::{
-    DetectionType, ErrorCode, Rule, RuleCheck, RuleDefinition, RuleError, RuleField, RuleSet,
-    RuleWarning, Severity, WarningCode, check_rule, check_rule_set,
+    DetectionType, ErrorCode, ModelRef, Rule, RuleCheck, RuleDefinition, RuleError, RuleField,
+    RuleSet, RuleWarning, Severity, WarningCode, check_rule, check_rule_set,
 };
 pub use scan::{
-    Finding, FindingKind, LogEvent, MAX_FINDINGS, MAX_INPUT_BYTES, MatchDetails, ScanError,
-    ScanResult, Violation, scan,
+    Finding, FindingKind, LogEvent, MAX_FINDINGS, MAX_INPUT_BYTES, MIN_DETECTION_BYTES,
+    MatchDetails, ModelAssessment, ModelVerdict, ScanError, ScanResult, Violation, scan,
+    scan_with_models,
 };

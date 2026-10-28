@@ -1,10 +1,12 @@
 use crate::format::{self, Format, Structure};
 use crate::location::{LineIndex, Location};
+use crate::models::{LoadedModel, Models, encode_value, encode_window, to_score};
 use crate::password_shape;
 use crate::rules::{
-    CompiledRule, DetectionType, Rule, RuleError, RuleSet, Severity, check_and_compile,
-    duplicate_name_errors,
+    CompiledRule, DetectionType, ErrorCode, Matcher, Rule, RuleError, RuleField, RuleSet, Severity,
+    check_and_compile, duplicate_name_errors,
 };
+use regex::Regex;
 use serde::Serialize;
 
 /// Inputs larger than this are rejected before scanning.
@@ -13,6 +15,10 @@ pub const MAX_INPUT_BYTES: usize = 1024 * 1024;
 /// At most this many matches are returned; the rest are reported as truncated. A rule broad
 /// enough to hit this usually needs fixing, and showing thousands of highlights helps no one.
 pub const MAX_FINDINGS: usize = 200;
+
+/// A model detection span shorter than this many bytes is dropped: a few stray bytes are noise,
+/// not a secret.
+pub const MIN_DETECTION_BYTES: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -35,6 +41,9 @@ pub struct MatchDetails {
     /// How likely the value is a placeholder or example rather than a real secret, 0–100.
     /// Absent for unsafe handling, which has no value.
     pub placeholder_score: Option<u8>,
+    /// What each model assessment rule concluded about the value, in rule order. These sit
+    /// beside the scores above and never change them.
+    pub model_assessments: Vec<ModelAssessment>,
     pub location: Location,
     /// The rule's declared prefix plus an ellipsis, never taken from the match.
     pub redacted_preview: Option<String>,
@@ -47,6 +56,25 @@ pub struct MatchDetails {
     pub in_comment: bool,
     /// Whether the value passed the rule's checksum; absent when the rule has none.
     pub checksum_valid: Option<bool>,
+}
+
+/// What a model assessment rule concluded about a finding's value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelVerdict {
+    LikelyReal,
+    LikelyExample,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelAssessment {
+    pub rule_id: i64,
+    pub rule_name: String,
+    /// How likely the model rates the value as a real secret, 0–100.
+    pub score: u8,
+    /// Likely real when the score is at or above the rule's threshold.
+    pub verdict: ModelVerdict,
 }
 
 /// The machine-readable details of a finding: match details or the rule error.
@@ -119,11 +147,27 @@ struct Candidate<'r> {
     shape: Option<password_shape::Assessment>,
     placeholder_hit: bool,
     in_comment: bool,
+    /// The model's score, for a model detection finding.
+    model_score: Option<u8>,
+    /// Each model assessment rule that scored the value, with its score.
+    assessments: Vec<(&'r CompiledRule, u8)>,
 }
 
 /// Scans `text` with the enabled rules. Rules that fail their checks are skipped and reported
-/// as rule-error findings; the rest still run.
+/// as rule-error findings; the rest still run. Model rules need [`scan_with_models`].
 pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, ScanError> {
+    scan_with_models(scan_id, text, rule_set, &Models::default())
+}
+
+/// Like [`scan`], with models for model rules to run. A model rule whose model is missing, does
+/// not fit its rule type, or fails while running is reported as a rule error, and the rest of
+/// the scan still runs.
+pub fn scan_with_models(
+    scan_id: i64,
+    text: &str,
+    rule_set: &RuleSet,
+    models: &Models,
+) -> Result<ScanResult, ScanError> {
     if text.trim().is_empty() {
         return Err(ScanError::Empty);
     }
@@ -136,11 +180,14 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
         .filter(|rule| rule.definition.is_enabled())
         .cloned()
         .collect();
-    // Placeholder rules only adjust other findings, so on their own nothing can be found.
-    let only_placeholder_rules = enabled
-        .iter()
-        .all(|rule| rule.definition.detection_type == Some(DetectionType::PlaceholderVsReal));
-    if only_placeholder_rules {
+    // Placeholder and model assessment rules only adjust other findings, so on their own
+    // nothing can be found.
+    let only_adjusting_rules = enabled.iter().all(|rule| {
+        rule.definition
+            .detection_type
+            .is_some_and(|detection_type| !detection_type.creates_findings())
+    });
+    if only_adjusting_rules {
         return Err(ScanError::NoRulesEnabled);
     }
 
@@ -158,9 +205,16 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
             compiled.push(rule_compiled);
         }
     }
+    let mut runnable = Vec::new();
+    for rule in compiled {
+        match rule_model(&rule, models) {
+            Ok(model) => runnable.push((rule, model)),
+            Err(error) => rule_errors.push(error),
+        }
+    }
     log_line(format!(
         "{} of {} enabled rules ran; {} rule errors",
-        compiled.len(),
+        runnable.len(),
         enabled.len(),
         rule_errors.len()
     ));
@@ -172,19 +226,32 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
         structure.pairs.len()
     ));
 
-    let (finding_rules, placeholder_rules): (Vec<_>, Vec<_>) = compiled
-        .iter()
-        .partition(|rule| rule.detection_type.creates_findings());
-    let placeholder_ranges: Vec<(usize, usize)> = placeholder_rules
-        .iter()
-        .flat_map(|rule| rule.regex.find_iter(text))
-        .filter(|found| !found.is_empty())
-        .map(|found| (found.start(), found.end()))
-        .collect();
-    let mut candidates: Vec<Candidate> = finding_rules
-        .into_iter()
-        .flat_map(|rule| find_candidates(rule, text, &structure))
-        .collect();
+    let mut placeholder_ranges = Vec::new();
+    let mut candidates = Vec::new();
+    let mut assessors = Vec::new();
+    for (rule, model) in &runnable {
+        let creates_findings = rule.detection_type.creates_findings();
+        match (&rule.matcher, model) {
+            (Matcher::Pattern(regex), _) if creates_findings => {
+                candidates.extend(find_candidates(rule, regex, text, &structure));
+            }
+            (Matcher::Pattern(regex), _) => placeholder_ranges.extend(
+                regex
+                    .find_iter(text)
+                    .filter(|found| !found.is_empty())
+                    .map(|found| (found.start(), found.end())),
+            ),
+            (Matcher::Model { threshold, .. }, Some(model)) if creates_findings => {
+                match detect(rule, *threshold, model, text) {
+                    Ok(found) => candidates.extend(found),
+                    Err(error) => rule_errors.push(error),
+                }
+            }
+            (Matcher::Model { .. }, Some(model)) => assessors.push((rule, *model)),
+            // `rule_model` always finds a model for a model rule that runs.
+            (Matcher::Model { .. }, None) => {}
+        }
+    }
     candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.rule.id));
     // A value found both by a rule's pattern and by parsing is one finding.
     candidates.dedup_by(|a, b| (a.rule.id, a.start, a.end) == (b.rule.id, b.start, b.end));
@@ -214,6 +281,20 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
             candidates.len()
         ));
         candidates.truncate(MAX_FINDINGS);
+    }
+
+    // Assess only the matches that are kept, so a flood of matches can't multiply model runs.
+    for (rule, model) in assessors {
+        match assess(rule, model, text, &candidates) {
+            Ok(scores) => {
+                for (candidate, score) in candidates.iter_mut().zip(scores) {
+                    if let Some(score) = score {
+                        candidate.assessments.push((rule, score));
+                    }
+                }
+            }
+            Err(error) => rule_errors.push(error),
+        }
     }
 
     let groups = overlap_groups(&candidates);
@@ -276,11 +357,12 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
 
 fn find_candidates<'r>(
     rule: &'r CompiledRule,
+    regex: &Regex,
     text: &str,
     structure: &Structure,
 ) -> Vec<Candidate<'r>> {
     let mut candidates = Vec::new();
-    for captures in rule.regex.captures_iter(text) {
+    for captures in regex.captures_iter(text) {
         let whole = captures.get(0).expect("group 0 always matches");
         let value = captures.name("value").unwrap_or(whole);
         if value.is_empty() {
@@ -364,7 +446,155 @@ fn candidate<'r>(
         // Both set once every rule has run and the text has been parsed.
         placeholder_hit: false,
         in_comment: false,
+        model_score: None,
+        assessments: Vec::new(),
     })
+}
+
+/// The model a model rule runs, checked against what its rule type needs: an assessment
+/// returns one score for a value, a detection one score per byte of its window. Rules without
+/// a model get `None`.
+fn rule_model<'m>(
+    rule: &CompiledRule,
+    models: &'m Models,
+) -> Result<Option<&'m LoadedModel>, RuleError> {
+    let Matcher::Model { sha256, label, .. } = &rule.matcher else {
+        return Ok(None);
+    };
+    let unavailable = |message: String| RuleError {
+        rule_id: rule.id,
+        field: RuleField::Model,
+        code: ErrorCode::ModelUnavailable,
+        message,
+        span: None,
+    };
+    let name = label
+        .clone()
+        .unwrap_or_else(|| format!("{}…", &sha256[..12]));
+    let Some(model) = models.get(sha256) else {
+        return Err(unavailable(if cfg!(feature = "ml") {
+            format!("The model {name} was not loaded into the engine.")
+        } else {
+            "This engine was built without model support.".to_string()
+        }));
+    };
+    if rule.detection_type == DetectionType::ModelDetection {
+        if model.output_len() != model.input_len() {
+            return Err(unavailable(format!(
+                "The model {name} must return one score per input position to detect secrets."
+            )));
+        }
+    } else if model.output_len() != 1 || model.input_len() < 3 {
+        return Err(unavailable(format!(
+            "The model {name} must return a single score, and have room for a value, to assess \
+             findings."
+        )));
+    }
+    Ok(Some(model))
+}
+
+fn model_failed(rule: &CompiledRule) -> RuleError {
+    RuleError {
+        rule_id: rule.id,
+        field: RuleField::Model,
+        code: ErrorCode::ModelFailed,
+        message: "The model failed while running.".to_string(),
+        span: None,
+    }
+}
+
+/// Runs a detection model over the text in overlapping windows (each starts half a window after
+/// the last) and turns every run of bytes scoring at or above the threshold into a candidate.
+/// Each byte keeps the highest score any window gave it, and spans widen to whole characters.
+fn detect<'r>(
+    rule: &'r CompiledRule,
+    threshold: u8,
+    model: &LoadedModel,
+    text: &str,
+) -> Result<Vec<Candidate<'r>>, RuleError> {
+    let bytes = text.as_bytes();
+    let window = model.input_len();
+    let stride = (window / 2).max(1);
+    let mut scores = vec![0_u8; bytes.len()];
+    let mut start = 0;
+    loop {
+        let end = (start + window).min(bytes.len());
+        let output = model
+            .run(&encode_window(&bytes[start..end], window))
+            .map_err(|()| model_failed(rule))?;
+        for (score, &probability) in scores[start..end].iter_mut().zip(&output) {
+            *score = (*score).max(to_score(probability));
+        }
+        if end == bytes.len() {
+            break;
+        }
+        start += stride;
+    }
+
+    let mut candidates = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if scores[index] < threshold {
+            index += 1;
+            continue;
+        }
+        let run_start = index;
+        while index < bytes.len() && scores[index] >= threshold {
+            index += 1;
+        }
+        let start = text.floor_char_boundary(run_start);
+        let end = text.ceil_char_boundary(index);
+        if end - start < MIN_DETECTION_BYTES {
+            continue;
+        }
+        candidates.push(Candidate {
+            rule,
+            start,
+            end,
+            entropy: Some(shannon_entropy(&text[start..end])),
+            checksum_valid: None,
+            shape: None,
+            // Both set once every rule has run and the text has been parsed.
+            placeholder_hit: false,
+            in_comment: false,
+            model_score: scores[run_start..index].iter().max().copied(),
+            assessments: Vec::new(),
+        });
+    }
+    Ok(candidates)
+}
+
+/// Scores each candidate's value with a model assessment rule. Candidates with no value
+/// (unsafe handling) get no score.
+fn assess(
+    rule: &CompiledRule,
+    model: &LoadedModel,
+    text: &str,
+    candidates: &[Candidate],
+) -> Result<Vec<Option<u8>>, RuleError> {
+    candidates
+        .iter()
+        .map(|candidate| {
+            if candidate.entropy.is_none() {
+                return Ok(None);
+            }
+            let ids = encode_value(
+                text.as_bytes(),
+                candidate.start,
+                candidate.end,
+                model.input_len(),
+            );
+            let output = model.run(&ids).map_err(|()| model_failed(rule))?;
+            Ok(output.first().copied().map(to_score))
+        })
+        .collect()
+}
+
+fn threshold(rule: &CompiledRule) -> u8 {
+    match rule.matcher {
+        Matcher::Model { threshold, .. } => threshold,
+        Matcher::Pattern(_) => 0,
+    }
 }
 
 /// Gives every run of overlapping candidates (sorted by start) a shared group id, numbered from
@@ -472,6 +702,17 @@ fn match_details(
             why.push('.');
             (confidence, why)
         }
+        (DetectionType::ModelDetection, _) => {
+            let score = candidate.model_score.unwrap_or(0);
+            (
+                score,
+                format!(
+                    "Flagged by the {} model (score {score}, threshold {}).",
+                    rule.name,
+                    threshold(rule)
+                ),
+            )
+        }
         _ if candidate.in_comment => (
             30,
             format!(
@@ -497,6 +738,25 @@ fn match_details(
             ));
         }
     }
+    let mut model_assessments = Vec::new();
+    for &(assessor, score) in &candidate.assessments {
+        let threshold = threshold(assessor);
+        let (verdict, label) = if score >= threshold {
+            (ModelVerdict::LikelyReal, "likely real")
+        } else {
+            (ModelVerdict::LikelyExample, "likely an example")
+        };
+        why.push_str(&format!(
+            " The {} model rates it {label} (score {score}, threshold {threshold}).",
+            assessor.name
+        ));
+        model_assessments.push(ModelAssessment {
+            rule_id: assessor.id,
+            rule_name: assessor.name.clone(),
+            score,
+            verdict,
+        });
+    }
 
     MatchDetails {
         rule_name: rule.name.clone(),
@@ -506,6 +766,7 @@ fn match_details(
             .expect("rules that create findings always have a severity"),
         confidence,
         placeholder_score,
+        model_assessments,
         location: index.location(candidate.start, candidate.end),
         redacted_preview: rule.prefix.as_ref().map(|prefix| format!("{prefix}…")),
         why_flagged: why,
