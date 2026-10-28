@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type Editor, type TLEditorSnapshot, Tldraw } from "tldraw";
+import { type Editor, FrameShapeUtil, type TLEditorSnapshot, Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
 import savedWhiteboardTemplate from "../../whiteboard-template.tldraw.json";
 import "./style.css";
@@ -9,6 +9,8 @@ type SaveState = "loading" | "saved" | "unsaved" | "saving" | "error";
 const DEFAULT_BOARD = "whiteboard";
 
 const DEFAULT_SNAPSHOT = savedWhiteboardTemplate as unknown as TLEditorSnapshot;
+
+const SHAPE_UTILS = [FrameShapeUtil.configure({ showColors: true })];
 
 function whiteboardApiUrl(path: string): string {
   const baseUrl = new URL(import.meta.env.BASE_URL, window.location.origin);
@@ -200,6 +202,7 @@ export function Whiteboard() {
             colorScheme="light"
             licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
             snapshot={snapshot ?? undefined}
+            shapeUtils={SHAPE_UTILS}
             onMount={handleMount}
           />
         ) : (

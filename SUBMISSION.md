@@ -193,3 +193,4 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 4. **File or repository scanning:** this becomes the most likely MVP point to tackle next.
 5. **WASM in the browser:** it has use cases, like building a local pre-check model, but it is large and specialized. I think the better solution is a real local application anyway, and I really dislike this whole concept being in a browser.
 6. **Auth and multiple users:** these go with the hosted API.
+7. **Compiled-rule caching:** config versions never change once saved, so the compiled rules could be cached per version instead of recompiled on every scan. That's an optimization, not a requirement for the POC, but likely needed for a production app.
