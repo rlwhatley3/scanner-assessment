@@ -1,0 +1,21 @@
+# UI
+
+# UI
+node_modules/
+.npm/
+.pnpm-store/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+/ui/dist/
+/ui/public/dist/
+
+# General Rust projects
+target/
+/server/target/
+**/*.rs.bk
+
+# Operating system
+.DS_Store

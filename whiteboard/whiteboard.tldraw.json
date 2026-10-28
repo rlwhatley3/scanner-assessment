@@ -1,0 +1,402 @@
+{
+  "document": {
+    "schema": {
+      "schemaVersion": 2,
+      "sequences": {
+        "com.tldraw.asset": 1,
+        "com.tldraw.asset.bookmark": 2,
+        "com.tldraw.asset.image": 6,
+        "com.tldraw.asset.video": 5,
+        "com.tldraw.binding.arrow": 1,
+        "com.tldraw.camera": 1,
+        "com.tldraw.document": 2,
+        "com.tldraw.instance": 26,
+        "com.tldraw.instance_page_state": 5,
+        "com.tldraw.instance_presence": 6,
+        "com.tldraw.page": 1,
+        "com.tldraw.pointer": 1,
+        "com.tldraw.shape": 4,
+        "com.tldraw.shape.arrow": 8,
+        "com.tldraw.shape.bookmark": 2,
+        "com.tldraw.shape.draw": 5,
+        "com.tldraw.shape.embed": 4,
+        "com.tldraw.shape.frame": 1,
+        "com.tldraw.shape.geo": 12,
+        "com.tldraw.shape.group": 0,
+        "com.tldraw.shape.highlight": 4,
+        "com.tldraw.shape.image": 5,
+        "com.tldraw.shape.line": 5,
+        "com.tldraw.shape.note": 13,
+        "com.tldraw.shape.text": 4,
+        "com.tldraw.shape.video": 4,
+        "com.tldraw.store": 5,
+        "com.tldraw.user": 1
+      }
+    },
+    "store": {
+      "document:document": {
+        "gridSize": 10,
+        "id": "document:document",
+        "meta": {},
+        "name": "",
+        "typeName": "document"
+      },
+      "page:page": {
+        "id": "page:page",
+        "index": "a1",
+        "meta": {},
+        "name": "Whiteboard",
+        "typeName": "page"
+      },
+      "shape:82djAWLEKpcGOB3tG1KcM": {
+        "id": "shape:82djAWLEKpcGOB3tG1KcM",
+        "index": "a7DNn",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "page:page",
+        "props": {
+          "align": "start",
+          "color": "violet",
+          "dash": "draw",
+          "fill": "semi",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 348,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "USE CASE 3  -  Configure a detection rule",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "An engineer edits detection rules, then enters a malformed rule. Show how they recover without losing their input.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "SKETCH YOUR DESIGN",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Add the flow, states, and edge cases below -",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "m",
+          "url": "",
+          "verticalAlign": "start",
+          "w": 561
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 286,
+        "y": 567.26171875
+      },
+      "shape:Xc0ykavvgFF1SVwuQCnXx": {
+        "id": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "index": "a5Wl6",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "page:page",
+        "props": {
+          "align": "start",
+          "color": "blue",
+          "dash": "draw",
+          "fill": "semi",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 348,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "USE CASE 1  -  Scan a source file",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "An engineer pastes a configuration file that may contain a live credential. Map the path from input to reviewing a finding.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "SKETCH YOUR DESIGN",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Add the flow, states, and edge cases below -",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "m",
+          "url": "",
+          "verticalAlign": "start",
+          "w": 561
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 286,
+        "y": 210
+      },
+      "shape:ohojdEFeacKNU76xzaHKS": {
+        "id": "shape:ohojdEFeacKNU76xzaHKS",
+        "index": "a8Gs2",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "page:page",
+        "props": {
+          "align": "start",
+          "color": "green",
+          "dash": "draw",
+          "fill": "semi",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 348,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "USE CASE 4  -  Review zero or many results",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "A scan has no findings or returns overlapping matches. Design how users understand locations, context, and next steps.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "SKETCH YOUR DESIGN",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Add the flow, states, and edge cases below -",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "m",
+          "url": "",
+          "verticalAlign": "start",
+          "w": 562
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 858,
+        "y": 567.26171875
+      },
+      "shape:zbbCNeEEBW47gJhzHo0Og": {
+        "id": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "index": "a6gln",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "page:page",
+        "props": {
+          "align": "start",
+          "color": "yellow",
+          "dash": "draw",
+          "fill": "semi",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 348,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "USE CASE 2  -  Triage an example",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "A credential-looking value appears in documentation or a test fixture. How should the product help distinguish an example from a real secret?",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "SKETCH YOUR DESIGN",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Add the flow, states, and edge cases below -",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "m",
+          "url": "",
+          "verticalAlign": "start",
+          "w": 562
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 858,
+        "y": 210
+      },
+      "user:0VUxdO2sxW0q2EtDX8cS8": {
+        "color": "#11B3A3",
+        "id": "user:0VUxdO2sxW0q2EtDX8cS8",
+        "imageUrl": "",
+        "meta": {},
+        "name": "",
+        "typeName": "user"
+      },
+      "user:n2gnwL6INz8DHkx84pcpv": {
+        "color": "#9D5BD2",
+        "id": "user:n2gnwL6INz8DHkx84pcpv",
+        "imageUrl": "",
+        "meta": {},
+        "name": "",
+        "typeName": "user"
+      }
+    }
+  },
+  "session": {
+    "currentPageId": "page:page",
+    "exportBackground": true,
+    "isDebugMode": false,
+    "isFocusMode": false,
+    "isGridMode": true,
+    "isToolLocked": false,
+    "pageStates": [
+      {
+        "camera": {
+          "x": -44.37499999999994,
+          "y": -139.25,
+          "z": 1
+        },
+        "focusedGroupId": null,
+        "pageId": "page:page",
+        "selectedShapeIds": []
+      }
+    ],
+    "version": 0
+  }
+}

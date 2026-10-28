@@ -1,0 +1,126 @@
+.app-navbar {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  flex: 0 0 auto;
+  min-height: var(--nav-height);
+  align-items: stretch;
+  justify-content: space-between;
+  padding: 0 var(--page-gutter);
+  border-bottom: 0.0625rem solid var(--line);
+  background: rgb(255 255 255 / 96%);
+}
+
+.brand {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+  color: var(--ink);
+  font-size: var(--font-small);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  width: 0.625rem;
+  aspect-ratio: 1;
+  border-radius: 0.1875rem;
+  background: var(--accent);
+}
+
+.nav-links {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.nav-separator {
+  width: 0.0625rem;
+  height: 1.25rem;
+  align-self: center;
+  margin-inline: 0.5rem;
+  background: var(--line);
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  color: var(--muted);
+  font-size: var(--font-small);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover,
+  &[aria-current="page"] {
+    color: var(--accent);
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--page) 55%, white);
+  }
+
+  &[aria-current="page"]::after {
+    position: absolute;
+    right: 0;
+    bottom: -0.0625rem;
+    left: 0;
+    height: 0.125rem;
+    background: var(--accent);
+    content: "";
+  }
+}
+
+.internal-link {
+  display: inline-flex;
+  min-height: 1.875rem;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border: 0.0625rem solid color-mix(in srgb, var(--accent) 28%, white);
+  border-radius: var(--radius-small);
+  background: color-mix(in srgb, var(--accent) 8%, white);
+  color: var(--accent);
+  font-size: var(--font-small);
+  font-weight: 650;
+  text-decoration: none;
+
+  &:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, white);
+  }
+}
+
+@media (max-width: 40rem) {
+  .app-navbar {
+    flex-wrap: wrap;
+    padding: 0 var(--page-gutter);
+
+    .brand {
+      min-height: var(--nav-height);
+    }
+
+    .nav-links {
+      width: calc(100% + 2 * var(--page-gutter));
+      height: 2.625rem;
+      gap: 0;
+      margin: 0 calc(-1 * var(--page-gutter));
+      padding: 0 0.5rem;
+      overflow-x: auto;
+      border-top: 0.0625rem solid var(--line);
+      scrollbar-width: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+
+      .tab {
+        padding: 0 0.75rem;
+        font-size: var(--font-small);
+      }
+    }
+  }
+}

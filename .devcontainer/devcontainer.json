@@ -1,0 +1,33 @@
+{
+  "name": "Secrets Scanner Playground",
+  "image": "secrets-scanner:devcontainer",
+  "initializeCommand": [
+    "docker",
+    "build",
+    "--platform=linux/amd64",
+    "--tag=secrets-scanner:devcontainer",
+    "--file",
+    "${localWorkspaceFolder}/.devcontainer/Dockerfile",
+    "${localWorkspaceFolder}"
+  ],
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "root",
+  "overrideCommand": true,
+  "runArgs": [
+    "--platform=linux/amd64",
+    "--shm-size=8g",
+    "--ipc=host",
+    "--ulimit=nofile=65536:65536"
+  ],
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind,readonly",
+    "source=${localEnv:HOME}/.gitconfig,target=/root/.gitconfig,type=bind,readonly",
+    "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind",
+    "source=${localEnv:HOME}/.claude.json,target=/root/.claude.json,type=bind",
+    "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind",
+    "source=${localEnv:HOME}/.codex,target=${localEnv:HOME}/.codex,type=bind",
+    "source=secrets-scanner-codex-packages,target=/root/.codex/packages,type=volume",
+    "source=${localEnv:HOME}/.config,target=/root/.config,type=bind"
+  ]
+}
