@@ -74,6 +74,7 @@ export interface ScanResponse {
   partial: boolean;
 }
 
+/** Unset fields may be missing or null (the built-in rules are seeded with explicit nulls). */
 export interface RuleDefinition {
   name?: string;
   /** Missing means enabled. */
@@ -83,7 +84,7 @@ export interface RuleDefinition {
   pattern?: string;
   prefix?: string;
   keyNames?: string[];
-  minEntropy?: number;
+  minEntropy?: number | null;
   remediation?: string;
   /** Fields this UI doesn't edit (e.g. a newer engine's `checksum`) are kept as-is. */
   [other: string]: unknown;

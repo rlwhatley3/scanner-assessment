@@ -34,7 +34,7 @@ function fromDefinition(definition: RuleDefinition): FormState {
     pattern: definition.pattern ?? "",
     prefix: definition.prefix ?? "",
     keyNames: (definition.keyNames ?? []).join(", "),
-    minEntropy: definition.minEntropy === undefined ? "" : String(definition.minEntropy),
+    minEntropy: definition.minEntropy == null ? "" : String(definition.minEntropy),
     remediation: definition.remediation ?? "",
   };
 }
