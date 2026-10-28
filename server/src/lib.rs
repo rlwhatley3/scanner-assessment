@@ -1,6 +1,8 @@
 pub mod db;
+pub mod mcp;
 pub mod routes;
 pub mod seed;
+pub mod store;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(

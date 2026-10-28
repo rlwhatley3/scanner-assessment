@@ -27,9 +27,11 @@ impl AppState {
 }
 
 pub fn router(db: Db) -> Router {
+    let state = AppState::new(db);
     Router::new()
         .route("/api/health", get(health::health))
         .nest("/api/whiteboards", whiteboard::router())
         .nest("/api/scan-sessions", scans::router())
-        .with_state(AppState::new(db))
+        .nest_service("/mcp", crate::mcp::service(state.clone()))
+        .with_state(state)
 }
