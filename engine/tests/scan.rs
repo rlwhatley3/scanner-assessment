@@ -10,7 +10,8 @@ const RANDOM_PASSWORD: &str = "q8Z!fP2xL7mR";
 
 /// Scans with the built-in rule set: ids 1–12 are the AWS key, GitHub token, private key,
 /// assignment, logging, known placeholder values, npm token, GitLab token, legacy GitLab
-/// token, payment card number, Bitcoin private key, and password-shaped value rules.
+/// token, payment card number, Bitcoin private key, and password-shaped value rules. Ids 13
+/// and up are provider formats and credentials in a known syntax, looked up by name below.
 fn run(text: &str) -> ScanResult {
     scan(42, text, &default_rule_set()).expect("scan should run")
 }
@@ -781,6 +782,369 @@ fn no_other_sample_has_password_shaped_findings() {
     assert!(scanned >= 21, "scanned only {scanned} samples");
 }
 
+/// The values one rule reported, by rule name, in text order.
+fn values_from<'t>(text: &'t str, result: &ScanResult, rule_name: &str) -> Vec<&'t str> {
+    matches(result)
+        .into_iter()
+        .filter(|details| details.rule_name == rule_name)
+        .map(|details| &text[details.location.start_byte..details.location.end_byte])
+        .collect()
+}
+
+#[test]
+fn each_sample_secret_is_found_by_the_rule_for_its_format() {
+    let cases: [(&str, &str, &str, &str); 22] = [
+        (
+            "Dockerfile",
+            include_str!("../../tests/Dockerfile"),
+            "Slack token",
+            "xoxb-174554240827-",
+        ),
+        (
+            "deploy.sh",
+            include_str!("../../tests/deploy.sh"),
+            "Slack webhook URL",
+            "https://hooks.slack.com/services/T7XLZ92GH/",
+        ),
+        (
+            "deploy.sh",
+            include_str!("../../tests/deploy.sh"),
+            "Bearer token in a header",
+            "ghp_kEPW",
+        ),
+        (
+            "payment_client.py",
+            include_str!("../../tests/payment_client.py"),
+            "Stripe live secret key",
+            "sk_live_rAdP",
+        ),
+        (
+            "payment_client.py",
+            include_str!("../../tests/payment_client.py"),
+            "Stripe live restricted key",
+            "rk_live_hd5Q",
+        ),
+        (
+            "app.env",
+            include_str!("../../tests/app.env"),
+            "SendGrid API key",
+            "SG.z3jo",
+        ),
+        (
+            "appsettings.json",
+            include_str!("../../tests/appsettings.json"),
+            "Google API key",
+            "AIzauCro",
+        ),
+        (
+            "appsettings.json",
+            include_str!("../../tests/appsettings.json"),
+            "OpenAI API key",
+            "sk-proj-BPRE",
+        ),
+        (
+            "appsettings.json",
+            include_str!("../../tests/appsettings.json"),
+            "Password in a connection string",
+            "Wint3r!sC0ming2026",
+        ),
+        (
+            "config.toml",
+            include_str!("../../tests/config.toml"),
+            "Anthropic API key",
+            "sk-ant-api03-fnwn",
+        ),
+        (
+            "config.toml",
+            include_str!("../../tests/config.toml"),
+            "GitHub fine-grained token",
+            "github_pat_HPVq",
+        ),
+        (
+            "config.toml",
+            include_str!("../../tests/config.toml"),
+            "Credentials in a URL",
+            "mysql://ingest:hunter2@",
+        ),
+        (
+            "docker-compose.yml",
+            include_str!("../../tests/docker-compose.yml"),
+            "Credentials in a URL",
+            "redis://:9fK2#qLz8mVw!pR4@",
+        ),
+        (
+            "docker-compose.yml",
+            include_str!("../../tests/docker-compose.yml"),
+            "Sentry DSN",
+            "3c9cd0808be816f1cdd9c068ec2121b2",
+        ),
+        (
+            "main.tf",
+            include_str!("../../tests/main.tf"),
+            "AWS secret access key",
+            "WiLKgmKI",
+        ),
+        (
+            "main.tf",
+            include_str!("../../tests/main.tf"),
+            ".netrc password",
+            "ghp_kEPW",
+        ),
+        (
+            "storage.go",
+            include_str!("../../tests/storage.go"),
+            "AWS secret access key",
+            "WiLKgmKI",
+        ),
+        (
+            "access.log",
+            include_str!("../../tests/access.log"),
+            "Basic auth header",
+            "Y2ktYm90",
+        ),
+        (
+            "access.log",
+            include_str!("../../tests/access.log"),
+            "JSON Web Token",
+            "eyJhbGciOiJIUzI1NiIs",
+        ),
+        (
+            "migration.sql",
+            include_str!("../../tests/migration.sql"),
+            "Password in a SQL statement",
+            "R3p0rt1ng-Only!2026",
+        ),
+        (
+            "migration.sql",
+            include_str!("../../tests/migration.sql"),
+            "Password in a SQL statement",
+            "etl_Batch#88",
+        ),
+        (
+            "migration.sql",
+            include_str!("../../tests/migration.sql"),
+            "Password hash",
+            "$argon2id$",
+        ),
+    ];
+    for (sample, text, rule_name, expected) in cases {
+        let result = run(text);
+        let found = values_from(text, &result, rule_name);
+        assert!(
+            found.iter().any(|value| value.starts_with(expected)),
+            "{sample}: {rule_name} found {found:?}"
+        );
+    }
+}
+
+#[test]
+fn documented_placeholders_in_the_new_formats_score_as_examples() {
+    let readme = include_str!("../../tests/README-setup.md");
+    let result = run(readme);
+    let urls: Vec<_> = matches(&result)
+        .into_iter()
+        .filter(|details| details.rule_name == "Credentials in a URL")
+        .collect();
+    assert_eq!(urls.len(), 1);
+    assert_eq!(urls[0].placeholder_score, Some(95));
+    assert_eq!(values_from(readme, &result, "Slack token"), [] as [&str; 0]);
+
+    let migration = include_str!("../../tests/migration.sql");
+    let result = run(migration);
+    let change_me = matches(&result)
+        .into_iter()
+        .find(|details| {
+            &migration[details.location.start_byte..details.location.end_byte] == "CHANGE_ME"
+        })
+        .expect("the placeholder password is reported");
+    assert_eq!(change_me.placeholder_score, Some(95));
+}
+
+#[test]
+fn templates_and_prose_are_not_credentials_in_a_known_syntax() {
+    for text in [
+        "Docs: `PASSWORD '…'` and `IDENTIFIED BY`",
+        r#"return fmt.Sprintf("postgres://storage:%s@%s:5432/blobs", password, host)"#,
+        "curl -H \"Authorization: Bearer $TOKEN\" https://api.example.com",
+        "Server=sql01;Database=x;User Id=u;Pwd={password};",
+        r#"{"auth": "anonymous"}"#,
+        "Cookie: theme=dark; lang=en-GB",
+    ] {
+        let result = run(text);
+        assert!(
+            result.findings.iter().all(|finding| finding.rule_id < 13),
+            "{text}: {:?}",
+            matches(&result)
+        );
+    }
+}
+
+#[test]
+fn the_expected_clean_samples_have_no_findings_from_the_format_rules() {
+    for text in [
+        include_str!("../../tests/clean-lookalikes.yaml"),
+        include_str!("../../tests/password-lookalikes.yaml"),
+    ] {
+        let result = run(text);
+        assert!(result.findings.iter().all(|finding| finding.rule_id < 13));
+    }
+}
+
+#[test]
+fn a_pgp_private_key_block_is_a_private_key_block() {
+    let text =
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF0abcd\n-----END PGP PRIVATE KEY BLOCK-----\n";
+    let result = run(text);
+    assert_eq!(
+        values_from(text, &result, "Private key block"),
+        [text.trim_end()]
+    );
+}
+
+#[test]
+fn a_jwk_with_a_private_member_is_found_and_a_public_one_is_not() {
+    let private = r#"{"kty":"EC","crv":"P-256","x":"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU","d":"jpsQnnGQmL-YBIffH1136cLSf8nM2ObX9fPFXfaQZ5c"}"#;
+    let public = r#"{"kty":"RSA","kid":"signing-2026","n":"0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4","e":"AQAB"}"#;
+    let text = format!("private = {private}\npublic = {public}\n");
+    let result = run(&text);
+    assert_eq!(
+        values_from(&text, &result, "JSON Web Key with private material"),
+        [private]
+    );
+}
+
+#[test]
+fn a_putty_key_is_found_through_its_mac_line() {
+    let text = "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\nPrivate-Lines: 1\nAAAAIGZ2c2Rm\nPrivate-MAC: 8a7b6c5d\n";
+    let result = run(text);
+    assert_eq!(
+        values_from(text, &result, "PuTTY private key"),
+        [text.trim_end()]
+    );
+}
+
+#[test]
+fn a_base64_key_without_pem_armor_is_found_but_a_pem_body_is_not_reported_twice() {
+    // Built from pieces so no key-shaped string sits in the source for secret scanners. Each
+    // is a real DER prefix followed by filler, so none of them is a usable key.
+    let filler = "Zq7Lm2Xc9Vb4Nn6Tt1Rr8Pp3Kk5Hh0Aa".repeat(4);
+    for prefix in [
+        ["MIIEowIBAA", "KCAQEA"].concat(),
+        ["MIIEvQIBADANBgkqhkiG9w0BAQEF", "AASC"].concat(),
+        ["MHcCAQEEI", "Hr"].concat(),
+        ["MC4CAQAwBQYDK2VwBCIEI", "Ji"].concat(),
+    ] {
+        let key = format!("{prefix}{filler}");
+        let text = format!("signing_material: \"{key}\"\n");
+        let result = run(&text);
+        assert_eq!(
+            values_from(&text, &result, "Private key without PEM armor"),
+            [key.as_str()]
+        );
+    }
+
+    let pem = include_str!("../../tests/server-key.pem");
+    let result = run(pem);
+    assert!(values_from(pem, &result, "Private key without PEM armor").is_empty());
+}
+
+#[test]
+fn a_base64_keystore_is_found() {
+    // A PKCS#12 file starts with a version 3 SEQUENCE; a Java keystore with FEEDFEED.
+    let filler = "Zq7Lm2Xc9Vb4Nn6Tt1Rr8Pp3Kk5Hh0Aa";
+    for prefix in [
+        ["MIIJ5wIBAzCC", "CZUG"].concat(),
+        ["/u3+7QAAAA", "KZkt"].concat(),
+    ] {
+        let keystore = format!("{prefix}{filler}");
+        let text = format!("keystore: {keystore}\n");
+        let result = run(&text);
+        assert_eq!(
+            values_from(&text, &result, "Keystore file in base64"),
+            [keystore.as_str()]
+        );
+    }
+}
+
+#[test]
+fn a_kubernetes_secret_with_data_is_found_in_either_field_order() {
+    let text = "\
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-creds
+data:
+  password: UzNjcjN0LVBhNTUh
+---
+apiVersion: v1
+data:
+  api-key: c2stbGl2ZS14eXo=
+kind: Secret
+metadata:
+  name: from-kubectl
+---
+apiVersion: v1
+kind: Secret
+stringData:
+  password: \"{{ .Values.password }}\"
+---
+apiVersion: v1
+kind: ConfigMap
+data:
+  mode: fast
+";
+    let result = run(text);
+    let secrets = values_from(text, &result, "Kubernetes Secret with inline data");
+    assert_eq!(secrets.len(), 2, "{secrets:?}");
+    assert!(secrets[0].starts_with("kind: Secret") && secrets[0].ends_with("UzNjcjN0LVBhNTUh"));
+    assert!(secrets[1].starts_with("data:") && secrets[1].ends_with("kind: Secret"));
+    let scores: Vec<_> = matches(&result)
+        .into_iter()
+        .filter(|details| details.rule_name == "Kubernetes Secret with inline data")
+        .map(|details| details.placeholder_score)
+        .collect();
+    assert_eq!(scores, [Some(5), Some(5)]);
+}
+
+#[test]
+fn registry_auth_netrc_cookies_and_presigned_urls_are_found() {
+    let signature = "ab12".repeat(16);
+    let cases = [
+        (
+            r#"{"auths":{"ghcr.io":{"auth":"Y2ktYm90OmdocF9rRVBXcGZZ"}}}"#.to_string(),
+            "Registry auth (base64 user and password)",
+            "Y2ktYm90OmdocF9rRVBXcGZZ",
+        ),
+        (
+            "_auth = dXNlcjpzM2NyM3RQYTU1\n".to_string(),
+            "Registry auth (base64 user and password)",
+            "dXNlcjpzM2NyM3RQYTU1",
+        ),
+        (
+            "machine api.example.net login ci password Zx9-Kp2_Lm7qWe\n".to_string(),
+            ".netrc password",
+            "Zx9-Kp2_Lm7qWe",
+        ),
+        (
+            "Cookie: theme=dark; sessionid=Qm9vS2xhc2hBc2Rmc2RmNzg5\n".to_string(),
+            "Session cookie",
+            "Qm9vS2xhc2hBc2Rmc2RmNzg5",
+        ),
+        (
+            format!(
+                "url: https://bucket.s3.amazonaws.com/a.pdf?X-Amz-Expires=60&X-Amz-Signature={signature}\n"
+            ),
+            "Pre-signed storage URL",
+            "https://bucket.s3.amazonaws.com/a.pdf?",
+        ),
+    ];
+    for (text, rule_name, expected) in &cases {
+        let result = run(text);
+        let found = values_from(text, &result, rule_name);
+        assert_eq!(found.len(), 1, "{rule_name}: {found:?}");
+        assert!(found[0].starts_with(expected), "{rule_name}: {found:?}");
+    }
+}
 #[cfg(not(feature = "ml"))]
 #[test]
 fn without_the_ml_feature_a_model_rule_is_a_rule_error() {
