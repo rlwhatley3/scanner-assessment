@@ -35,8 +35,8 @@ checked as a set, and each one's current definition is snapshotted into the vers
 edits never change a saved version. Versions are numbered within their set. Saved versions can only \
 be archived or restored. A scan session uses one version; each scan in it \
 runs that version's snapshots. Model rules (model_assessment, model_detection) run a model the API \
-has loaded instead of a pattern; list_models shows which models are available and which rule types \
-each fits. Scan text is never stored, and findings never contain matched values.";
+has loaded instead of a pattern, and a rule's valueClassifier setting runs one on the rule's own \
+matches; list_models shows which models are available and what each can be used for. Scan text is never stored, and findings never contain matched values.";
 
 const DEFINITION_HELP: &str = "The rule's definition as canonical JSON. Every field is optional \
 while drafting, and unknown fields are rejected. Fields: name (string); enabled (boolean, default \
@@ -49,7 +49,10 @@ checked against keyNames); prefix (the public prefix shown as the redacted previ
 {\"algorithm\": \"base58check\"}, or {\"algorithm\": \"crc32\", \"encoding\": \
 \"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); remediation (string). \
 Model rules take model ({\"id\": name, \"sha256\": hash}, from list_models) and threshold (0 to \
-100: a model score at or above it counts as a secret) instead of a pattern.";
+100: a model score at or above it counts as a secret) instead of a pattern. valueClassifier \
+({\"model\": {\"id\": name, \"sha256\": hash}, \"minScore\": 0 to 100}) runs a value classifier \
+model on the rule's matches: values it rates below minScore as a credential get lower \
+confidence.";
 
 /// The MCP service, ready to mount on the API router.
 pub fn service(state: AppState) -> StreamableHttpService<ScannerMcp, LocalSessionManager> {
@@ -319,8 +322,9 @@ impl ScannerMcp {
 #[tool_router]
 impl ScannerMcp {
     #[tool(
-        description = "List the models the API has loaded, which model rules name by sha256, \
-                       with the model rule types each one fits.",
+        description = "List the models the API has loaded, which rules name by sha256, with \
+                       what each can be used for: model_assessment or model_detection rules, or \
+                       a rule's value_classifier setting.",
         annotations(read_only_hint = true)
     )]
     async fn list_models(&self) -> Result<Json<ModelList>, ToolError> {

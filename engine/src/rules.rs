@@ -107,6 +107,20 @@ pub struct RuleDefinition {
     /// For model rules: a model score (0–100) at or above this counts as a secret. Other rule
     /// types ignore it.
     pub threshold: Option<i64>,
+    /// If set, a model says what each matched value is (a credential, a non-secret random
+    /// string, or a placeholder), and values it doesn't rate as credentials get lower
+    /// confidence. Rules with no value (unsafe handling) ignore it.
+    pub value_classifier: Option<ValueClassifierSetting>,
+}
+
+/// A rule's value classifier: which model to run on its matches, and how sure the model must be
+/// that a value is a credential for the match to keep its confidence.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct ValueClassifierSetting {
+    pub model: Option<ModelRef>,
+    /// 0–100: a value whose credential score is below this gets lower confidence.
+    pub min_score: Option<i64>,
 }
 
 /// Which model a model rule runs. The hash is what identifies it, so a rule set version always
@@ -160,6 +174,7 @@ pub enum RuleField {
     Remediation,
     Model,
     Threshold,
+    ValueClassifier,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -228,6 +243,14 @@ pub(crate) enum Matcher {
     },
 }
 
+/// A rule's value classifier, checked and ready to run.
+#[derive(Debug)]
+pub(crate) struct CompiledValueClassifier {
+    pub sha256: String,
+    pub label: Option<String>,
+    pub min_score: u8,
+}
+
 /// A rule that passed its checks, ready to run.
 #[derive(Debug)]
 pub(crate) struct CompiledRule {
@@ -243,6 +266,7 @@ pub(crate) struct CompiledRule {
     pub min_entropy: Option<f64>,
     pub checksum: Option<Checksum>,
     pub password_shape: Option<PasswordShape>,
+    pub value_classifier: Option<CompiledValueClassifier>,
     pub remediation: String,
 }
 
@@ -371,6 +395,11 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
         ));
     }
 
+    let value_classifier = definition
+        .value_classifier
+        .as_ref()
+        .and_then(|setting| check_value_classifier(setting, &error, &mut check.errors));
+
     let uses_model = definition
         .detection_type
         .is_some_and(DetectionType::uses_model);
@@ -439,6 +468,7 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
             min_entropy: definition.min_entropy,
             checksum: definition.checksum,
             password_shape: definition.password_shape,
+            value_classifier,
             remediation: definition.remediation.clone().unwrap_or_default(),
         }),
         _ => None,
@@ -446,73 +476,115 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
     (compiled, check)
 }
 
+type ErrorFn<'a> = &'a dyn Fn(RuleField, ErrorCode, &str, Option<(usize, usize)>) -> RuleError;
+
 /// Checks a model rule's model and threshold, returning its matcher when both are valid.
 fn check_model(
     definition: &RuleDefinition,
-    error: &impl Fn(RuleField, ErrorCode, &str, Option<(usize, usize)>) -> RuleError,
+    error: ErrorFn,
     errors: &mut Vec<RuleError>,
 ) -> Option<Matcher> {
-    let sha256 = definition
-        .model
-        .as_ref()
+    let model = check_model_ref(definition.model.as_ref(), RuleField::Model, error, errors);
+    let threshold = check_score(
+        definition.threshold,
+        RuleField::Threshold,
+        "threshold",
+        error,
+        errors,
+    );
+    let (sha256, label) = model?;
+    Some(Matcher::Model {
+        sha256,
+        label,
+        threshold: threshold?,
+    })
+}
+
+/// Checks a value classifier setting: its model and minimum score.
+fn check_value_classifier(
+    setting: &ValueClassifierSetting,
+    error: ErrorFn,
+    errors: &mut Vec<RuleError>,
+) -> Option<CompiledValueClassifier> {
+    let model = check_model_ref(
+        setting.model.as_ref(),
+        RuleField::ValueClassifier,
+        error,
+        errors,
+    );
+    let min_score = check_score(
+        setting.min_score,
+        RuleField::ValueClassifier,
+        "minimum score",
+        error,
+        errors,
+    );
+    let (sha256, label) = model?;
+    Some(CompiledValueClassifier {
+        sha256,
+        label,
+        min_score: min_score?,
+    })
+}
+
+/// A model's hash (lowercased) and readable name, when the hash is present and well formed.
+fn check_model_ref(
+    model: Option<&ModelRef>,
+    field: RuleField,
+    error: ErrorFn,
+    errors: &mut Vec<RuleError>,
+) -> Option<(String, Option<String>)> {
+    let sha256 = model
         .and_then(|model| model.sha256.as_deref())
         .map(str::trim)
         .unwrap_or("");
-    let sha256 = if sha256.is_empty() {
+    if sha256.is_empty() {
         errors.push(error(
-            RuleField::Model,
+            field,
             ErrorCode::Required,
             "A model, identified by its SHA-256 hash, is required.",
             None,
         ));
-        None
-    } else if sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    if sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         errors.push(error(
-            RuleField::Model,
+            field,
             ErrorCode::InvalidFormat,
             "The model hash must be 64 hexadecimal characters.",
             None,
         ));
-        None
-    } else {
-        Some(sha256.to_ascii_lowercase())
-    };
+        return None;
+    }
+    let label = model
+        .and_then(|model| model.id.as_deref())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(String::from);
+    Some((sha256.to_ascii_lowercase(), label))
+}
 
-    let threshold = match definition.threshold {
-        None => {
-            errors.push(error(
-                RuleField::Threshold,
-                ErrorCode::Required,
-                "A threshold is required.",
-                None,
-            ));
+/// A required 0–100 score, such as a threshold.
+fn check_score(
+    score: Option<i64>,
+    field: RuleField,
+    name: &str,
+    error: ErrorFn,
+    errors: &mut Vec<RuleError>,
+) -> Option<u8> {
+    let Some(score) = score else {
+        let message = format!("A {name} is required.");
+        errors.push(error(field, ErrorCode::Required, &message, None));
+        return None;
+    };
+    match u8::try_from(score) {
+        Ok(score) if score <= 100 => Some(score),
+        _ => {
+            let message = format!("The {name} must be between 0 and 100.");
+            errors.push(error(field, ErrorCode::OutOfRange, &message, None));
             None
         }
-        Some(threshold) => match u8::try_from(threshold) {
-            Ok(threshold) if threshold <= 100 => Some(threshold),
-            _ => {
-                errors.push(error(
-                    RuleField::Threshold,
-                    ErrorCode::OutOfRange,
-                    "The threshold must be between 0 and 100.",
-                    None,
-                ));
-                None
-            }
-        },
-    };
-
-    Some(Matcher::Model {
-        sha256: sha256?,
-        label: definition
-            .model
-            .as_ref()
-            .and_then(|model| model.id.as_deref())
-            .map(str::trim)
-            .filter(|id| !id.is_empty())
-            .map(String::from),
-        threshold: threshold?,
-    })
+    }
 }
 
 /// Why a pattern did not compile: the error code, a message, and the bad span when known.

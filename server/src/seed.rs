@@ -1,19 +1,25 @@
 use crate::db::Db;
 use secrets_scanner_engine::{
-    RuleDefinition, VALUE_CLASSIFIER_SHA256, default_rule_set, value_classifier_rule,
+    DetectionType, RuleDefinition, default_rule_set, value_classifier_setting,
 };
 
 /// The name the built-in rules are seeded under. Users can rename it.
 pub const BUILT_IN_RULE_SET_NAME: &str = "Built-in rules";
 
-/// The rules a new database starts with: the engine's built-in rule set, then the value
-/// classifier, which the API can run because it loads the classifier at startup.
+/// The rules a new database starts with: the engine's built-in rule set, with the value
+/// classifier turned on for the likely-credential rules. Those match by randomness or password
+/// shape, so they're the ones that catch hashes and IDs; the API loads the classifier at startup.
 pub fn built_in_rules() -> Vec<RuleDefinition> {
     default_rule_set()
         .rules
         .into_iter()
-        .map(|rule| rule.definition)
-        .chain([value_classifier_rule()])
+        .map(|rule| {
+            let mut definition = rule.definition;
+            if definition.detection_type == Some(DetectionType::LikelyCredential) {
+                definition.value_classifier = Some(value_classifier_setting());
+            }
+            definition
+        })
         .collect()
 }
 
@@ -59,30 +65,6 @@ pub async fn seed_default_rule_set(db: &Db) -> rusqlite::Result<()> {
             )?;
         }
         transaction.commit()
-    })
-    .await
-}
-
-/// Adds the value classifier rule to a database seeded before the API shipped it, once. It is
-/// saved as a rule on its own, outside any version, since versions never change; add it to a
-/// new version to use it. Databases that already have a rule naming the classifier are left
-/// alone, even if that rule was edited.
-pub async fn seed_value_classifier_rule(db: &Db) -> rusqlite::Result<()> {
-    db.call(|connection| {
-        let existing: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM rules WHERE json_extract(definition, '$.model.sha256') = ?1",
-            [VALUE_CLASSIFIER_SHA256],
-            |row| row.get(0),
-        )?;
-        if existing == 0 {
-            let definition = serde_json::to_string(&value_classifier_rule())
-                .expect("a rule definition always serializes");
-            connection.execute(
-                "INSERT INTO rules (definition, drafting) VALUES (?1, 0)",
-                [&definition],
-            )?;
-        }
-        Ok(())
     })
     .await
 }

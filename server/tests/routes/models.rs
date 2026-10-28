@@ -13,7 +13,7 @@ async fn lists_the_loaded_models_and_the_rule_types_they_fit() {
             "id": "value-classifier",
             "sha256": VALUE_CLASSIFIER_SHA256,
             "inputLength": 128,
-            "detectionTypes": ["model_assessment"],
+            "uses": ["value_classifier"],
         }])
     );
 }

@@ -464,8 +464,5 @@ async fn lists_the_loaded_models() {
         models["models"][0]["sha256"],
         secrets_scanner_engine::VALUE_CLASSIFIER_SHA256
     );
-    assert_eq!(
-        models["models"][0]["detectionTypes"],
-        json!(["model_assessment"])
-    );
+    assert_eq!(models["models"][0]["uses"], json!(["value_classifier"]));
 }

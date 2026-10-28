@@ -67,7 +67,7 @@ Rust's `regex` crate runs in linear time, so no pattern can backtrack catastroph
 
 ## Model rules
 
-Model rules add a model's judgment on top of the pattern rules; a [trained value classifier](#the-value-classifier) ships with the engine. A rule set without them scans exactly as before. They run only when the engine is built with the `ml` feature (`cargo build --features ml`), which runs ONNX models on the CPU with [tract](https://github.com/sonos/tract), a pure-Rust runtime.
+Models add judgment on top of the pattern rules in two ways: as **model rules** (`model_assessment`, `model_detection`), and as a pattern rule's **[value classifier setting](#value-classifier-setting)**, which checks that rule's own matches the way a checksum does. A [trained value classifier](#the-value-classifier) ships with the engine. A rule set without models scans exactly as before. They run only when the engine is built with the `ml` feature (`cargo build --features ml`), which runs ONNX models on the CPU with [tract](https://github.com/sonos/tract), a pure-Rust runtime.
 
 ```json
 {
@@ -95,17 +95,34 @@ Every model takes one row of token ids, `int64[1, L]`, with `L` fixed by the mod
 - **Assessments run after the 200-finding cap,** so a flood of matches can't multiply model runs. Findings with no value (unsafe handling) get no assessment. Detection findings are assessed too.
 - **Detection reads the whole text,** about `2 × bytes / L` model runs per scan, so it is the slowest rule type: a 1 MB input with `L = 256` means about 8,000 model runs.
 
+### Value classifier setting
+
+A pattern rule can run a model on its own matches to say what each matched value is: a credential, a non-secret random string (a hash, digest, ID, or encoded data), or a placeholder.
+
+```json
+"valueClassifier": {
+  "model": { "id": "value-classifier", "sha256": "…64 hex characters…" },
+  "minScore": 50
+}
+```
+
+- **Input and output:** the same value-between-markers input as a model assessment, but built from the value's own line only, so the name it's assigned to counts and other lines don't. The output is three scores, `float[1, 3]`, that sum to 1: credential, non-secret, placeholder.
+- **What it changes:** a value whose credential score (0–100) is below `minScore` keeps its finding, but its confidence drops to 30, the same as commented-out code, and "why flagged" says what the value looks like instead. A value rated a placeholder also counts as an example signal for the placeholder score. The finding records the scores as `valueClass`.
+- **Where it helps:** rules that match by randomness or password shape, which can't tell a password from a commit hash, UUID, or digest under a secret-sounding name. Fixed-format rules (`AKIA…`, `ghp_…`) don't need it.
+- **Checked like a checksum:** `model.sha256` must be 64 hexadecimal characters and `minScore` 0–100. A model that wasn't loaded or doesn't return three scores makes the rule a `rule_error` (field `value_classifier`), so none of its matches are reported. Each value is classified once per model, after the 200-finding cap. Rules with no value (unsafe handling) ignore the setting.
+
 ### The value classifier
 
-[`models/value-classifier.onnx`](models/value-classifier.onnx) is a trained `model_assessment` model (about 140 KB, `L = 128`, SHA-256 `b72bdda9…8528`). It is not part of the engine's built-in rule set, which runs without models; the engine exports it as `VALUE_CLASSIFIER_ONNX` with a ready-made rule, `value_classifier_rule()`. The API loads it at startup, lists it at `GET /api/models` (and the MCP `list_models` tool), and seeds the rule into new databases. [`ml/`](../ml/README.md) has the code that trains it and how to retrain it.
+[`models/value-classifier.onnx`](models/value-classifier.onnx) is a trained model for the value classifier setting (about 140 KB, `L = 128`, SHA-256 `e620ed64…1459`). The engine exports it as `VALUE_CLASSIFIER_ONNX`, with `value_classifier_setting()` naming it at a minimum score of 50. The engine's built-in rule set doesn't use it, since that runs without models. The API loads it at startup, lists it at `GET /api/models` (and the MCP `list_models` tool), and turns it on for the two likely-credential rules (secret-looking assignment and password-shaped value) when it seeds a new database. [`ml/`](../ml/README.md) has the code that trains it and how to retrain it.
 
-It is a small byte-level convolutional network trained only on synthetic data, so it has learned the generator, not real repositories:
+It judges the matched value and the name it's assigned to, not the file around it: it doesn't try to tell a test from production config. It is a small byte-level convolutional network trained only on synthetic data, so its held-out accuracy (99%) says little about real repositories. Known limits:
 
-- It reads 128 bytes around a value, so an example or test cue further away than that doesn't count.
-- It rates any value in a test or example context as an example, including a real secret someone pasted into a test. The finding is still reported either way.
-- Retraining changes the file's hash. Rule set versions that name the old hash keep naming it, so scans with them report the classifier rule as unavailable until a new version uses the new rule.
+- A hex string under a secret-sounding name is genuinely ambiguous (an API key or a hash), and it may call it either way.
+- Some values get the wrong "not a credential" class: a resource path can come back as a placeholder rather than a non-secret. The outcome, lower confidence, is still right.
+- Credentials whose format looks like an ID, such as API keys that are UUIDs, will be rated non-secret.
+- Retraining changes the file's hash. Rule set versions that name the old hash keep naming it, so their rules report the classifier as unavailable until a new version uses the new setting.
 
-`tests/value_classifier.rs` runs it through the engine on hand-written cases. Treat its verdicts as a hint until it has been trained and checked on real labeled data.
+`tests/value_classifier.rs` runs it through the engine on hand-written cases: passwords and keys, hashes and UUIDs under secret-sounding names, URLs and paths, and placeholders.
 
 The tests in `tests/models.rs` build tiny hand-written ONNX models in code, so they need no model files.
 
@@ -226,7 +243,7 @@ Source code isn't parsed into a syntax tree. That would need a parser per langua
 
 ## Trade-offs
 
-- **Regex plus entropy, checksums, and format parsing first, machine learning as an optional extra:** the built-in rules are predictable, explainable, and fast, so every finding can say exactly why it was flagged. Checksums and format parsing reduce false positives and misses without leaving the machine. The cost is remaining false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness. Model rules target both, but only when a rule set includes them, and their verdicts sit beside the other rules' scores instead of replacing them.
+- **Regex plus entropy, checksums, and format parsing first, machine learning as an optional extra:** the built-in rules are predictable, explainable, and fast, so every finding can say exactly why it was flagged. Checksums and format parsing reduce false positives and misses without leaving the machine. The cost is remaining false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness. Models target both, but only when a rule set includes them: model rules' verdicts sit beside the other rules' scores, and a value classifier only lowers a match's confidence, never drops it.
 - **No live verification:** asking a provider whether a secret works (as TruffleHog does) is the strongest signal, but it sends the secret off the machine, which this design rules out.
 - **Narrow formats over broad ones:** the direct-credential rules match exact, well-known formats, so they rarely fire by mistake. The assignment rule casts the wider net and is ranked lower.
 - **Signals only in explanations:** "why flagged" notes and log events never quote the input, so they're safe to store and log. The cost is that an explanation can't say *which* key name triggered it.

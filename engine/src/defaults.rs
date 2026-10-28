@@ -3,7 +3,7 @@
 //! that contract. Every rule is ordinary data: users can edit, disable, or remove any of them.
 //! See `engine/README.md` for what each rule catches, what it misses, and why.
 
-use crate::rules::{DetectionType, ModelRef, RuleDefinition, RuleSet};
+use crate::rules::{ModelRef, RuleSet, ValueClassifierSetting};
 
 const DEFAULT_RULE_SET: &str = include_str!("../rule_sets/default.json");
 
@@ -12,26 +12,25 @@ pub fn default_rule_set() -> RuleSet {
         .expect("rule_sets/default.json matches the rule set contract")
 }
 
-/// The trained value classifier in `models/`, a model for a model assessment rule. `ml/` has the
-/// code that trains it.
+/// The trained value classifier in `models/`, for a rule's value classifier setting. It says
+/// whether a matched value is a credential, a non-secret random string, or a placeholder. `ml/`
+/// has the code that trains it.
 pub const VALUE_CLASSIFIER_ONNX: &[u8] = include_bytes!("../models/value-classifier.onnx");
 
 /// The SHA-256 of [`VALUE_CLASSIFIER_ONNX`], which is how a rule names it.
 pub const VALUE_CLASSIFIER_SHA256: &str =
-    "b72bdda9ee94f1b0820a9c6b9b592233d757186743a78c09ac2677b1a55a8528";
+    "e620ed64c0f0307884e0103f97e6ab62820685909ef876c42833cf4807ee1459";
 
-/// A model assessment rule that runs the value classifier. It is kept out of the built-in rule
-/// set, which runs without models; callers that load the classifier add it themselves.
-pub fn value_classifier_rule() -> RuleDefinition {
-    RuleDefinition {
-        name: Some("Value classifier".into()),
-        detection_type: Some(DetectionType::ModelAssessment),
+/// A value classifier setting that runs the bundled classifier: matches it rates below 50 as a
+/// credential get lower confidence. The built-in rules don't carry it, since they run without
+/// models; callers that load the classifier add it to the rules they want it on.
+pub fn value_classifier_setting() -> ValueClassifierSetting {
+    ValueClassifierSetting {
         model: Some(ModelRef {
             id: Some("value-classifier".into()),
             sha256: Some(VALUE_CLASSIFIER_SHA256.into()),
         }),
-        threshold: Some(50),
-        ..RuleDefinition::default()
+        min_score: Some(50),
     }
 }
 
@@ -50,11 +49,9 @@ mod tests {
     }
 
     #[test]
-    fn the_value_classifier_rule_is_valid() {
-        let rule = crate::Rule {
-            id: 1,
-            definition: value_classifier_rule(),
-        };
+    fn a_built_in_rule_with_the_value_classifier_is_valid() {
+        let mut rule = default_rule_set().rules[3].clone();
+        rule.definition.value_classifier = Some(value_classifier_setting());
         assert!(crate::check_rule(&rule).is_valid());
     }
 }

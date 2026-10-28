@@ -82,12 +82,44 @@ NON_SECRETS = [
     lambda r: r.choice(["req_", "evt_", "cus_", "txn_", "ord_"]) + pick(r, ALNUM, 24),
     lambda r: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA" + pick(r, BASE64, 43),  # public key
     lambda r: "https://cdn.example.com/assets/" + pick(r, HEX, 16) + ".js",
+    lambda r: url(r),
+    lambda r: url(r),
+    lambda r: path(r),
+    lambda r: path(r),
     lambda r: "/var/lib/app/" + pick(r, string.ascii_lowercase, 8) + "/" + pick(r, HEX, 12),
     lambda r: f"{r.randint(0, 9)}.{r.randint(0, 40)}.{r.randint(0, 200)}+build.{pick(r, HEX, 8)}",
     lambda r: pick(r, string.digits, r.randint(10, 19)),  # timestamp or numeric id
     lambda r: "#" + pick(r, HEX, 6),
     lambda r: "W/\"" + pick(r, HEX, 32) + "\"",  # etag
 ]
+
+PATH_WORDS = ["api", "v1", "v2", "oauth", "oauth2", "token", "auth", "login", "users", "keys",
+              "secrets", "callback", "assets", "static", "config", "projects", "versions",
+              "buckets", "data", "logs", "reset", "password", "session", "credentials", "id"]
+HOSTS = ["auth", "api", "login", "accounts", "id", "sso", "cdn", "storage", "www", "app"]
+DOMAINS = ["example.com", "acme.io", "internal.net", "corp.local", "service.dev", "googleapis.com"]
+
+
+def url(r: random.Random) -> str:
+    """A URL made of ordinary words, sometimes with a number, an ID, or a query string."""
+    segments = [r.choice(PATH_WORDS + [str(r.randint(1, 999))]) for _ in range(r.randint(1, 4))]
+    query = r.choice(["", "", f"?{r.choice(PATH_WORDS)}={r.choice(PATH_WORDS)}"])
+    port = r.choice(["", "", f":{r.choice([443, 8080, 8443, 3000])}"])
+    return f"{r.choice(['https', 'http'])}://{r.choice(HOSTS)}.{r.choice(DOMAINS)}{port}/" + "/".join(segments) + query
+
+
+def path(r: random.Random) -> str:
+    """A file path, bucket key, or cloud resource name made of ordinary words."""
+    words = [r.choice(PATH_WORDS) for _ in range(r.randint(2, 5))]
+    style = r.randrange(4)
+    if style == 0:
+        return "/" + "/".join(words) + r.choice(["", ".pem", ".json", ".key", ".txt"])
+    if style == 1:
+        return f"s3://{r.choice(PATH_WORDS)}-{r.choice(PATH_WORDS)}/" + "/".join(words)
+    if style == 2:
+        return f"projects/{r.choice(PATH_WORDS)}/secrets/{r.choice(PATH_WORDS)}-{r.choice(PATH_WORDS)}/versions/{r.randint(1, 20)}"
+    return "./" + "/".join(words) + r.choice([".yaml", ".env.example", ".crt", ""])
+
 
 # Placeholder, documentation, and made-up values.
 PLACEHOLDER_WORDS = ["CHANGE-ME", "CHANGEME", "change_me", "EXAMPLE", "example", "REPLACE",
@@ -120,7 +152,9 @@ NEUTRAL_KEYS = ["value", "key", "data", "config_value", "x", "VALUE", "param", "
 NON_SECRET_KEYS = ["commit", "sha", "revision", "digest", "checksum", "integrity", "etag", "id",
                    "uuid", "request_id", "trace_id", "object_id", "hash", "fingerprint",
                    "public_key", "image", "icon", "url", "path", "version", "build_id",
-                   "created_at", "color", "customer_id", "event_id"]
+                   "created_at", "color", "customer_id", "event_id", "token_url", "auth_url",
+                   "secret_name", "secret_path", "key_file", "key_path", "password_file",
+                   "password_reset_url", "api_endpoint", "token_endpoint", "credentials_path"]
 
 FILLER = [
     "region: us-east-1", "debug = false", "port: 8080", "timeout_ms: 3000", "log_level=info",

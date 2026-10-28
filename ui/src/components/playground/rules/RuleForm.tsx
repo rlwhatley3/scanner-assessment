@@ -25,6 +25,11 @@ import PasswordShapeFields, {
   passwordShapeFormFrom,
   passwordShapeFrom,
 } from "./PasswordShapeFields.tsx";
+import ValueClassifierFields, {
+  type ValueClassifierForm,
+  valueClassifierFormFrom,
+  valueClassifierFrom,
+} from "./ValueClassifierFields.tsx";
 
 interface FormState {
   name: string;
@@ -37,6 +42,7 @@ interface FormState {
   minEntropy: string;
   checksum: ChecksumForm;
   passwordShape: PasswordShapeForm;
+  valueClassifier: ValueClassifierForm;
   remediation: string;
   model: { id?: string; sha256: string } | null;
   threshold: string;
@@ -54,6 +60,7 @@ function fromDefinition(definition: RuleDefinition): FormState {
     minEntropy: definition.minEntropy == null ? "" : String(definition.minEntropy),
     checksum: checksumFormFrom(definition.checksum),
     passwordShape: passwordShapeFormFrom(definition.passwordShape),
+    valueClassifier: valueClassifierFormFrom(definition.valueClassifier),
     remediation: definition.remediation ?? "",
     model: definition.model?.sha256
       ? { ...(definition.model.id && { id: definition.model.id }), sha256: definition.model.sha256 }
@@ -73,6 +80,7 @@ const FORM_KEYS = [
   "minEntropy",
   "checksum",
   "passwordShape",
+  "valueClassifier",
   "remediation",
   "model",
   "threshold",
@@ -91,6 +99,7 @@ function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinit
     .filter(Boolean);
   const checksum = checksumFrom(form.checksum);
   const passwordShape = passwordShapeFrom(form.passwordShape);
+  const valueClassifier = valueClassifierFrom(form.valueClassifier);
   return {
     ...others,
     ...(form.name.trim() && { name: form.name.trim() }),
@@ -103,6 +112,7 @@ function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinit
     ...(form.minEntropy.trim() && { minEntropy: Number(form.minEntropy) }),
     ...(checksum && { checksum }),
     ...(passwordShape && { passwordShape }),
+    ...(valueClassifier && { valueClassifier }),
     ...(form.remediation.trim() && { remediation: form.remediation.trim() }),
     ...(form.model && { model: form.model }),
     ...(form.threshold.trim() && { threshold: Number(form.threshold) }),
@@ -146,7 +156,9 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
   // Models that fit this rule type, plus the rule's own model if the API hasn't loaded it.
   const modelOptions = useMemo(() => {
     const fitting = (models.data ?? []).filter(
-      (model) => form.detectionType && model.detectionTypes.includes(form.detectionType),
+      (model) =>
+        (form.detectionType === "model_assessment" || form.detectionType === "model_detection") &&
+        model.uses.includes(form.detectionType),
     );
     const current = form.model;
     if (current && !fitting.some((model) => model.sha256 === current.sha256)) {
@@ -405,6 +417,16 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
             onChange={(passwordShape) => update("passwordShape", passwordShape)}
             errors={fieldErrors("password_shape")}
           />
+
+          {form.detectionType !== "unsafe_handling" &&
+            form.detectionType !== "placeholder_vs_real" && (
+              <ValueClassifierFields
+                value={form.valueClassifier}
+                onChange={(valueClassifier) => update("valueClassifier", valueClassifier)}
+                errors={fieldErrors("value_classifier")}
+                models={models.data}
+              />
+            )}
         </>
       )}
 

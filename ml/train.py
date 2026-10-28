@@ -18,7 +18,7 @@ from onnx import TensorProto, helper, numpy_helper
 from torch import nn
 
 from data import CLASSES, generate
-from encoding import VOCAB_SIZE, encode_value
+from encoding import VOCAB_SIZE, encode_value, line_bounds
 
 INPUT_LEN = 128
 EMBED_DIM = 24
@@ -51,7 +51,12 @@ class ValueClassifier(nn.Module):
 
 
 def tensors(samples) -> tuple[torch.Tensor, torch.Tensor]:
-    ids = [encode_value(s.text, s.start, s.end, INPUT_LEN) for s in samples]
+    ids = []
+    for s in samples:
+        # The engine shows the classifier only the value's own line.
+        line_start, line_end = line_bounds(s.text, s.start, s.end)
+        line = s.text[line_start:line_end]
+        ids.append(encode_value(line, s.start - line_start, s.end - line_start, INPUT_LEN))
     labels = [s.label for s in samples]
     return torch.tensor(ids, dtype=torch.int64), torch.tensor(labels, dtype=torch.int64)
 

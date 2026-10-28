@@ -1,6 +1,6 @@
 # Value classifier training
 
-Trains the model behind [`engine/models/value-classifier.onnx`](../engine/models/value-classifier.onnx): a `model_assessment` model that rates a finding's value as likely real or likely an example. The engine's side of the contract is in [`engine/README.md`](../engine/README.md#model-rules).
+Trains the model behind [`engine/models/value-classifier.onnx`](../engine/models/value-classifier.onnx), which a rule's value classifier setting runs on its matches. It says whether a matched value is a credential, a non-secret random string (a hash, digest, ID, or encoded data), or a placeholder. It judges the value and the name it's assigned to, not whether the file is a test or documentation. The engine's side of the contract is in [`engine/README.md`](../engine/README.md#value-classifier-setting).
 
 ## Retrain
 
@@ -15,7 +15,7 @@ VIRTUAL_ENV=.venv uv pip install -r requirements.txt
 
 Training takes about three minutes on a laptop CPU. It overwrites `engine/models/value-classifier.onnx` and prints the new file's SHA-256. Training is seeded, so the same code gives the same file on the same machine. Put the new hash in `VALUE_CLASSIFIER_SHA256` in `engine/src/defaults.rs`, then run `cargo test --features ml` in `engine/`.
 
-A new hash is a new model to the engine: rule set versions that name the old hash report the classifier rule as unavailable until a new version includes the updated rule.
+A new hash is a new model to the engine: rule set versions that name the old hash report their classifier as unavailable until a new version uses the updated setting.
 
 ## Files
 
@@ -28,15 +28,16 @@ A new hash is a new model to the engine: rule set versions that name the old has
 
 ## The data
 
-Every sample is synthetic. Real-shaped values are random at generation time, so no secret-looking string is committed.
+Every sample is synthetic: one line of config or code that sets a name to a value, among a few ordinary lines. Like the engine, training shows the model only the value's own line. Real-shaped values are random at generation time, so no secret-looking string is committed.
 
-| Label | What it looks like |
-|---|---|
-| Real (1) | A random value in a known format (AWS, GitHub, npm, GitLab, Slack, Stripe live) or a generic high-entropy string or password, set in an ordinary config or code line. Some have an unrelated example or test line nearby, so only a cue at the value itself counts |
-| Example (0) | A documentation or placeholder value (`AKIAIOSFODNN7EXAMPLE`, `your_api_key_here`, `changeme`), a format-shaped fake (`ghp_xxxx…`, `sk_test_…`), a value with a placeholder word worked in (`…-CHANGE-ME`), or any value in a test or example context |
+| Class | Values | Names |
+|---|---|---|
+| Credential | Known formats (AWS, GitHub, npm, GitLab, Slack, Stripe live, Google, JWT), generic keys in hex, base64, or alphanumerics, made-up and human-style passwords, connection strings | Mostly secret-sounding (`password`, `api_key`, `token`), sometimes vague (`value`, `key`) |
+| Non-secret | Commit and file hashes, image digests, `sha512-…` integrity strings, UUIDs, object and request IDs, base64 image data, public keys, URLs, paths, versions, numbers, colors, etags | Mostly names that say what they are (`commit`, `uuid`, `integrity`), sometimes vague or secret-sounding, where the value's shape has to decide |
+| Placeholder | Documentation and placeholder values (`AKIAIOSFODNN7EXAMPLE`, `your_api_key_here`, `changeme`, `${API_KEY}`), format-shaped fakes (`ghp_xxxx…`), repeated or sequential characters, values with a placeholder word worked in (`…-CHANGE-ME`) | Mostly secret-sounding |
 
 ## The model
 
-Byte embeddings, three dilated 1-D convolutions, a max over positions, and one sigmoid output: about 35,000 parameters. `train.py` writes the ONNX graph by hand from the trained weights (Gather, Transpose, Conv, Relu, ReduceMax, Gemm, Sigmoid at opset 13) instead of using PyTorch's exporter, so the file only uses operators tract runs. Training uses label smoothing so scores stay off 0 and 1.
+Byte embeddings, three dilated 1-D convolutions, a max over positions, and a three-way softmax: about 35,000 parameters. `train.py` writes the ONNX graph by hand from the trained weights (Gather, Transpose, Conv, Relu, ReduceMax, Gemm, Softmax at opset 13) instead of using PyTorch's exporter, so the file only uses operators tract runs. Training uses label smoothing so scores stay off 0 and 1.
 
-Held-out accuracy on generated data is effectively 100%, which only shows that the model learned the generator. `engine/tests/value_classifier.rs` checks it on hand-written cases instead. The limits are listed in the [engine README](../engine/README.md#the-value-classifier).
+Held-out accuracy on generated data is about 99%; most misses are hex strings under ambiguous names, which are hard on purpose. That number only shows the model learned the generator. `engine/tests/value_classifier.rs` checks it on hand-written cases instead. The limits are listed in the [engine README](../engine/README.md#the-value-classifier).

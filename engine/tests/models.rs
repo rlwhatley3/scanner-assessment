@@ -4,8 +4,8 @@
 use prost::Message;
 use secrets_scanner_engine::{
     DetectionType, ErrorCode, MIN_DETECTION_BYTES, MatchDetails, ModelAssessment, ModelInfo,
-    ModelLoadError, ModelRef, ModelVerdict, Models, Rule, RuleDefinition, RuleField, RuleSet,
-    ScanError, ScanResult, Severity, Violation, default_rule_set, scan, scan_with_models,
+    ModelLoadError, ModelRef, ModelUse, ModelVerdict, Models, Rule, RuleDefinition, RuleField,
+    RuleSet, ScanError, ScanResult, Severity, Violation, default_rule_set, scan, scan_with_models,
 };
 use tract_onnx::pb;
 
@@ -426,7 +426,7 @@ fn assessment_rules_alone_cannot_scan() {
 }
 
 #[test]
-fn listing_models_says_which_rule_types_each_fits() {
+fn listing_models_says_what_each_can_be_used_for() {
     let mut models = Models::new();
     let assessor = models.load(&constant_assessor(0.5)).unwrap();
     let detector = models.load(&trigger_detector(16)).unwrap();
@@ -435,13 +435,13 @@ fn listing_models_says_which_rule_types_each_fits() {
             sha256: assessor,
             input_len: 32,
             output_len: 1,
-            detection_types: vec![DetectionType::ModelAssessment],
+            uses: vec![ModelUse::ModelAssessment],
         },
         ModelInfo {
             sha256: detector,
             input_len: 16,
             output_len: 16,
-            detection_types: vec![DetectionType::ModelDetection],
+            uses: vec![ModelUse::ModelDetection],
         },
     ];
     expected.sort_by(|a, b| a.sha256.cmp(&b.sha256));
