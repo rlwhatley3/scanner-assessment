@@ -1,6 +1,6 @@
 import { useMemo } from "react";
+import { SeverityIcon } from "../severity.tsx";
 import { type Highlight, segmentText } from "./highlights.ts";
-import { SeverityIcon } from "./severity.tsx";
 
 interface ScanTextProps {
   text: string;

@@ -1,4 +1,4 @@
-import type { MatchFinding, Severity } from "./api.ts";
+import type { MatchFinding, Severity } from "../api.ts";
 
 /** One highlighted range of the scan text, covering one finding or an overlapping set. */
 export interface Highlight {

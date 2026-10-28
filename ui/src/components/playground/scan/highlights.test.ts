@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { MatchFinding, Severity } from "./api.ts";
+import type { MatchFinding, Severity } from "../api.ts";
 import { buildHighlights, byteOffsetsToIndices, segmentText } from "./highlights.ts";
 
 function match(

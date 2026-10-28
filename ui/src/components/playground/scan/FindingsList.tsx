@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { MatchFinding } from "./api.ts";
-import { DETECTION_LABELS, SEVERITY_LABELS, SEVERITY_ORDER, SeverityIcon } from "./severity.tsx";
+import type { MatchFinding } from "../api.ts";
+import { DETECTION_LABELS, SEVERITY_LABELS, SEVERITY_ORDER, SeverityIcon } from "../severity.tsx";
 
 interface FindingsListProps {
   findings: MatchFinding[];
