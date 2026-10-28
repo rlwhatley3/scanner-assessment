@@ -1,14 +1,16 @@
 use secrets_scanner_engine::{
-    ErrorCode, FindingKind, MAX_FINDINGS, MAX_INPUT_BYTES, MatchDetails, Rule, RuleDefinition,
-    RuleField, ScanError, ScanResult, Violation, default_rule_set, scan,
+    Checksum, ChecksumEncoding, Crc32Checksum, ErrorCode, FindingKind, Format, MAX_FINDINGS,
+    MAX_INPUT_BYTES, MatchDetails, Rule, RuleDefinition, RuleField, ScanError, ScanResult,
+    Violation, default_rule_set, scan,
 };
 
 const AWS_KEY: &str = "AKIAZ7Q3LMN4XWY2PRT6";
 const GITHUB_TOKEN: &str = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
 const RANDOM_PASSWORD: &str = "q8Z!fP2xL7mR";
 
-/// Scans with the built-in rule set: ids 1–6 are the AWS key, GitHub token, private key,
-/// assignment, logging, and known placeholder values rules.
+/// Scans with the built-in rule set: ids 1–11 are the AWS key, GitHub token, private key,
+/// assignment, logging, known placeholder values, npm token, GitLab token, legacy GitLab
+/// token, payment card number, and Bitcoin private key rules.
 fn run(text: &str) -> ScanResult {
     scan(42, text, &default_rule_set()).expect("scan should run")
 }
@@ -286,4 +288,231 @@ fn locations_survive_unicode_and_mixed_line_endings() {
         (found[0].location.start_line, found[0].location.start_column),
         (3, 5)
     );
+}
+
+/// A GitHub token whose checksum is valid, built at run time so no real-looking token is
+/// committed.
+fn valid_github_token() -> String {
+    let random = "Zq7Lm2Xc9Vb4Nn6Tt1Rr8Pp3Kk5Hh0";
+    format!("ghp_{random}{}", Crc32Checksum::GITHUB.compute(random))
+}
+
+#[test]
+fn every_github_token_prefix_is_checked_with_the_same_checksum() {
+    let random = "Ab3De6Gh9Jk2Mn5Pq8St1Vw4Yz7Bc0";
+    let token = format!("gho_{random}{}", Crc32Checksum::GITHUB.compute(random));
+    let result = run(&format!("oauth = {token}"));
+    let found = matches(&result);
+    assert_eq!(result.findings[0].rule_id, 2);
+    assert_eq!(found[0].checksum_valid, Some(true));
+    assert_eq!(found[0].redacted_preview.as_deref(), Some("gh…"));
+}
+
+#[test]
+fn npm_tokens_are_found_and_checked_like_github_tokens() {
+    let random = "Kx4Mv7Pz1Qr3St6Uw9Yb2Dc5Fg8Hj0";
+    let valid = format!("npm_{random}{}", Crc32Checksum::GITHUB.compute(random));
+    let result = run(&format!("//registry.npmjs.org/:_authToken={valid}"));
+    let found = matches(&result);
+    let npm = result
+        .findings
+        .iter()
+        .position(|finding| finding.rule_id == 7)
+        .expect("the npm rule should match");
+    assert_eq!(found[npm].checksum_valid, Some(true));
+    assert_eq!(found[npm].confidence, 99);
+
+    let made_up = format!("npm_{}", "a".repeat(36));
+    let result = run(&format!("token: {made_up}"));
+    let npm = matches(&result)
+        .into_iter()
+        .zip(&result.findings)
+        .find(|(_, finding)| finding.rule_id == 7)
+        .map(|(details, _)| details.clone())
+        .expect("the npm rule should match");
+    assert_eq!(npm.checksum_valid, Some(false));
+}
+
+#[test]
+fn a_rule_author_can_describe_their_own_checksum() {
+    // An in-house token: "acme_", the covered part, then an 8-digit hex CRC32.
+    let setup = Crc32Checksum {
+        encoding: ChecksumEncoding::Hex,
+        prefix_length: 5,
+        length: 8,
+    };
+    let mut rule_set = default_rule_set();
+    rule_set.rules.push(Rule {
+        id: 100,
+        definition: RuleDefinition {
+            name: Some("Acme service key".into()),
+            pattern: Some(r"\bacme_[0-9a-f]{20}\b".into()),
+            prefix: Some("acme_".into()),
+            checksum: Some(Checksum::Crc32(setup)),
+            ..rule_set.rules[0].definition.clone()
+        },
+    });
+    let covered = "0123456789ab";
+    let valid = format!("acme_{covered}{}", setup.compute(covered));
+    let invalid = format!("acme_{covered}00000000");
+    let result =
+        scan(1, &format!("a = {valid}\nb = {invalid}"), &rule_set).expect("scan should run");
+    let found: Vec<Option<bool>> = result
+        .findings
+        .iter()
+        .zip(matches(&result))
+        .filter(|(finding, _)| finding.rule_id == 100)
+        .map(|(_, details)| details.checksum_valid)
+        .collect();
+    assert_eq!(found, [Some(true), Some(false)]);
+}
+
+#[test]
+fn a_token_with_a_valid_checksum_is_high_confidence() {
+    let result = run(&format!("gh = {}", valid_github_token()));
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].checksum_valid, Some(true));
+    assert_eq!(found[0].confidence, 99);
+    assert_eq!(found[0].placeholder_score, Some(5));
+    assert!(found[0].why_flagged.contains("checksum is valid"));
+}
+
+#[test]
+fn a_token_whose_checksum_fails_is_likely_made_up() {
+    let result = run(&format!("gh = {GITHUB_TOKEN}"));
+    let found = matches(&result);
+    assert_eq!(found[0].checksum_valid, Some(false));
+    assert_eq!(found[0].confidence, 50);
+    assert_eq!(found[0].placeholder_score, Some(70));
+    assert!(found[0].why_flagged.contains("checksum doesn't match"));
+}
+
+#[test]
+fn rules_without_a_checksum_report_none() {
+    let result = run(&format!("k = {AWS_KEY}"));
+    assert_eq!(matches(&result)[0].checksum_valid, None);
+}
+
+#[test]
+fn parsing_json_catches_a_quoted_secret_the_pattern_alone_misses() {
+    let secret = "Xk9$mQ2;vL7#pR4w";
+    let text = format!("{{\n  \"db\": {{\n    \"password\":\n      \"{secret}\"\n  }}\n}}");
+    let result = run(&text);
+    assert_eq!(result.format, Format::Json);
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    assert_eq!(result.findings[0].rule_id, 4);
+    let location = found[0].location;
+    assert_eq!(&text[location.start_byte..location.end_byte], secret);
+    assert_eq!(location.start_line, 4);
+}
+
+#[test]
+fn a_yaml_value_stops_before_its_trailing_comment() {
+    let text = format!("db:\n  password: \"{RANDOM_PASSWORD}\"  # rotate monthly\n");
+    let result = run(&text);
+    assert_eq!(result.format, Format::Yaml);
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    let location = found[0].location;
+    assert_eq!(
+        &text[location.start_byte..location.end_byte],
+        RANDOM_PASSWORD
+    );
+    assert!(!found[0].in_comment);
+}
+
+#[test]
+fn a_secret_in_a_comment_still_counts_but_looks_like_an_example() {
+    let result = run(&format!(
+        "# old key, do not use: {AWS_KEY}\nREGION=us-east-1\n"
+    ));
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].in_comment);
+    assert_eq!(found[0].placeholder_score, Some(70));
+    assert!(found[0].why_flagged.contains("in a comment"));
+}
+
+#[test]
+fn commented_out_logging_is_low_confidence() {
+    let result = run("// console.log(\"debug\", token)\nrun();\n");
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].in_comment);
+    assert_eq!(found[0].confidence, 30);
+}
+
+#[test]
+fn the_result_says_which_format_the_text_was_read_as() {
+    assert_eq!(run("A=1\nB=2\n").format, Format::Dotenv);
+    assert_eq!(run("a: 1\nb: 2\n").format, Format::Yaml);
+    assert_eq!(run("[1, 2]").format, Format::Json);
+    assert_eq!(run("hello there").format, Format::Text);
+}
+
+/// The findings from one rule, by rule id.
+fn from_rule(result: &ScanResult, rule_id: i64) -> Vec<MatchDetails> {
+    result
+        .findings
+        .iter()
+        .zip(matches(result))
+        .filter(|(finding, _)| finding.rule_id == rule_id)
+        .map(|(_, details)| details.clone())
+        .collect()
+}
+
+#[test]
+fn a_routable_gitlab_token_is_checked_and_not_mistaken_for_the_legacy_format() {
+    // Built from pieces so no token-shaped string sits in the source for secret scanners.
+    let body = ["glpat", "-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789.01.0w"].concat();
+    let token = format!("{body}{}", Crc32Checksum::GITLAB.compute(&body));
+    let result = run(&format!("GITLAB_TOKEN={token}\n"));
+    let routable = from_rule(&result, 8);
+    assert_eq!(routable.len(), 1);
+    assert_eq!(routable[0].checksum_valid, Some(true));
+    assert_eq!(routable[0].confidence, 99);
+    assert!(from_rule(&result, 9).is_empty());
+}
+
+#[test]
+fn a_legacy_gitlab_token_is_found_without_a_checksum() {
+    // Built from pieces so no token-shaped string sits in the source for secret scanners.
+    let token = ["glpat", "-Ab1Cd2Ef3Gh4Ij5Kl6Mn"].concat();
+    let result = run(&format!("token: {token}\n"));
+    let legacy = from_rule(&result, 9);
+    assert_eq!(legacy.len(), 1);
+    assert_eq!(legacy[0].checksum_valid, None);
+    assert!(from_rule(&result, 8).is_empty());
+}
+
+#[test]
+fn a_card_number_that_passes_luhn_is_high_confidence_and_one_that_fails_is_not() {
+    let result = run("card: 4111 1111 1111 1111\nother: 4111 1111 1111 1112\n");
+    let cards: Vec<(Option<bool>, u8)> = from_rule(&result, 10)
+        .iter()
+        .map(|card| (card.checksum_valid, card.confidence))
+        .collect();
+    assert_eq!(cards, [(Some(true), 99), (Some(false), 50)]);
+}
+
+#[test]
+fn card_numbers_outside_the_card_ranges_are_not_reported() {
+    let result = run("order_id: 1234567812345678\ntimestamp: 9999999999999999\n");
+    assert!(from_rule(&result, 10).is_empty());
+}
+
+#[test]
+fn a_bitcoin_private_key_is_checked_with_base58check() {
+    // The private key example from the Bitcoin wiki's Wallet Import Format page.
+    let wif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
+    let result = run(&format!("wallet_key: {wif}\n"));
+    let keys = from_rule(&result, 11);
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0].checksum_valid, Some(true));
+
+    let changed = wif.replacen('H', "J", 1);
+    let result = run(&format!("wallet_key: {changed}\n"));
+    assert_eq!(from_rule(&result, 11)[0].checksum_valid, Some(false));
 }

@@ -28,7 +28,7 @@ fn the_built_in_rules_are_valid_and_raise_no_warnings() {
 fn the_built_in_rule_set_file_is_in_the_scan_contract_shape() {
     let rule_set = default_rule_set();
     let ids: Vec<i64> = rule_set.rules.iter().map(|rule| rule.id).collect();
-    assert_eq!(ids, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(ids, (1..=11).collect::<Vec<i64>>());
     let types: Vec<DetectionType> = rule_set
         .rules
         .iter()
@@ -178,7 +178,8 @@ fn a_definition_reads_from_the_forms_camel_case_json() {
     let definition: RuleDefinition = serde_json::from_str(
         r#"{"name": "Slack token", "enabled": false, "detectionType": "direct_credential",
             "severity": "medium", "pattern": "xoxb-[0-9a-z-]+", "keyNames": ["slack"],
-            "minEntropy": 2.5}"#,
+            "minEntropy": 2.5,
+            "checksum": {"algorithm": "crc32", "encoding": "hex", "prefixLength": 5, "length": 8}}"#,
     )
     .expect("definition should parse");
     assert!(!definition.is_enabled());
@@ -186,4 +187,53 @@ fn a_definition_reads_from_the_forms_camel_case_json() {
     assert_eq!(definition.key_names, ["slack"]);
     assert_eq!(definition.min_entropy, Some(2.5));
     assert!(check_rule(&rule(1, definition)).is_valid());
+}
+
+#[test]
+fn an_unknown_checksum_is_rejected_by_the_contract() {
+    for checksum in [
+        r#""github_crc32""#,
+        r#"{"algorithm": "md5", "encoding": "hex", "prefixLength": 0, "length": 8}"#,
+        r#"{"algorithm": "crc32", "encoding": "base64", "prefixLength": 0, "length": 8}"#,
+        r#"{"encoding": "hex", "prefixLength": 0, "length": 8}"#,
+        r#"{"algorithm": "crc32", "encoding": "hex", "length": 8}"#,
+        r#"{"algorithm": "crc32", "encoding": "hex", "prefixLength": 0, "length": 8, "x": 1}"#,
+    ] {
+        let json =
+            format!(r#"{{"rules": [{{"id": 1, "definition": {{"checksum": {checksum}}}}}]}}"#);
+        assert!(
+            serde_json::from_str::<RuleSet>(&json).is_err(),
+            "{checksum}"
+        );
+    }
+}
+
+#[test]
+fn a_checksum_too_short_or_too_long_for_its_value_is_out_of_range() {
+    for length in [5, 17] {
+        let definition: RuleDefinition = serde_json::from_str(&format!(
+            r#"{{"name": "x", "detectionType": "direct_credential", "severity": "high",
+                "pattern": "x", "checksum": {{"algorithm": "crc32", "encoding": "base62",
+                "prefixLength": 4, "length": {length}}}}}"#
+        ))
+        .expect("definition should parse");
+        let check = check_rule(&rule(1, definition));
+        assert_eq!(check.errors.len(), 1, "length {length}");
+        assert_eq!(
+            (check.errors[0].field, check.errors[0].code),
+            (RuleField::Checksum, ErrorCode::OutOfRange)
+        );
+    }
+}
+
+#[test]
+fn luhn_and_base58check_setups_need_no_other_fields() {
+    for checksum in [
+        r#"{"algorithm": "luhn"}"#,
+        r#"{"algorithm": "base58check"}"#,
+    ] {
+        let json =
+            format!(r#"{{"rules": [{{"id": 1, "definition": {{"checksum": {checksum}}}}}]}}"#);
+        assert!(serde_json::from_str::<RuleSet>(&json).is_ok(), "{checksum}");
+    }
 }

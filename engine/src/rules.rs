@@ -1,3 +1,4 @@
+use crate::checksum::{Checksum, Crc32Checksum};
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -68,10 +69,15 @@ pub struct RuleDefinition {
     /// A public prefix every match starts with, shown as the redacted preview.
     pub prefix: Option<String>,
     /// If set, the `key` group (or the whole match) must contain one of these, ignoring case.
+    /// For likely-credential rules, values under these names in parsed JSON, YAML, or `.env`
+    /// text are checked too, even where the pattern alone would miss them.
     pub key_names: Vec<String>,
     /// If set, the `value` group (or the whole match) needs at least this many bits of
     /// entropy per character. Range 0–8.
     pub min_entropy: Option<f64>,
+    /// How the token format's checksum is built, if it has one. The matched value is checked
+    /// against it to tell a real-format secret from a made-up one.
+    pub checksum: Option<Checksum>,
     pub remediation: Option<String>,
 }
 
@@ -110,6 +116,7 @@ pub enum RuleField {
     Prefix,
     KeyNames,
     MinEntropy,
+    Checksum,
     Remediation,
 }
 
@@ -175,6 +182,7 @@ pub(crate) struct CompiledRule {
     pub prefix: Option<String>,
     pub key_names: Vec<String>,
     pub min_entropy: Option<f64>,
+    pub checksum: Option<Checksum>,
     pub remediation: String,
 }
 
@@ -255,6 +263,21 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
             None,
         ));
     }
+    if let Some(Checksum::Crc32(checksum)) = definition.checksum
+        && !(checksum.min_length()..=Crc32Checksum::MAX_LENGTH).contains(&checksum.length)
+    {
+        let message = format!(
+            "This checksum needs {} to {} characters to hold its full value.",
+            checksum.min_length(),
+            Crc32Checksum::MAX_LENGTH
+        );
+        check.errors.push(error(
+            RuleField::Checksum,
+            ErrorCode::OutOfRange,
+            &message,
+            None,
+        ));
+    }
     if let Some(entropy) = definition.min_entropy
         && !(0.0..=8.0).contains(&entropy)
     {
@@ -316,6 +339,7 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
                 .filter(|key| !key.is_empty())
                 .collect(),
             min_entropy: definition.min_entropy,
+            checksum: definition.checksum,
             remediation: definition.remediation.clone().unwrap_or_default(),
         }),
         _ => None,
