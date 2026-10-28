@@ -3,9 +3,41 @@
 A pure Rust library that scans text against a rule set. It does no I/O: callers (the API now, a CLI later) pass in the text and rules, and get back findings and log events. Nothing it returns contains the scanned text or a matched value.
 
 ```rust
-let result = scan(scan_id, text, &rules, &placeholders)?;
+let result = scan(scan_id, text, &rule_set)?;
 // result.findings, result.truncated, result.log
 ```
+
+## The rule set contract
+
+The API hands the engine one rule set version as JSON in this shape, and the engine parses it into a `RuleSet`:
+
+```json
+{
+  "placeholders": ["your_key_here", "changeme"],
+  "rules": [
+    {
+      "id": 1,
+      "definition": {
+        "name": "AWS access key",
+        "enabled": true,
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bAKIA[0-9A-Z]{16}\\b",
+        "prefix": "AKIA",
+        "keyNames": [],
+        "minEntropy": null,
+        "remediation": "Deactivate this key in AWS IAM..."
+      }
+    }
+  ]
+}
+```
+
+- `id` is the rule's database id, and `definition` is the snapshot stored with that rule set version.
+- Every `definition` field is optional, so a half-filled draft still parses and gets field-level errors. Missing `enabled` means enabled.
+- Unknown or misspelled fields are rejected at every level, so a contract mismatch fails loudly instead of being ignored.
+
+The built-in rule set lives in [`rule_sets/default.json`](rule_sets/default.json) in exactly this shape, so loading it exercises the same contract the API uses.
 
 ## How it works
 
@@ -20,7 +52,7 @@ Rust's `regex` crate runs in linear time, so no pattern can backtrack catastroph
 
 ## Built-in rules
 
-These are seeded as the first rule set version. Each one is ordinary data that users can edit, disable, or remove.
+These are seeded as the first rule set version from [`rule_sets/default.json`](rule_sets/default.json). Each one is ordinary data that users can edit, disable, or remove.
 
 | Rule | Detection type | Severity | Catches | Misses / limits |
 |---|---|---|---|---|

@@ -42,9 +42,10 @@ impl std::fmt::Display for Severity {
 
 /// A rule's definition as the rule form saves it (the `definition` JSON). Every field is
 /// optional so a half-filled draft still parses and gets field-level errors instead of a
-/// parse failure.
+/// parse failure. Unknown fields are rejected, so a misspelled field fails loudly instead of
+/// being silently ignored.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct RuleDefinition {
     pub name: Option<String>,
     /// Missing means enabled.
@@ -72,9 +73,21 @@ impl RuleDefinition {
 
 /// A stored rule: its database id plus its definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Rule {
     pub id: i64,
     pub definition: RuleDefinition,
+}
+
+/// What the API hands the engine for a scan: one rule set version's rules (with each rule's
+/// definition as snapshotted into that version) and its placeholder list. The built-in rule set
+/// in `rule_sets/default.json` is written in exactly this shape.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuleSet {
+    /// Known placeholder values; a match containing one scores as a likely example.
+    pub placeholders: Vec<String>,
+    pub rules: Vec<Rule>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

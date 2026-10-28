@@ -1,6 +1,6 @@
 use crate::location::{LineIndex, Location};
 use crate::rules::{
-    CompiledRule, DetectionType, Rule, RuleError, Severity, check_and_compile,
+    CompiledRule, DetectionType, Rule, RuleError, RuleSet, Severity, check_and_compile,
     duplicate_name_errors,
 };
 use serde::Serialize;
@@ -107,19 +107,15 @@ struct Candidate<'r> {
 
 /// Scans `text` with the enabled rules. Rules that fail their checks are skipped and reported
 /// as rule-error findings; the rest still run.
-pub fn scan(
-    scan_id: i64,
-    text: &str,
-    rules: &[Rule],
-    placeholders: &[String],
-) -> Result<ScanResult, ScanError> {
+pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, ScanError> {
     if text.trim().is_empty() {
         return Err(ScanError::Empty);
     }
     if text.len() > MAX_INPUT_BYTES {
         return Err(ScanError::TooLarge { bytes: text.len() });
     }
-    let enabled: Vec<Rule> = rules
+    let enabled: Vec<Rule> = rule_set
+        .rules
         .iter()
         .filter(|rule| rule.definition.is_enabled())
         .cloned()
@@ -149,7 +145,8 @@ pub fn scan(
         rule_errors.len()
     ));
 
-    let placeholders: Vec<String> = placeholders
+    let placeholders: Vec<String> = rule_set
+        .placeholders
         .iter()
         .map(|placeholder| placeholder.to_lowercase())
         .filter(|placeholder| !placeholder.is_empty())

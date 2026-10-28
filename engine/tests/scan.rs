@@ -1,26 +1,16 @@
 use secrets_scanner_engine::{
     ErrorCode, FindingKind, MAX_FINDINGS, MAX_INPUT_BYTES, MatchDetails, Rule, RuleDefinition,
-    RuleField, ScanError, ScanResult, Violation, default_placeholders, default_rules, scan,
+    RuleField, ScanError, ScanResult, Violation, default_rule_set, scan,
 };
 
 const AWS_KEY: &str = "AKIAZ7Q3LMN4XWY2PRT6";
 const GITHUB_TOKEN: &str = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
 const RANDOM_PASSWORD: &str = "q8Z!fP2xL7mR";
 
-/// The built-in rules with ids 1–5: AWS key, GitHub token, private key, assignment, logging.
-fn default_rule_set() -> Vec<Rule> {
-    default_rules()
-        .into_iter()
-        .enumerate()
-        .map(|(index, definition)| Rule {
-            id: index as i64 + 1,
-            definition,
-        })
-        .collect()
-}
-
+/// Scans with the built-in rule set: ids 1–5 are the AWS key, GitHub token, private key,
+/// assignment, and logging rules.
 fn run(text: &str) -> ScanResult {
-    scan(42, text, &default_rule_set(), &default_placeholders()).expect("scan should run")
+    scan(42, text, &default_rule_set()).expect("scan should run")
 }
 
 fn matches(result: &ScanResult) -> Vec<&MatchDetails> {
@@ -172,16 +162,16 @@ fn log_events_carry_the_scan_id() {
 
 #[test]
 fn a_broken_rule_becomes_a_rule_error_finding_and_the_others_still_run() {
-    let mut rules = default_rule_set();
-    rules.push(Rule {
+    let mut rule_set = default_rule_set();
+    rule_set.rules.push(Rule {
         id: 99,
         definition: RuleDefinition {
             name: Some("Broken".into()),
             pattern: Some("AKIA(".into()),
-            ..rules[0].definition.clone()
+            ..rule_set.rules[0].definition.clone()
         },
     });
-    let result = scan(1, &format!("k = {AWS_KEY}"), &rules, &[]).expect("scan should run");
+    let result = scan(1, &format!("k = {AWS_KEY}"), &rule_set).expect("scan should run");
     assert_eq!(matches(&result).len(), 1);
     let error = result
         .findings
@@ -202,12 +192,12 @@ fn a_broken_rule_becomes_a_rule_error_finding_and_the_others_still_run() {
 
 #[test]
 fn a_repeated_rule_name_is_a_rule_error_and_the_first_rule_still_runs() {
-    let mut rules = default_rule_set();
-    rules.push(Rule {
+    let mut rule_set = default_rule_set();
+    rule_set.rules.push(Rule {
         id: 6,
-        definition: rules[0].definition.clone(),
+        definition: rule_set.rules[0].definition.clone(),
     });
-    let result = scan(1, &format!("k = {AWS_KEY}"), &rules, &[]).expect("scan should run");
+    let result = scan(1, &format!("k = {AWS_KEY}"), &rule_set).expect("scan should run");
     assert_eq!(matches(&result).len(), 1);
     assert_eq!(result.findings[0].rule_id, 1);
     let errors: Vec<i64> = result
@@ -221,26 +211,26 @@ fn a_repeated_rule_name_is_a_rule_error_and_the_first_rule_still_runs() {
 
 #[test]
 fn disabled_rules_do_not_run_and_none_enabled_is_an_error() {
-    let mut rules = default_rule_set();
-    for rule in &mut rules {
+    let mut rule_set = default_rule_set();
+    for rule in &mut rule_set.rules {
         rule.definition.enabled = Some(rule.id != 2);
     }
-    let result = scan(1, &format!("token = {GITHUB_TOKEN}"), &rules, &[]).expect("scan should run");
+    let result = scan(1, &format!("token = {GITHUB_TOKEN}"), &rule_set).expect("scan should run");
     assert!(result.findings.iter().all(|finding| finding.rule_id != 2));
 
-    for rule in &mut rules {
+    for rule in &mut rule_set.rules {
         rule.definition.enabled = Some(false);
     }
-    assert_eq!(scan(1, "text", &rules, &[]), Err(ScanError::NoRulesEnabled));
+    assert_eq!(scan(1, "text", &rule_set), Err(ScanError::NoRulesEnabled));
 }
 
 #[test]
 fn empty_and_oversized_input_are_rejected() {
-    let rules = default_rule_set();
-    assert_eq!(scan(1, "  \n\t ", &rules, &[]), Err(ScanError::Empty));
+    let rule_set = default_rule_set();
+    assert_eq!(scan(1, "  \n\t ", &rule_set), Err(ScanError::Empty));
     let big = "a".repeat(MAX_INPUT_BYTES + 1);
     assert_eq!(
-        scan(1, &big, &rules, &[]),
+        scan(1, &big, &rule_set),
         Err(ScanError::TooLarge { bytes: big.len() })
     );
 }

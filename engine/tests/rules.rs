@@ -1,6 +1,6 @@
 use secrets_scanner_engine::{
-    DetectionType, ErrorCode, Rule, RuleDefinition, RuleField, Severity, WarningCode, check_rule,
-    check_rule_set, default_rules,
+    DetectionType, ErrorCode, Rule, RuleDefinition, RuleField, RuleSet, Severity, WarningCode,
+    check_rule, check_rule_set, default_rule_set,
 };
 
 fn rule(id: i64, definition: RuleDefinition) -> Rule {
@@ -19,14 +19,45 @@ fn valid(pattern: &str) -> RuleDefinition {
 
 #[test]
 fn the_built_in_rules_are_valid_and_raise_no_warnings() {
-    let rules: Vec<Rule> = default_rules()
-        .into_iter()
-        .enumerate()
-        .map(|(index, definition)| rule(index as i64 + 1, definition))
-        .collect();
-    let check = check_rule_set(&rules);
+    let check = check_rule_set(&default_rule_set().rules);
     assert_eq!(check.errors, []);
     assert_eq!(check.warnings, []);
+}
+
+#[test]
+fn the_built_in_rule_set_file_is_in_the_scan_contract_shape() {
+    let rule_set = default_rule_set();
+    let ids: Vec<i64> = rule_set.rules.iter().map(|rule| rule.id).collect();
+    assert_eq!(ids, [1, 2, 3, 4, 5]);
+    assert!(rule_set.placeholders.contains(&"example".to_string()));
+
+    let json = serde_json::to_string(&rule_set).expect("rule set should serialize");
+    let reparsed: RuleSet = serde_json::from_str(&json).expect("rule set should parse back");
+    assert_eq!(reparsed, rule_set);
+}
+
+#[test]
+fn the_contract_rejects_unknown_or_misspelled_fields_at_every_level() {
+    let rule_set = r#"{"placeholders": [], "rules": [], "extra": 1}"#;
+    let rule = r#"{"placeholders": [], "rules": [{"id": 1, "definition": {}, "draft": true}]}"#;
+    let definition =
+        r#"{"placeholders": [], "rules": [{"id": 1, "definition": {"detectiontype": "x"}}]}"#;
+    for json in [rule_set, rule, definition] {
+        assert!(
+            serde_json::from_str::<RuleSet>(json).is_err(),
+            "should be rejected: {json}"
+        );
+    }
+}
+
+#[test]
+fn the_contract_requires_a_rule_id_and_definition() {
+    for json in [
+        r#"{"placeholders": [], "rules": [{"definition": {}}]}"#,
+        r#"{"placeholders": [], "rules": [{"id": 1}]}"#,
+    ] {
+        assert!(serde_json::from_str::<RuleSet>(json).is_err(), "{json}");
+    }
 }
 
 #[test]

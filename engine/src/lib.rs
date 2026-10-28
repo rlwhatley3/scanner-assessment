@@ -9,11 +9,11 @@ mod location;
 mod rules;
 mod scan;
 
-pub use defaults::{default_placeholders, default_rules};
+pub use defaults::default_rule_set;
 pub use location::Location;
 pub use rules::{
-    DetectionType, ErrorCode, Rule, RuleCheck, RuleDefinition, RuleError, RuleField, RuleWarning,
-    Severity, WarningCode, check_rule, check_rule_set,
+    DetectionType, ErrorCode, Rule, RuleCheck, RuleDefinition, RuleError, RuleField, RuleSet,
+    RuleWarning, Severity, WarningCode, check_rule, check_rule_set,
 };
 pub use scan::{
     Finding, FindingKind, LogEvent, MAX_FINDINGS, MAX_INPUT_BYTES, MatchDetails, ScanError,
