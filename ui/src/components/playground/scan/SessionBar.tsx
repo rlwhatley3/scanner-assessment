@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { createSession, listVersions, type RuleSetVersionDetail } from "../api.ts";
+import {
+  createSession,
+  getRuleSet,
+  listRuleSets,
+  type RuleSetVersionDetail,
+  versionLabel,
+} from "../api.ts";
 import { useActiveSession } from "../session.tsx";
 import { useLoad } from "../useLoad.ts";
 
@@ -12,19 +18,34 @@ interface SessionBarProps {
   onLeave: () => void;
 }
 
-/** Shows the active scan session, or lets the user start one on a rule set version. */
+/** Shows the active scan session, or lets the user start one on a rule set's version. */
 export default function SessionBar({ visible, version, locked, onLeave }: SessionBarProps) {
   const { session, setSession } = useActiveSession();
-  const versions = useLoad(() => listVersions(), [visible, session === null]);
+  const ruleSets = useLoad(() => listRuleSets(), [visible, session === null]);
+  const [ruleSetId, setRuleSetId] = useState<number | null>(null);
+  const ruleSet = useLoad(
+    () => (ruleSetId === null ? Promise.resolve(null) : getRuleSet(ruleSetId)),
+    [ruleSetId, visible],
+  );
   const [choice, setChoice] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Default to the newest version once the list arrives.
+  // Only sets with a version that isn't archived can start a session.
+  const sets = (ruleSets.data ?? []).filter((candidate) => candidate.latestVersionId !== null);
+  const versions = (ruleSet.data?.id === ruleSetId ? ruleSet.data.versions : []).filter(
+    (candidate) => !candidate.archived,
+  );
+
+  // Default to the first set, then to its newest version.
   useEffect(() => {
-    const list = versions.data ?? [];
-    if (!list.some((candidate) => candidate.id === choice)) setChoice(list.at(-1)?.id ?? null);
-  }, [versions.data, choice]);
+    if (!sets.some((candidate) => candidate.id === ruleSetId)) setRuleSetId(sets[0]?.id ?? null);
+  }, [sets, ruleSetId]);
+  useEffect(() => {
+    if (!versions.some((candidate) => candidate.id === choice)) {
+      setChoice(versions.at(-1)?.id ?? null);
+    }
+  }, [versions, choice]);
 
   async function start() {
     if (choice === null) return;
@@ -44,9 +65,11 @@ export default function SessionBar({ visible, version, locked, onLeave }: Sessio
     return (
       <div className="session-bar panel">
         <span>
-          <b>Scan session {session.id}</b> · Rule set{" "}
-          <Link to={`/playground/rule-sets/${session.ruleSetVersionId}`}>
-            version {session.ruleSetVersionId}
+          <b>Scan session {session.id}</b> ·{" "}
+          <Link
+            to={`/playground/rule-sets/${session.ruleSetId}/versions/${session.ruleSetVersionId}`}
+          >
+            {versionLabel({ ruleSetName: session.ruleSetName, number: session.versionNumber })}
           </Link>
           {enabled !== undefined && ` · ${enabled} ${enabled === 1 ? "rule" : "rules"} enabled`}
         </span>
@@ -57,39 +80,53 @@ export default function SessionBar({ visible, version, locked, onLeave }: Sessio
     );
   }
 
-  const list = versions.data ?? [];
   return (
     <section className="panel playground-empty">
       <h2>Start a scan session</h2>
-      {versions.error ? (
+      {ruleSets.error ? (
         <p className="banner error" role="alert">
-          {versions.error}{" "}
-          <button type="button" className="link-button" onClick={versions.reload}>
+          {ruleSets.error}{" "}
+          <button type="button" className="link-button" onClick={ruleSets.reload}>
             Retry
           </button>
         </p>
-      ) : list.length === 0 && !versions.loading ? (
+      ) : sets.length === 0 && !ruleSets.loading ? (
         <p>
-          There are no rule set versions yet. Write some <Link to="/playground/rules">rules</Link>,
-          then save them as a version in <Link to="/playground/rule-sets">Rule sets</Link>.
+          No rule set has a version to scan with yet. Write some{" "}
+          <Link to="/playground/rules">rules</Link>, then save them as a version of a rule set in{" "}
+          <Link to="/playground/rule-sets">Rule sets</Link>.
         </p>
       ) : (
         <>
           <p>
-            A session scans with one rule set version and keeps every scan's results. You can also{" "}
-            <Link to="/playground/sessions">reopen a past session</Link>.
+            A session scans with one version of a rule set and keeps every scan's results. You can
+            also <Link to="/playground/sessions">reopen a past session</Link>.
           </p>
           <div className="inline-form">
             <label>
-              Rule set version{" "}
+              Rule set{" "}
+              <select
+                value={ruleSetId ?? ""}
+                onChange={(event) => setRuleSetId(Number(event.target.value))}
+              >
+                {sets.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Version{" "}
               <select
                 value={choice ?? ""}
                 onChange={(event) => setChoice(Number(event.target.value))}
               >
-                {list.map((candidate) => (
+                {[...versions].reverse().map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
-                    Version {candidate.id} ({candidate.ruleCount}{" "}
-                    {candidate.ruleCount === 1 ? "rule" : "rules"})
+                    v{candidate.number}
+                    {candidate.id === versions.at(-1)?.id ? " (latest)" : ""} ·{" "}
+                    {candidate.ruleCount} {candidate.ruleCount === 1 ? "rule" : "rules"}
                   </option>
                 ))}
               </select>

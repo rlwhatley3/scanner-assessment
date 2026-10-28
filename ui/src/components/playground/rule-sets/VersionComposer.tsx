@@ -5,6 +5,7 @@ import {
   createVersion,
   listRules,
   type RuleError,
+  type RuleSet,
   type RuleSetVersionDetail,
   ruleName,
 } from "../api.ts";
@@ -12,14 +13,21 @@ import { SeverityIcon } from "../severity.tsx";
 import { useLoad } from "../useLoad.ts";
 
 interface VersionComposerProps {
-  /** The version this one is based on, or null to start from nothing. */
+  /** The rule set the new version is added to. */
+  ruleSet: RuleSet;
+  /** The version of this set it's based on, or null to start from nothing. */
   parent: RuleSetVersionDetail | null;
   onCreated: (version: RuleSetVersionDetail) => void;
   onCancel: () => void;
 }
 
 /** Picks the rules for a new rule set version, snapshotting each one's current definition. */
-export default function VersionComposer({ parent, onCreated, onCancel }: VersionComposerProps) {
+export default function VersionComposer({
+  ruleSet,
+  parent,
+  onCreated,
+  onCancel,
+}: VersionComposerProps) {
   const rules = useLoad(listRules, []);
   const [included, setIncluded] = useState(
     () => new Set(parent?.rules.map((rule) => rule.ruleId) ?? []),
@@ -46,7 +54,7 @@ export default function VersionComposer({ parent, onCreated, onCancel }: Version
     setMessage(null);
     setRuleErrors([]);
     try {
-      onCreated(await createVersion([...included], parent?.id ?? null));
+      onCreated(await createVersion(ruleSet.id, [...included], parent?.id ?? null));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save the version.");
       if (error instanceof ApiError) setRuleErrors(error.errors);
@@ -58,7 +66,10 @@ export default function VersionComposer({ parent, onCreated, onCancel }: Version
   return (
     <div className="composer">
       <header>
-        <h2>{parent ? `New version based on version ${parent.id}` : "New rule set version"}</h2>
+        <h2>
+          New version of {ruleSet.name}
+          {parent && <span className="muted"> · based on v{parent.number}</span>}
+        </h2>
         <p className="muted">
           Choose the rules to include. Each one is copied into the version as it is now, so later
           edits to a rule never change a saved version. Every rule must be valid to save.
@@ -95,7 +106,7 @@ export default function VersionComposer({ parent, onCreated, onCancel }: Version
                   {rule.definition.enabled === false && <span className="badge">Disabled</span>}
                   {parent && snapshot === undefined && <span className="badge subtle">New</span>}
                   {snapshot !== undefined && snapshot !== JSON.stringify(rule.definition) && (
-                    <span className="badge subtle">Changed since version {parent?.id}</span>
+                    <span className="badge subtle">Changed since v{parent?.number}</span>
                   )}
                 </span>
               </label>

@@ -1,6 +1,7 @@
 mod error;
 pub mod health;
 pub mod rule_set_versions;
+pub mod rule_sets;
 pub mod rules;
 pub mod scan_sessions;
 pub mod scans;
@@ -44,6 +45,7 @@ pub fn router(db: Db) -> Router {
     Router::new()
         .route("/api/health", get(health::health))
         .nest("/api/rules", rules::router())
+        .nest("/api/rule-sets", rule_sets::router())
         .nest("/api/rule-set-versions", rule_set_versions::router())
         .nest(
             "/api/scan-sessions",

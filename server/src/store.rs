@@ -1,4 +1,4 @@
-//! Reads and writes rules, rule set versions, and scan sessions. Plain functions over a SQLite
+//! Reads and writes rules, rule sets and their versions, and scan sessions. Plain functions over a SQLite
 //! connection, so any front end (the MCP server today, REST routes later) can share them. Each
 //! enforces the storage rules from SUBMISSION.md: drafts are not validated, adding rules into a
 //! version validates and snapshots them, and saved versions never change except for archiving.
@@ -41,10 +41,43 @@ pub struct RuleRecord {
     pub updated_at: String,
 }
 
+/// The longest rule set name allowed.
+pub const MAX_RULE_SET_NAME: usize = 80;
+
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleSetSummary {
+    pub id: i64,
+    /// Unique among rule sets, ignoring case.
+    pub name: String,
+    pub description: String,
+    /// Archived sets are hidden from the list, can't get new versions, and can't start new
+    /// scan sessions.
+    pub archived: bool,
+    pub version_count: i64,
+    /// The newest version that isn't archived, if any. New versions start from it.
+    pub latest_version_id: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleSetRecord {
+    #[serde(flatten)]
+    pub summary: RuleSetSummary,
+    /// Every version in the set, archived ones included, oldest first.
+    pub versions: Vec<RuleSetVersionSummary>,
+}
+
 #[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RuleSetVersionSummary {
     pub id: i64,
+    pub rule_set_id: i64,
+    pub rule_set_name: String,
+    /// The version's place in its rule set: 1 for the first, and so on.
+    pub number: i64,
     /// The version this one was based on, if any.
     pub parent_id: Option<i64>,
     /// Archived versions are hidden from the timeline and can't start new scan sessions.
@@ -78,6 +111,10 @@ pub struct VersionRule {
 pub struct ScanSessionSummary {
     pub id: i64,
     pub rule_set_version_id: i64,
+    pub rule_set_id: i64,
+    pub rule_set_name: String,
+    /// The version's number within its rule set.
+    pub version_number: i64,
     /// When the session's latest scan ran. Null until its first scan.
     pub last_ran: Option<String>,
     pub scan_count: i64,
@@ -255,11 +292,156 @@ pub fn check_rules(connection: &Connection, rule_ids: &[i64]) -> StoreResult<Rul
     Ok(check_rule_set(&load_rules(connection, rule_ids)?))
 }
 
+// Rule sets
+
+const RULE_SET_COLUMNS: &str =
+    "t.id, t.name, t.description, t.archived, t.created_at, t.updated_at,
+    (SELECT COUNT(*) FROM rule_set_versions v WHERE v.rule_set_id = t.id),
+    (SELECT MAX(v.id) FROM rule_set_versions v WHERE v.rule_set_id = t.id AND v.archived = 0)";
+
+fn rule_set_summary(row: &Row) -> rusqlite::Result<RuleSetSummary> {
+    Ok(RuleSetSummary {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        description: row.get(2)?,
+        archived: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+        version_count: row.get(6)?,
+        latest_version_id: row.get(7)?,
+    })
+}
+
+/// Rule sets in creation order.
+pub fn list_rule_sets(
+    connection: &Connection,
+    include_archived: bool,
+) -> StoreResult<Vec<RuleSetSummary>> {
+    let mut statement = connection.prepare(&format!(
+        "SELECT {RULE_SET_COLUMNS} FROM rule_sets t WHERE ?1 OR t.archived = 0 ORDER BY t.id"
+    ))?;
+    let rule_sets = statement
+        .query_map([include_archived], rule_set_summary)?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rule_sets)
+}
+
+fn get_rule_set_summary(connection: &Connection, rule_set_id: i64) -> StoreResult<RuleSetSummary> {
+    connection
+        .query_row(
+            &format!("SELECT {RULE_SET_COLUMNS} FROM rule_sets t WHERE t.id = ?1"),
+            [rule_set_id],
+            rule_set_summary,
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::NotFound(format!("Rule set {rule_set_id} not found.")))
+}
+
+/// A rule set with every one of its versions.
+pub fn get_rule_set(connection: &Connection, rule_set_id: i64) -> StoreResult<RuleSetRecord> {
+    let summary = get_rule_set_summary(connection, rule_set_id)?;
+    let versions = list_versions(connection, Some(rule_set_id), true)?;
+    Ok(RuleSetRecord { summary, versions })
+}
+
+/// A trimmed name that is present, not too long, and not used by another set.
+fn check_rule_set_name(
+    connection: &Connection,
+    name: &str,
+    except_id: Option<i64>,
+) -> StoreResult<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(StoreError::Invalid("A rule set needs a name.".to_string()));
+    }
+    if name.chars().count() > MAX_RULE_SET_NAME {
+        return Err(StoreError::Invalid(format!(
+            "A rule set name can be at most {MAX_RULE_SET_NAME} characters."
+        )));
+    }
+    let taken: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM rule_sets
+             WHERE lower(trim(name)) = lower(?1) AND id IS NOT ?2)",
+        rusqlite::params![name, except_id],
+        |row| row.get(0),
+    )?;
+    if taken {
+        return Err(StoreError::Invalid(format!(
+            "A rule set named \"{name}\" already exists. Pick another name."
+        )));
+    }
+    Ok(name.to_string())
+}
+
+/// Creates a named rule set. With `from_version_id`, its first version is an exact copy of that
+/// version (from any set), recorded as its parent; otherwise the set starts with no versions.
+pub fn create_rule_set(
+    connection: &mut Connection,
+    name: &str,
+    description: &str,
+    from_version_id: Option<i64>,
+) -> StoreResult<RuleSetRecord> {
+    let transaction = connection.transaction()?;
+    let name = check_rule_set_name(&transaction, name, None)?;
+    transaction.execute(
+        "INSERT INTO rule_sets (name, description) VALUES (?1, ?2)",
+        rusqlite::params![name, description.trim()],
+    )?;
+    let rule_set_id = transaction.last_insert_rowid();
+    if let Some(source_id) = from_version_id {
+        // Saved versions are valid and never change, so the copy needs no new checks.
+        get_version_summary(&transaction, source_id)?;
+        transaction.execute(
+            "INSERT INTO rule_set_versions (rule_set_id, parent_id) VALUES (?1, ?2)",
+            rusqlite::params![rule_set_id, source_id],
+        )?;
+        transaction.execute(
+            "INSERT INTO rule_set_version_rules (rule_set_version_id, rule_id, definition)
+             SELECT ?1, rule_id, definition FROM rule_set_version_rules
+             WHERE rule_set_version_id = ?2",
+            rusqlite::params![transaction.last_insert_rowid(), source_id],
+        )?;
+    }
+    let rule_set = get_rule_set(&transaction, rule_set_id)?;
+    transaction.commit()?;
+    Ok(rule_set)
+}
+
+/// Renames, redescribes, archives, or restores a rule set. Its versions never change.
+pub fn update_rule_set(
+    connection: &Connection,
+    rule_set_id: i64,
+    name: Option<&str>,
+    description: Option<&str>,
+    archived: Option<bool>,
+) -> StoreResult<RuleSetSummary> {
+    get_rule_set_summary(connection, rule_set_id)?;
+    let name = name
+        .map(|name| check_rule_set_name(connection, name, Some(rule_set_id)))
+        .transpose()?;
+    connection.execute(
+        &format!(
+            "UPDATE rule_sets SET name = COALESCE(?1, name),
+                 description = COALESCE(?2, description),
+                 archived = COALESCE(?3, archived),
+                 updated_at = {NOW}
+             WHERE id = ?4"
+        ),
+        rusqlite::params![name, description.map(str::trim), archived, rule_set_id],
+    )?;
+    get_rule_set_summary(connection, rule_set_id)
+}
+
 // Rule set versions
 
+/// A version's number within its rule set: how many versions of the set exist up to it.
 const VERSION_COLUMNS: &str = "v.id, v.parent_id, v.archived, v.created_at, v.updated_at,
     (SELECT COUNT(*) FROM rule_set_version_rules r WHERE r.rule_set_version_id = v.id),
-    (SELECT COUNT(*) FROM scan_sessions s WHERE s.rule_set_version_id = v.id)";
+    (SELECT COUNT(*) FROM scan_sessions s WHERE s.rule_set_version_id = v.id),
+    v.rule_set_id,
+    (SELECT name FROM rule_sets t WHERE t.id = v.rule_set_id),
+    (SELECT COUNT(*) FROM rule_set_versions n
+        WHERE n.rule_set_id = v.rule_set_id AND n.id <= v.id)";
 
 fn version_summary(row: &Row) -> rusqlite::Result<RuleSetVersionSummary> {
     Ok(RuleSetVersionSummary {
@@ -270,20 +452,28 @@ fn version_summary(row: &Row) -> rusqlite::Result<RuleSetVersionSummary> {
         updated_at: row.get(4)?,
         rule_count: row.get(5)?,
         scan_session_count: row.get(6)?,
+        rule_set_id: row.get(7)?,
+        rule_set_name: row.get(8)?,
+        number: row.get(9)?,
     })
 }
 
-/// Versions oldest first, as the timeline shows them.
+/// Versions oldest first, as the timeline shows them: every rule set's, or one set's.
 pub fn list_versions(
     connection: &Connection,
+    rule_set_id: Option<i64>,
     include_archived: bool,
 ) -> StoreResult<Vec<RuleSetVersionSummary>> {
     let mut statement = connection.prepare(&format!(
         "SELECT {VERSION_COLUMNS} FROM rule_set_versions v
-         WHERE ?1 OR v.archived = 0 ORDER BY v.id"
+         WHERE (?1 OR v.archived = 0) AND (?2 IS NULL OR v.rule_set_id = ?2)
+         ORDER BY v.id"
     ))?;
     let versions = statement
-        .query_map([include_archived], version_summary)?
+        .query_map(
+            rusqlite::params![include_archived, rule_set_id],
+            version_summary,
+        )?
         .collect::<rusqlite::Result<_>>()?;
     Ok(versions)
 }
@@ -319,12 +509,13 @@ pub fn get_version(connection: &Connection, version_id: i64) -> StoreResult<Rule
     Ok(RuleSetVersionRecord { summary, rules })
 }
 
-/// Saves a new version holding exactly these rules, each snapshotted from its current
-/// definition. The rules are checked as a set first; if any check fails, nothing is saved and
-/// the errors come back. Rules that were drafts stop being drafts. Returns the new version and
-/// any warnings from the check.
+/// Saves a new version of a rule set holding exactly these rules, each snapshotted from its
+/// current definition. The rules are checked as a set first; if any check fails, nothing is
+/// saved and the errors come back. Rules that were drafts stop being drafts. The parent, if
+/// given, must be a version of the same set. Returns the new version and any warnings.
 pub fn create_version(
     connection: &mut Connection,
+    rule_set_id: i64,
     parent_id: Option<i64>,
     rule_ids: &[i64],
 ) -> StoreResult<(RuleSetVersionRecord, RuleCheck)> {
@@ -335,8 +526,20 @@ pub fn create_version(
     }
     unique_rule_ids(rule_ids)?;
     let transaction = connection.transaction()?;
-    if let Some(parent_id) = parent_id {
-        get_version_summary(&transaction, parent_id)?;
+    let rule_set = get_rule_set_summary(&transaction, rule_set_id)?;
+    if rule_set.archived {
+        return Err(StoreError::Invalid(format!(
+            "Rule set \"{}\" is archived. Restore it before adding versions.",
+            rule_set.name
+        )));
+    }
+    if let Some(parent_id) = parent_id
+        && get_version_summary(&transaction, parent_id)?.rule_set_id != rule_set_id
+    {
+        return Err(StoreError::Invalid(format!(
+            "Version {parent_id} belongs to another rule set. To start a set from it, create a \
+             new rule set from that version instead."
+        )));
     }
     let rules = load_rules(&transaction, rule_ids)?;
     let check = check_rule_set(&rules);
@@ -345,8 +548,8 @@ pub fn create_version(
     }
 
     transaction.execute(
-        "INSERT INTO rule_set_versions (parent_id) VALUES (?1)",
-        [parent_id],
+        "INSERT INTO rule_set_versions (rule_set_id, parent_id) VALUES (?1, ?2)",
+        rusqlite::params![rule_set_id, parent_id],
     )?;
     let version_id = transaction.last_insert_rowid();
     for rule in &rules {
@@ -388,7 +591,15 @@ pub fn set_version_archived(
 // Scan sessions
 
 const SESSION_COLUMNS: &str = "s.id, s.rule_set_version_id, s.last_ran, s.created_at, s.updated_at,
-    (SELECT COUNT(*) FROM scans c WHERE c.scan_session_id = s.id)";
+    (SELECT COUNT(*) FROM scans c WHERE c.scan_session_id = s.id),
+    v.rule_set_id,
+    (SELECT name FROM rule_sets t WHERE t.id = v.rule_set_id),
+    (SELECT COUNT(*) FROM rule_set_versions n
+        WHERE n.rule_set_id = v.rule_set_id AND n.id <= v.id)";
+
+/// Sessions joined to their version, for the rule set columns above.
+const SESSION_FROM: &str =
+    "scan_sessions s JOIN rule_set_versions v ON v.id = s.rule_set_version_id";
 
 fn session_summary(row: &Row) -> rusqlite::Result<ScanSessionSummary> {
     Ok(ScanSessionSummary {
@@ -398,13 +609,16 @@ fn session_summary(row: &Row) -> rusqlite::Result<ScanSessionSummary> {
         created_at: row.get(3)?,
         updated_at: row.get(4)?,
         scan_count: row.get(5)?,
+        rule_set_id: row.get(6)?,
+        rule_set_name: row.get(7)?,
+        version_number: row.get(8)?,
     })
 }
 
 /// Sessions newest first.
 pub fn list_sessions(connection: &Connection) -> StoreResult<Vec<ScanSessionSummary>> {
     let mut statement = connection.prepare(&format!(
-        "SELECT {SESSION_COLUMNS} FROM scan_sessions s ORDER BY s.id DESC"
+        "SELECT {SESSION_COLUMNS} FROM {SESSION_FROM} ORDER BY s.id DESC"
     ))?;
     let sessions = statement
         .query_map([], session_summary)?
@@ -418,7 +632,7 @@ fn get_session_summary(
 ) -> StoreResult<ScanSessionSummary> {
     connection
         .query_row(
-            &format!("SELECT {SESSION_COLUMNS} FROM scan_sessions s WHERE s.id = ?1"),
+            &format!("SELECT {SESSION_COLUMNS} FROM {SESSION_FROM} WHERE s.id = ?1"),
             [session_id],
             session_summary,
         )
@@ -449,12 +663,20 @@ pub fn get_session(connection: &Connection, session_id: i64) -> StoreResult<Scan
     Ok(ScanSessionRecord { summary, scans })
 }
 
-/// Starts a session on a version. Archived versions can't start new sessions.
+/// Starts a session on a version. Archived versions, and versions of an archived rule set,
+/// can't start new sessions.
 pub fn create_session(
     connection: &Connection,
     rule_set_version_id: i64,
 ) -> StoreResult<ScanSessionSummary> {
     let version = get_version_summary(connection, rule_set_version_id)?;
+    let rule_set = get_rule_set_summary(connection, version.rule_set_id)?;
+    if rule_set.archived {
+        return Err(StoreError::Invalid(format!(
+            "Rule set \"{}\" is archived. Restore it first, or pick another rule set.",
+            rule_set.name
+        )));
+    }
     if version.archived {
         return Err(StoreError::Invalid(format!(
             "Rule set version {rule_set_version_id} is archived. Restore it first, or pick \

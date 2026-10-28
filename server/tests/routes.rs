@@ -2,6 +2,8 @@
 mod health;
 #[path = "routes/rule_set_versions.rs"]
 mod rule_set_versions;
+#[path = "routes/rule_sets.rs"]
+mod rule_sets;
 #[path = "routes/rules.rs"]
 mod rules;
 #[path = "routes/scan_sessions.rs"]
@@ -76,15 +78,31 @@ pub async fn create_rule(app: &Router, definition: Value) -> i64 {
     rule["id"].as_i64().expect("rule should have an id")
 }
 
-/// Creates a version from `rule_ids` and returns its id.
-pub async fn create_version(app: &Router, rule_ids: &[i64]) -> i64 {
+/// Creates an empty rule set named `name` and returns its id.
+pub async fn create_rule_set(app: &Router, name: &str) -> i64 {
+    let (status, rule_set) =
+        send(app, "POST", "/api/rule-sets", Some(json!({ "name": name }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{rule_set}");
+    rule_set["id"].as_i64().expect("rule set should have an id")
+}
+
+/// Creates a version of `rule_set_id` from `rule_ids` and returns its id.
+pub async fn create_version_in(app: &Router, rule_set_id: i64, rule_ids: &[i64]) -> i64 {
     let (status, version) = send(
         app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "ruleIds": rule_ids })),
+        Some(json!({ "ruleSetId": rule_set_id, "ruleIds": rule_ids })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{version}");
     version["id"].as_i64().expect("version should have an id")
+}
+
+/// Creates a version from `rule_ids` in a new rule set of its own and returns the version's id.
+pub async fn create_version(app: &Router, rule_ids: &[i64]) -> i64 {
+    static NEXT_SET: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+    let number = NEXT_SET.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let rule_set_id = create_rule_set(app, &format!("Test set {number}")).await;
+    create_version_in(app, rule_set_id, rule_ids).await
 }

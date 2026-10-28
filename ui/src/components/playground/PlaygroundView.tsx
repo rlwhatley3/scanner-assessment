@@ -1,5 +1,5 @@
 import { Navigate, NavLink, Route, Routes, useMatch } from "react-router-dom";
-import RuleSetsView from "./rule-sets/RuleSetsView.tsx";
+import RuleSetsView, { VersionRedirect } from "./rule-sets/RuleSetsView.tsx";
 import RulesView from "./rules/RulesView.tsx";
 import ScanView from "./scan/ScanView.tsx";
 import { ActiveSessionProvider } from "./session.tsx";
@@ -53,7 +53,9 @@ export default function PlaygroundView() {
           <Route index element={<Navigate to="scan" replace />} />
           <Route path="scan" element={null} />
           <Route path="rules/:ruleId?" element={<RulesView />} />
-          <Route path="rule-sets/:versionId?" element={<RuleSetsView />} />
+          {/* One route, so picking a version doesn't remount the page and lose its state. */}
+          <Route path="rule-sets/*" element={<RuleSetsView />} />
+          <Route path="versions/:versionId" element={<VersionRedirect />} />
           <Route path="sessions/:sessionId?" element={<SessionsView />} />
           <Route path="*" element={<Navigate to="scan" replace />} />
         </Routes>

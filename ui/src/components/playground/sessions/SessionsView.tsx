@@ -49,7 +49,7 @@ export default function SessionsView() {
                   {active?.id === entry.id && <span className="badge subtle">Open</span>}
                 </span>
                 <span className="muted small">
-                  Version {entry.ruleSetVersionId} · {entry.scanCount}{" "}
+                  {entry.ruleSetName} v{entry.versionNumber} · {entry.scanCount}{" "}
                   {entry.scanCount === 1 ? "scan" : "scans"} ·{" "}
                   {entry.lastRan ? `last ran ${formatDate(entry.lastRan)}` : "not run yet"}
                 </span>
@@ -67,8 +67,10 @@ export default function SessionsView() {
                 <h2>Session {session.id}</h2>
                 <p className="muted">
                   Started {formatDate(session.createdAt)} · rule set{" "}
-                  <Link to={`/playground/rule-sets/${session.ruleSetVersionId}`}>
-                    version {session.ruleSetVersionId}
+                  <Link
+                    to={`/playground/rule-sets/${session.ruleSetId}/versions/${session.ruleSetVersionId}`}
+                  >
+                    {session.ruleSetName} v{session.versionNumber}
                   </Link>
                 </p>
               </div>

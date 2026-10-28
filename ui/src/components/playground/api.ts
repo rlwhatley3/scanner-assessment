@@ -126,8 +126,31 @@ export interface RuleCheck {
   warnings: RuleWarning[];
 }
 
+/** A named line of versions. Names are unique, ignoring case. */
+export interface RuleSet {
+  id: number;
+  name: string;
+  description: string;
+  /** Archived sets are hidden, can't get new versions, and can't start new scan sessions. */
+  archived: boolean;
+  versionCount: number;
+  /** The newest version that isn't archived. New versions start from it. */
+  latestVersionId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RuleSetDetail extends RuleSet {
+  /** Every version, archived ones included, oldest first. */
+  versions: RuleSetVersion[];
+}
+
 export interface RuleSetVersion {
   id: number;
+  ruleSetId: number;
+  ruleSetName: string;
+  /** The version's place in its rule set: 1 for the first, and so on. */
+  number: number;
   parentId: number | null;
   archived: boolean;
   ruleCount: number;
@@ -143,6 +166,9 @@ export interface RuleSetVersionDetail extends RuleSetVersion {
 export interface ScanSession {
   id: number;
   ruleSetVersionId: number;
+  ruleSetId: number;
+  ruleSetName: string;
+  versionNumber: number;
   lastRan: string | null;
   scanCount: number;
   createdAt: string;
@@ -239,15 +265,31 @@ export const deleteRule = (id: number) => request<void>("DELETE", `/api/rules/${
 export const checkRule = (id: number, definition: RuleDefinition, signal?: AbortSignal) =>
   request<RuleCheck>("POST", `/api/rules/${id}/check`, { definition }, signal);
 
-export const listVersions = (includeArchived = false) =>
-  request<RuleSetVersion[]>(
-    "GET",
-    `/api/rule-set-versions${includeArchived ? "?includeArchived=true" : ""}`,
-  );
+export const listRuleSets = (includeArchived = false) =>
+  request<RuleSet[]>("GET", `/api/rule-sets${includeArchived ? "?includeArchived=true" : ""}`);
+export const getRuleSet = (id: number) => request<RuleSetDetail>("GET", `/api/rule-sets/${id}`);
+export const createRuleSet = (body: {
+  name: string;
+  description: string;
+  fromVersionId: number | null;
+}) => request<RuleSetDetail>("POST", "/api/rule-sets", body);
+export const updateRuleSet = (
+  id: number,
+  changes: { name?: string; description?: string; archived?: boolean },
+) => request<RuleSet>("PATCH", `/api/rule-sets/${id}`, changes);
+
+export function listVersions(options: { ruleSetId?: number; includeArchived?: boolean } = {}) {
+  const query = new URLSearchParams();
+  if (options.ruleSetId !== undefined) query.set("ruleSetId", String(options.ruleSetId));
+  if (options.includeArchived) query.set("includeArchived", "true");
+  const suffix = query.size > 0 ? `?${query}` : "";
+  return request<RuleSetVersion[]>("GET", `/api/rule-set-versions${suffix}`);
+}
 export const getVersion = (id: number) =>
   request<RuleSetVersionDetail>("GET", `/api/rule-set-versions/${id}`);
-export const createVersion = (ruleIds: number[], parentId: number | null) =>
+export const createVersion = (ruleSetId: number, ruleIds: number[], parentId: number | null) =>
   request<RuleSetVersionDetail>("POST", "/api/rule-set-versions", {
+    ruleSetId,
     ruleIds,
     parentId,
   });
@@ -264,6 +306,11 @@ export const createSession = (ruleSetVersionId: number) =>
 
 export const runScan = (sessionId: number, text: string, signal: AbortSignal) =>
   request<ScanResponse>("POST", `/api/scan-sessions/${sessionId}/scans`, { text }, signal);
+
+/** How a version is named in the UI, e.g. "Payments v2". */
+export function versionLabel(version: { ruleSetName: string; number: number }): string {
+  return `${version.ruleSetName} v${version.number}`;
+}
 
 /** A rule's display name, for rules whose definition has no name yet. */
 export function ruleName(definition: RuleDefinition, id: number): string {

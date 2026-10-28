@@ -1,13 +1,13 @@
-//! An MCP server, mounted on the API at `/mcp`, for reading and writing rules, rule set
-//! versions, scan sessions, and scans. It goes through the same storage rules as the rest of the
+//! An MCP server, mounted on the API at `/mcp`, for reading and writing rules, rule sets and
+//! their versions, scan sessions, and scans. It goes through the same storage rules as the rest of the
 //! API (see `store`), and `run_scan` uses the same path as the scan endpoint, so scan text is
 //! never stored or logged here either.
 
 use crate::routes::AppState;
 use crate::routes::scans::{self, ApiError, ScanResponse};
 use crate::store::{
-    self, RuleRecord, RuleSetVersionRecord, RuleSetVersionSummary, ScanSessionRecord,
-    ScanSessionSummary, StoreError,
+    self, RuleRecord, RuleSetRecord, RuleSetSummary, RuleSetVersionRecord, RuleSetVersionSummary,
+    ScanSessionRecord, ScanSessionSummary, StoreError,
 };
 use rmcp::{
     ErrorData, Json, ServerHandler,
@@ -26,11 +26,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-const INSTRUCTIONS: &str = "Manages the secrets scanner's rules, rule set versions, scan sessions, \
-and scans. Rules exist on their own and start as drafts, which are not validated. A rule set \
-version is saved from a list of rule ids: the rules are checked as a set, and each one's current \
-definition is snapshotted into the version, so later rule edits never change a saved version. \
-Saved versions can only be archived or restored. A scan session uses one version; each scan in it \
+const INSTRUCTIONS: &str = "Manages the secrets scanner's rules, rule sets and their versions, scan \
+sessions, and scans. Rules exist on their own and start as drafts, which are not validated. A rule \
+set is a named line of versions (names are unique, ignoring case); a new set starts empty or with \
+an exact copy of any version. A version is added to a set from a list of rule ids: the rules are \
+checked as a set, and each one's current definition is snapshotted into the version, so later rule \
+edits never change a saved version. Versions are numbered within their set. Saved versions can only \
+be archived or restored. A scan session uses one version; each scan in it \
 runs that version's snapshots. Scan text is never stored, and findings never contain matched \
 values.";
 
@@ -132,8 +134,43 @@ pub struct RuleIdsParams {
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListVersionsParams {
+    /// Only this rule set's versions. Omit for every set's.
+    rule_set_id: Option<i64>,
     /// Include archived versions. Defaults to false, matching the timeline.
     include_archived: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListRuleSetsParams {
+    /// Include archived rule sets. Defaults to false.
+    include_archived: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuleSetIdParams {
+    rule_set_id: i64,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateRuleSetParams {
+    /// Required, unique among rule sets ignoring case, at most 80 characters.
+    name: String,
+    description: Option<String>,
+    /// Start the set with an exact copy of this version, from any rule set. Omit to start empty.
+    from_version_id: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateRuleSetParams {
+    rule_set_id: i64,
+    name: Option<String>,
+    description: Option<String>,
+    /// Archived sets are hidden, can't get new versions, and can't start new scan sessions.
+    archived: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -145,7 +182,9 @@ pub struct VersionIdParams {
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateVersionParams {
-    /// The version this one is based on, recorded for the timeline. Its rules are not copied:
+    /// The rule set the version is added to.
+    rule_set_id: i64,
+    /// The version this one is based on, from the same rule set, recorded for the timeline. Its rules are not copied:
     /// list every rule the new version should hold in ruleIds.
     parent_id: Option<i64>,
     /// Every rule the new version holds. Each is snapshotted from its current definition.
@@ -213,6 +252,12 @@ pub struct RuleCheckResult {
     errors: Value,
     /// Worth fixing, but they don't block saving.
     warnings: Value,
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleSetList {
+    rule_sets: Vec<RuleSetSummary>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -367,7 +412,79 @@ impl ScannerMcp {
     }
 
     #[tool(
-        description = "List rule set versions, oldest first, as the version timeline shows them.",
+        description = "List rule sets in creation order, with each one's version count and \
+                       latest version.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_rule_sets(
+        &self,
+        Parameters(params): Parameters<ListRuleSetsParams>,
+    ) -> Result<Json<RuleSetList>, ToolError> {
+        let include_archived = params.include_archived.unwrap_or(false);
+        let rule_sets = self
+            .with_db(move |connection| store::list_rule_sets(connection, include_archived))
+            .await?;
+        Ok(Json(RuleSetList { rule_sets }))
+    }
+
+    #[tool(
+        description = "Get a rule set with every one of its versions, oldest first.",
+        annotations(read_only_hint = true)
+    )]
+    async fn get_rule_set(
+        &self,
+        Parameters(params): Parameters<RuleSetIdParams>,
+    ) -> Result<Json<RuleSetRecord>, ToolError> {
+        self.with_db(move |connection| store::get_rule_set(connection, params.rule_set_id))
+            .await
+            .map(Json)
+    }
+
+    #[tool(
+        description = "Create a named rule set. It starts empty, or with an exact copy of \
+                       fromVersionId (a version from any set) as its first version.",
+        annotations(destructive_hint = false)
+    )]
+    async fn create_rule_set(
+        &self,
+        Parameters(params): Parameters<CreateRuleSetParams>,
+    ) -> Result<Json<RuleSetRecord>, ToolError> {
+        self.with_db(move |connection| {
+            store::create_rule_set(
+                connection,
+                &params.name,
+                params.description.as_deref().unwrap_or(""),
+                params.from_version_id,
+            )
+        })
+        .await
+        .map(Json)
+    }
+
+    #[tool(
+        description = "Rename, redescribe, archive, or restore a rule set. Only the fields given \
+                       change, and its versions never do.",
+        annotations(destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn update_rule_set(
+        &self,
+        Parameters(params): Parameters<UpdateRuleSetParams>,
+    ) -> Result<Json<RuleSetSummary>, ToolError> {
+        self.with_db(move |connection| {
+            store::update_rule_set(
+                connection,
+                params.rule_set_id,
+                params.name.as_deref(),
+                params.description.as_deref(),
+                params.archived,
+            )
+        })
+        .await
+        .map(Json)
+    }
+
+    #[tool(
+        description = "List rule set versions, oldest first: every set's, or one set's.",
         annotations(read_only_hint = true)
     )]
     async fn list_rule_set_versions(
@@ -376,7 +493,9 @@ impl ScannerMcp {
     ) -> Result<Json<VersionList>, ToolError> {
         let include_archived = params.include_archived.unwrap_or(false);
         let versions = self
-            .with_db(move |connection| store::list_versions(connection, include_archived))
+            .with_db(move |connection| {
+                store::list_versions(connection, params.rule_set_id, include_archived)
+            })
             .await?;
         Ok(Json(VersionList { versions }))
     }
@@ -396,7 +515,7 @@ impl ScannerMcp {
     }
 
     #[tool(
-        description = "Save a new rule set version holding exactly the listed rules, each \
+        description = "Save a new version of a rule set holding exactly the listed rules, each \
                           snapshotted from its current definition. The rules are checked as a \
                           set first; if any check fails nothing is saved and the errors are \
                           returned. Draft rules stop being drafts once saved into a version.",
@@ -408,7 +527,12 @@ impl ScannerMcp {
     ) -> Result<Json<CreatedVersion>, ToolError> {
         let (version, check) = self
             .with_db(move |connection| {
-                store::create_version(connection, params.parent_id, &params.rule_ids)
+                store::create_version(
+                    connection,
+                    params.rule_set_id,
+                    params.parent_id,
+                    &params.rule_ids,
+                )
             })
             .await?;
         Ok(Json(CreatedVersion {

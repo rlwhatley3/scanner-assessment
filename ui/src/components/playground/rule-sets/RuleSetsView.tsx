@@ -1,73 +1,45 @@
-import { useState } from "react";
-import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
-import {
-  createSession,
-  formatDate,
-  getVersion,
-  listVersions,
-  type RuleSetVersionDetail,
-  ruleName,
-  setVersionArchived,
-} from "../api.ts";
-import { describeChecksum } from "../checksum.ts";
-import { useActiveSession } from "../session.tsx";
-import { DETECTION_LABELS, SEVERITY_LABELS, SeverityIcon } from "../severity.tsx";
+import { useEffect, useState } from "react";
+import { Navigate, NavLink, useNavigate, useParams } from "react-router-dom";
+import { getVersion, listRuleSets } from "../api.ts";
 import { useLoad } from "../useLoad.ts";
-import VersionComposer from "./VersionComposer.tsx";
+import NewRuleSetForm from "./NewRuleSetForm.tsx";
+import RuleSetPanel, { versionPath } from "./RuleSetPanel.tsx";
 
-type Composing = { parent: RuleSetVersionDetail | null } | null;
-
+/** Rule sets on the left; the selected set, or a new one being named, on the right. */
 export default function RuleSetsView() {
-  const { versionId } = useParams();
+  const params = useParams();
   const navigate = useNavigate();
-  const { setSession } = useActiveSession();
   const [showArchived, setShowArchived] = useState(false);
-  const [composing, setComposing] = useState<Composing>(null);
-  const [error, setError] = useState<string | null>(null);
+  // null: no form open. Otherwise the new set form, maybe starting from a copy of a version.
+  const [creating, setCreating] = useState<{ fromVersionId: number | null } | null>(null);
+  const ruleSets = useLoad(() => listRuleSets(showArchived), [showArchived]);
 
-  const versions = useLoad(() => listVersions(showArchived), [showArchived]);
-  const id = versionId === undefined ? null : Number(versionId);
-  const detail = useLoad(() => (id === null ? Promise.resolve(null) : getVersion(id)), [id]);
-  const version = detail.data?.id === id ? detail.data : null;
+  // The rest of the path is "", "{setId}", or "{setId}/versions/{versionId}".
+  const [setPart, , versionPart] = (params["*"] ?? "").split("/");
+  const ruleSetId = setPart ? Number(setPart) : null;
+  const versionId = versionPart ? Number(versionPart) : null;
 
-  async function archive(archived: boolean) {
-    if (!version) return;
-    setError(null);
-    try {
-      await setVersionArchived(version.id, archived);
-      if (archived && !showArchived) setShowArchived(true);
-      versions.reload();
-      detail.reload();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not update the version.");
-    }
+  // Leaving the form open while picking another set would be confusing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: close only when the selection moves.
+  useEffect(() => setCreating(null), [ruleSetId, versionId]);
+
+  // With nothing selected, open the first set.
+  const first = ruleSets.data?.[0];
+  if (ruleSetId === null && !creating && first) {
+    return <Navigate to={`/playground/rule-sets/${first.id}`} replace />;
   }
-
-  async function startSession() {
-    if (!version) return;
-    setError(null);
-    try {
-      setSession(await createSession(version.id));
-      navigate("/playground/scan");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not start a session.");
-    }
-  }
-
-  // Newest first reads best as a timeline.
-  const timeline = [...(versions.data ?? [])].reverse();
 
   return (
     <div className="playground-section master-detail">
-      <section className="panel master" aria-label="Rule set versions">
+      <section className="panel master" aria-label="Rule sets">
         <div className="master-header">
-          <h2>Rule set versions</h2>
+          <h2>Rule sets</h2>
           <button
             type="button"
             className="button primary"
-            onClick={() => setComposing({ parent: null })}
+            onClick={() => setCreating({ fromVersionId: null })}
           >
-            New version
+            New rule set
           </button>
         </div>
         <label className="findings-sort">
@@ -78,29 +50,29 @@ export default function RuleSetsView() {
           />
           Show archived
         </label>
-        {versions.error && (
+        {ruleSets.error && (
           <p className="banner error" role="alert">
-            {versions.error}
+            {ruleSets.error}
           </p>
         )}
-        {versions.data?.length === 0 && (
-          <p className="muted">No versions yet. Save your rules as the first version.</p>
+        {ruleSets.data?.length === 0 && (
+          <p className="muted">No rule sets yet. Create one to start saving versions.</p>
         )}
-        <ol className="master-list timeline">
-          {timeline.map((entry) => (
-            <li key={entry.id}>
+        <ul className="master-list">
+          {ruleSets.data?.map((ruleSet) => (
+            <li key={ruleSet.id}>
               <NavLink
-                to={`/playground/rule-sets/${entry.id}`}
-                className="master-item"
-                onClick={() => setComposing(null)}
+                to={`/playground/rule-sets/${ruleSet.id}`}
+                className={`master-item${ruleSet.id === ruleSetId && !creating ? " active" : ""}`}
               >
-                <span className="master-item-title">Version {entry.id}</span>
+                <span className="master-item-title">{ruleSet.name}</span>
+                {ruleSet.description && (
+                  <span className="muted small clamp">{ruleSet.description}</span>
+                )}
                 <span className="muted small">
-                  {entry.ruleCount} {entry.ruleCount === 1 ? "rule" : "rules"} ·{" "}
-                  {entry.scanSessionCount} {entry.scanSessionCount === 1 ? "session" : "sessions"}
-                  {entry.parentId !== null && ` · from v${entry.parentId}`}
+                  {ruleSet.versionCount} {ruleSet.versionCount === 1 ? "version" : "versions"}
                 </span>
-                {entry.archived && (
+                {ruleSet.archived && (
                   <span className="badges">
                     <span className="badge">Archived</span>
                   </span>
@@ -108,116 +80,52 @@ export default function RuleSetsView() {
               </NavLink>
             </li>
           ))}
-        </ol>
+        </ul>
       </section>
 
-      <section className="panel detail" aria-label="Rule set version details">
-        {composing ? (
-          <VersionComposer
-            key={composing.parent?.id ?? "new"}
-            parent={composing.parent}
-            onCancel={() => setComposing(null)}
+      <section className="panel detail" aria-label="Rule set details">
+        {creating ? (
+          <NewRuleSetForm
+            key={creating.fromVersionId ?? "empty"}
+            fromVersionId={creating.fromVersionId}
+            onCancel={() => setCreating(null)}
             onCreated={(created) => {
-              setComposing(null);
-              versions.reload();
-              navigate(`/playground/rule-sets/${created.id}`);
+              setCreating(null);
+              ruleSets.reload();
+              const firstVersion = created.versions[0];
+              navigate(
+                firstVersion
+                  ? versionPath(created.id, firstVersion.id)
+                  : `/playground/rule-sets/${created.id}`,
+              );
             }}
           />
-        ) : version ? (
-          <div className="version-detail">
-            <header className="rule-form-header">
-              <div>
-                <h2>
-                  Version {version.id}
-                  {version.archived && <span className="badge">Archived</span>}
-                </h2>
-                <p className="muted">
-                  Saved {formatDate(version.createdAt)}
-                  {version.parentId !== null && (
-                    <>
-                      {" "}
-                      · based on{" "}
-                      <Link to={`/playground/rule-sets/${version.parentId}`}>
-                        version {version.parentId}
-                      </Link>
-                    </>
-                  )}{" "}
-                  · {version.scanSessionCount}{" "}
-                  {version.scanSessionCount === 1 ? "scan session" : "scan sessions"}
-                </p>
-              </div>
-            </header>
-            <div className="form-actions">
-              <button
-                type="button"
-                className="button primary"
-                onClick={startSession}
-                disabled={version.archived}
-              >
-                Start scan session
-              </button>
-              <button
-                type="button"
-                className="button"
-                onClick={() => setComposing({ parent: version })}
-              >
-                New version from this
-              </button>
-              <button type="button" className="button" onClick={() => archive(!version.archived)}>
-                {version.archived ? "Restore" : "Archive"}
-              </button>
-            </div>
-            {error && (
-              <p className="banner error" role="alert">
-                {error}
-              </p>
-            )}
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Rule</th>
-                  <th>Severity</th>
-                  <th>Type</th>
-                  <th>Pattern</th>
-                  <th>Checksum</th>
-                </tr>
-              </thead>
-              <tbody>
-                {version.rules.map(({ ruleId, definition }) => (
-                  <tr
-                    key={ruleId}
-                    className={definition.enabled === false ? "disabled" : undefined}
-                  >
-                    <td>
-                      <Link to={`/playground/rules/${ruleId}`}>{ruleName(definition, ruleId)}</Link>
-                      {definition.enabled === false && <span className="badge">Disabled</span>}
-                    </td>
-                    <td>
-                      {definition.severity && (
-                        <>
-                          <SeverityIcon tone={definition.severity} />{" "}
-                          {SEVERITY_LABELS[definition.severity]}
-                        </>
-                      )}
-                    </td>
-                    <td>
-                      {definition.detectionType && DETECTION_LABELS[definition.detectionType]}
-                    </td>
-                    <td>
-                      <code className="pattern">{definition.pattern}</code>
-                    </td>
-                    <td>{describeChecksum(definition.checksum) ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        ) : ruleSetId !== null ? (
+          <RuleSetPanel
+            ruleSetId={ruleSetId}
+            versionId={versionId}
+            onChanged={ruleSets.reload}
+            onCopy={(id) => setCreating({ fromVersionId: id })}
+          />
         ) : (
           <p className="results-placeholder">
-            {detail.error ?? "Select a version, or start a new one."}
+            {ruleSets.loading ? "Loading…" : "Create a rule set to get started."}
           </p>
         )}
       </section>
+    </div>
+  );
+}
+
+/** Opens a version by id alone, for links that don't know its rule set. */
+export function VersionRedirect() {
+  const { versionId } = useParams();
+  const id = Number(versionId);
+  const version = useLoad(() => getVersion(id), [id]);
+  if (version.data) return <Navigate to={versionPath(version.data.ruleSetId, id)} replace />;
+  return (
+    <div className="playground-section">
+      <p className="results-placeholder">{version.error ?? "Opening the version…"}</p>
     </div>
   );
 }
