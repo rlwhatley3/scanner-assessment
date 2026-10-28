@@ -12,6 +12,11 @@ import {
   saveRule,
 } from "../api.ts";
 import { DETECTION_LABELS, SEVERITY_LABELS } from "../severity.tsx";
+import ChecksumFields, {
+  type ChecksumForm,
+  checksumFormFrom,
+  checksumFrom,
+} from "./ChecksumFields.tsx";
 
 interface FormState {
   name: string;
@@ -22,6 +27,7 @@ interface FormState {
   prefix: string;
   keyNames: string;
   minEntropy: string;
+  checksum: ChecksumForm;
   remediation: string;
 }
 
@@ -35,6 +41,7 @@ function fromDefinition(definition: RuleDefinition): FormState {
     prefix: definition.prefix ?? "",
     keyNames: (definition.keyNames ?? []).join(", "),
     minEntropy: definition.minEntropy == null ? "" : String(definition.minEntropy),
+    checksum: checksumFormFrom(definition.checksum),
     remediation: definition.remediation ?? "",
   };
 }
@@ -48,6 +55,7 @@ const FORM_KEYS = [
   "prefix",
   "keyNames",
   "minEntropy",
+  "checksum",
   "remediation",
 ];
 
@@ -62,6 +70,7 @@ function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinit
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
+  const checksum = checksumFrom(form.checksum);
   return {
     ...others,
     ...(form.name.trim() && { name: form.name.trim() }),
@@ -72,6 +81,7 @@ function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinit
     ...(form.prefix.trim() && { prefix: form.prefix.trim() }),
     ...(keyNames.length > 0 && { keyNames }),
     ...(form.minEntropy.trim() && { minEntropy: Number(form.minEntropy) }),
+    ...(checksum && { checksum }),
     ...(form.remediation.trim() && { remediation: form.remediation.trim() }),
   };
 }
@@ -290,6 +300,12 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
       >
         <input value={form.keyNames} onChange={(event) => update("keyNames", event.target.value)} />
       </Field>
+
+      <ChecksumFields
+        value={form.checksum}
+        onChange={(checksum) => update("checksum", checksum)}
+        errors={fieldErrors("checksum")}
+      />
 
       <Field label="Remediation" errors={fieldErrors("remediation")}>
         <textarea

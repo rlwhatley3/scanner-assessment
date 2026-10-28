@@ -9,6 +9,7 @@ import {
   ruleName,
   setVersionArchived,
 } from "../api.ts";
+import { describeChecksum } from "../checksum.ts";
 import { useActiveSession } from "../session.tsx";
 import { DETECTION_LABELS, SEVERITY_LABELS, SeverityIcon } from "../severity.tsx";
 import { useLoad } from "../useLoad.ts";
@@ -178,6 +179,7 @@ export default function RuleSetsView() {
                   <th>Severity</th>
                   <th>Type</th>
                   <th>Pattern</th>
+                  <th>Checksum</th>
                 </tr>
               </thead>
               <tbody>
@@ -204,6 +206,7 @@ export default function RuleSetsView() {
                     <td>
                       <code className="pattern">{definition.pattern}</code>
                     </td>
+                    <td>{describeChecksum(definition.checksum) ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

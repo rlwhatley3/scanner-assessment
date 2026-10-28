@@ -74,6 +74,21 @@ export interface ScanResponse {
   partial: boolean;
 }
 
+export type ChecksumEncoding = "base62" | "base36" | "hex";
+
+/** A token read as prefix + covered part + checksum, where the checksum is a CRC32. */
+export interface Crc32Checksum {
+  algorithm: "crc32";
+  encoding: ChecksumEncoding;
+  /** Characters at the start the checksum doesn't cover, such as `ghp_`. */
+  prefixLength: number;
+  /** Characters at the end that hold the checksum. */
+  length: number;
+}
+
+/** How a token format's built-in check works, so the engine can test each match offline. */
+export type Checksum = Crc32Checksum | { algorithm: "luhn" } | { algorithm: "base58check" };
+
 /** Unset fields may be missing or null (the built-in rules are seeded with explicit nulls). */
 export interface RuleDefinition {
   name?: string;
@@ -85,6 +100,7 @@ export interface RuleDefinition {
   prefix?: string;
   keyNames?: string[];
   minEntropy?: number | null;
+  checksum?: Checksum | null;
   remediation?: string;
   /** Fields this UI doesn't edit (e.g. a newer engine's `checksum`) are kept as-is. */
   [other: string]: unknown;
