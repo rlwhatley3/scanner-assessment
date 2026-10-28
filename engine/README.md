@@ -76,7 +76,7 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 | npm token | Direct credential | High | `npm_` followed by 36 letters or digits, checked with the same CRC32 checksum as GitHub | Legacy npm tokens (UUIDs), which npm retired |
 | GitLab personal access token | Direct credential | High | Routable `glpat-` tokens (37 to 310 characters after the prefix), checked with GitLab's base36 CRC32 checksum | Other GitLab token types (`gldt-`, `glrt-`, ...) |
 | GitLab personal access token (legacy format) | Direct credential | High | `glpat-` followed by exactly 20 characters, the format before routable tokens; it has no checksum | Same as above |
-| Payment card number | Direct credential | High | 15- and 16-digit Visa, Mastercard, Amex, and Discover numbers, plain or in space- or dash-separated groups, checked with Luhn | 13- and 19-digit cards; other networks; numbers split across lines |
+| Payment card number | Direct credential | High | Visa (13 or 16 to 19 digits), Mastercard (16), Amex (15), Diners Club (14), and Discover, JCB, and UnionPay (16 to 19) numbers, plain or in space- or dash-separated groups, and a grouped number broken once across lines at a group boundary; checked with Luhn | Maestro and other networks; a 17- to 19-digit number written in groups, which is reported as its first 16 digits, since a short trailing group can't be told apart from a CVV; a number broken inside a group or more than once, since a column of short numbers would otherwise read as a card; UnionPay cards issued without a Luhn digit score 50 |
 | Bitcoin private key (WIF) | Direct credential | High | Wallet Import Format keys (51 or 52 Base58 characters starting with `5`, `K`, or `L`), checked with Base58Check | Raw hex private keys; other coins' formats |
 | Password-shaped value | Likely credential | Low | A quoted assigned value, or any parsed key/value pair, that looks like a password a person made up (password shape, minimum score 2), under any name, e.g. `safe_bet: "myUnencryptedPWHERE"`. A fallback: it skips values another rule already reported | Made-up passwords in a regular naming style (`myFirstPassword` reads as camelCase), all-lowercase ones (`summer2024`), and plain words; see [Password shape](#password-shape) |
 
@@ -99,7 +99,7 @@ A rule picks a checksum `algorithm` in its `checksum` field:
 | `algorithm` | Other fields | Used for |
 |---|---|---|
 | `crc32` | `encoding`, `prefixLength`, `length` (below) | Tokens that end in a CRC32 of the rest: GitHub, npm, GitLab, and in-house formats |
-| `luhn` | none | The mod-10 check digit on payment card numbers. Spaces and dashes between digit groups are ignored |
+| `luhn` | none | The mod-10 check digit on payment card numbers. Whitespace (including a line break) and dashes between digit groups are ignored |
 | `base58check` | none | Base58 with a 4-byte double-SHA-256 checksum, as in Bitcoin private keys (WIF) |
 
 A `crc32` token is read as `prefix + covered part + checksum`:
