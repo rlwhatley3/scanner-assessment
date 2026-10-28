@@ -71,7 +71,7 @@ impl From<StoreError> for ToolError {
         ToolError(match error {
             StoreError::NotFound(message) | StoreError::Invalid(message) => message,
             StoreError::RulesInvalid(check) => format!(
-                "The rules failed their checks, so no version was saved. Fix these and try \
+                "The rules failed their checks, so nothing was saved. Fix these and try \
                  again:\n{}",
                 serde_json::to_string_pretty(&check).expect("a rule check always serializes")
             ),
@@ -313,8 +313,11 @@ impl ScannerMcp {
     }
 
     #[tool(
-        description = "Replace a rule's definition. Saved rule set versions keep their own \
-                       snapshots, so this only affects versions created afterwards.",
+        description = "Replace a rule's definition. A draft saves as-is; a rule that is already \
+                       in a rule set version must pass the same checks as saving a version, or \
+                       nothing is saved and the errors are returned. Saved rule set versions \
+                       keep their own snapshots, so this only affects versions created \
+                       afterwards.",
         annotations(idempotent_hint = true)
     )]
     async fn update_rule(
