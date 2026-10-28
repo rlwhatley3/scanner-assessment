@@ -1,0 +1,11 @@
+2026-10-27T14:02:11.482Z INFO  http request method=GET path=/api/orders status=200 duration_ms=41 ip=10.0.3.17
+2026-10-27T14:02:11.913Z DEBUG http headers {"Host":"api.example.com","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTQyIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzYxNjEwMDAwfQ.k3Jx0pQm8vT2LwZbR9sYfN1cH4gE7aD6uI5oP3qW0zM","User-Agent":"curl/8.7.1"}
+2026-10-27T14:02:12.004Z INFO  http request method=GET path=/api/export?api_key=78f83a1cbb879fe005577b4550d662fe status=200 duration_ms=812
+2026-10-27T14:02:12.377Z WARN  auth failed login user=admin password=P@ssw0rd-2026-Q4 reason=locked
+2026-10-27T14:02:13.120Z INFO  outbound request url=https://ci-bot:ghp_kEPWpfYt1nnceUYf35uHsUQ5XB0DgOCRvxrH@github.com/acme/infra.git
+2026-10-27T14:02:13.551Z DEBUG http headers {"Authorization":"Basic Y2ktYm90OmdocF9rRVBXcGZZdDFubmNlVVlmMzV1SHNVUTVYQjBEZ09DUnZ4ckg="}
+2026-10-27T14:02:14.090Z INFO  http request method=GET path=/api/export?api_key=78f83a1cbb879fe005577b4550d662fe status=200 duration_ms=790
+2026-10-27T14:02:14.661Z INFO  http request method=GET path=/api/export?api_key=78f83a1cbb879fe005577b4550d662fe status=200 duration_ms=803
+2026-10-27T14:02:15.002Z ERROR db connect failed dsn=postgres://orders_svc:oe8j28wR^neV92yhLoAI@db.internal.example.com:5432/orders err="connection refused"
+2026-10-27T14:02:15.733Z INFO  http request method=GET path=/api/orders status=200 duration_ms=38 ip=10.0.3.17 trace_id=4bf92f3577b34da6a3ce929d0e0e4736
+2026-10-27T14:02:16.204Z INFO  http request method=POST path=/api/token status=201 duration_ms=12 body={"token":"[REDACTED]"}
