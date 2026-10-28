@@ -18,11 +18,16 @@
         "name": "GitHub token",
         "detectionType": "direct_credential",
         "severity": "high",
-        "pattern": "\\bghp_[A-Za-z0-9]{36}\\b",
-        "prefix": "ghp_",
+        "pattern": "\\bgh[pousr]_[A-Za-z0-9]{36}\\b",
+        "prefix": "gh",
         "remediation": "Revoke this token in GitHub settings and create a new one with only the scopes it needs.",
         "enabled": true,
-        "checksum": "github_crc32"
+        "checksum": {
+          "algorithm": "crc32",
+          "encoding": "base62",
+          "prefixLength": 4,
+          "length": 6
+        }
       }
     },
     {
@@ -74,6 +79,24 @@
         "name": "Known placeholder values",
         "detectionType": "placeholder_vs_real",
         "pattern": "(?i)your_key_here|changeme|xxxx|example|dummy|test",
+        "enabled": true
+      }
+    },
+    {
+      "id": 7,
+      "definition": {
+        "name": "npm token",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bnpm_[A-Za-z0-9]{36}\\b",
+        "prefix": "npm_",
+        "checksum": {
+          "algorithm": "crc32",
+          "encoding": "base62",
+          "prefixLength": 4,
+          "length": 6
+        },
+        "remediation": "Revoke this token in your npm account's Access Tokens page and create a new one with only the permissions it needs.",
         "enabled": true
       }
     }

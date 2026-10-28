@@ -75,7 +75,8 @@ pub struct RuleDefinition {
     /// If set, the `value` group (or the whole match) needs at least this many bits of
     /// entropy per character. Range 0–8.
     pub min_entropy: Option<f64>,
-    /// A checksum the matched value must pass to count as a real-format secret.
+    /// How the token format's checksum is built, if it has one. The matched value is checked
+    /// against it to tell a real-format secret from a made-up one.
     pub checksum: Option<Checksum>,
     pub remediation: Option<String>,
 }
@@ -115,6 +116,7 @@ pub enum RuleField {
     Prefix,
     KeyNames,
     MinEntropy,
+    Checksum,
     Remediation,
 }
 
@@ -258,6 +260,21 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
             RuleField::Severity,
             ErrorCode::Required,
             "A severity is required.",
+            None,
+        ));
+    }
+    if let Some(checksum) = definition.checksum
+        && !(checksum.min_length()..=Checksum::MAX_LENGTH).contains(&checksum.length)
+    {
+        let message = format!(
+            "This checksum needs {} to {} characters to hold its full value.",
+            checksum.min_length(),
+            Checksum::MAX_LENGTH
+        );
+        check.errors.push(error(
+            RuleField::Checksum,
+            ErrorCode::OutOfRange,
+            &message,
             None,
         ));
     }

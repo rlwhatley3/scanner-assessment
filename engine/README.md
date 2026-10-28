@@ -25,6 +25,7 @@ The API hands the engine one rule set version as JSON in this shape, and the eng
         "prefix": "AKIA",
         "keyNames": [],
         "minEntropy": null,
+        "checksum": null,
         "remediation": "Deactivate this key in AWS IAM..."
       }
     }
@@ -66,7 +67,7 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 | Rule | Detection type | Severity | Catches | Misses / limits |
 |---|---|---|---|---|
 | AWS access key | Direct credential | High | `AKIA` followed by 16 uppercase letters or digits | Other AWS key prefixes (`ASIA` temporary keys); secret access keys, which have no fixed format |
-| GitHub token | Direct credential | High | `ghp_` followed by 36 letters or digits, checked with GitHub's CRC32 checksum | Other GitHub token types (`gho_`, `ghs_`, `github_pat_`) |
+| GitHub token | Direct credential | High | `ghp_`, `gho_`, `ghu_`, `ghs_`, or `ghr_` followed by 36 letters or digits, checked with GitHub's CRC32 checksum | Fine-grained tokens (`github_pat_`), which use a different format |
 | Private key block | Direct credential | High | A `-----BEGIN … PRIVATE KEY-----` block, through its END line when present, otherwise just the header | Keys stored without PEM armor (raw base64, JWKs) |
 | Secret-looking assignment | Likely credential | Medium | A value of 8+ characters assigned with `=` or `:` to a name containing `password`, `passwd`, `secret`, `api_key`, `apikey`, or `token`, with at least 3.0 bits of entropy per character | Short or low-randomness secrets; secrets under other names. Values starting with `$`, `{`, or `(` are treated as references (`${DB_PASSWORD}`) and skipped |
 | Secret written to a log | Unsafe handling | Medium | `console.log`/`info`/`warn`/`error`/`debug`, `print`, `println!`, `logger.*`, or `log.*` with a secret-sounding name among its arguments | Calls split across lines; secrets passed through a renamed variable |
@@ -84,13 +85,31 @@ Every match also reports `inComment` and `checksumValid` (absent when the rule h
 
 ## Checksums
 
-Some token formats carry a checksum, so a match can be checked offline, with no network call: a real-format token passes, and a made-up one (an example, a test value, random text) almost always fails. A rule opts in with its `checksum` field.
+Some token formats carry a checksum, so a match can be checked offline, with no network call: a real-format token passes, and a made-up one (an example, a test value, random text) almost always fails.
 
-| `checksum` | Format |
+A rule describes its token format's checksum in its `checksum` field. A token is read as `prefix + covered part + checksum`:
+
+```json
+"checksum": { "algorithm": "crc32", "encoding": "base62", "prefixLength": 4, "length": 6 }
+```
+
+| Field | Values | Meaning |
+|---|---|---|
+| `algorithm` | `crc32` | How the checksum is computed from the covered part |
+| `encoding` | `base62` (digits `0-9A-Za-z`), `hex` (either case) | How the value is written |
+| `prefixLength` | 0 or more | Characters at the start the checksum doesn't cover, such as `ghp_` |
+| `length` | 6–16 for base62, 8–16 for hex | Characters at the end holding the checksum, zero-padded |
+
+**Seeded setups:** the built-in rules carry the common ones, so a rule author can copy them:
+
+| Built-in rule | Setup |
 |---|---|
-| `github_crc32` | GitHub tokens: a prefix like `ghp_`, 30 random base62 characters, then the CRC32 of those 30 characters in base62 (`0-9A-Za-z`), zero-padded to 6 characters |
+| GitHub token (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`) | `crc32`, `base62`, prefix 4, length 6 ([GitHub](https://github.blog/engineering/behind-githubs-new-authentication-token-formats/)) |
+| npm token (`npm_`) | `crc32`, `base62`, prefix 4, length 6 ([npm uses GitHub's format](https://github.blog/security/announcing-npms-new-access-token-format)) |
 
-A failed checksum lowers confidence and raises the placeholder score; it does not drop the finding. GitHub hasn't published a test token, so the check follows [GitHub's description](https://github.blog/engineering/behind-githubs-new-authentication-token-formats/) and existing open-source validators. If the digit order were ever wrong, real tokens would still be reported, just at lower confidence.
+**Custom setups:** a rule for an in-house token format describes its own, e.g. `acme_` followed by the covered part and an 8-digit hex CRC32 is `{ "algorithm": "crc32", "encoding": "hex", "prefixLength": 5, "length": 8 }`. A length too short to hold the full value, or longer than 16, is a rule error on the `checksum` field.
+
+A failed checksum lowers confidence and raises the placeholder score; it never drops the finding. GitHub and npm haven't published test tokens, so the seeded setups follow their descriptions and existing open-source validators. If a setup were ever subtly wrong, real tokens would still be reported, just at lower confidence. The same holds for a mistaken custom setup.
 
 ## File format parsing
 

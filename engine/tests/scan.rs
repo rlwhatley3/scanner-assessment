@@ -1,15 +1,15 @@
 use secrets_scanner_engine::{
-    ErrorCode, FindingKind, Format, MAX_FINDINGS, MAX_INPUT_BYTES, MatchDetails, Rule,
-    RuleDefinition, RuleField, ScanError, ScanResult, Violation, default_rule_set, github_checksum,
-    scan,
+    Checksum, ChecksumAlgorithm, ChecksumEncoding, ErrorCode, FindingKind, Format, MAX_FINDINGS,
+    MAX_INPUT_BYTES, MatchDetails, Rule, RuleDefinition, RuleField, ScanError, ScanResult,
+    Violation, default_rule_set, scan,
 };
 
 const AWS_KEY: &str = "AKIAZ7Q3LMN4XWY2PRT6";
 const GITHUB_TOKEN: &str = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
 const RANDOM_PASSWORD: &str = "q8Z!fP2xL7mR";
 
-/// Scans with the built-in rule set: ids 1–6 are the AWS key, GitHub token, private key,
-/// assignment, logging, and known placeholder values rules.
+/// Scans with the built-in rule set: ids 1–7 are the AWS key, GitHub token, private key,
+/// assignment, logging, known placeholder values, and npm token rules.
 fn run(text: &str) -> ScanResult {
     scan(42, text, &default_rule_set()).expect("scan should run")
 }
@@ -293,7 +293,78 @@ fn locations_survive_unicode_and_mixed_line_endings() {
 /// committed.
 fn valid_github_token() -> String {
     let random = "Zq7Lm2Xc9Vb4Nn6Tt1Rr8Pp3Kk5Hh0";
-    format!("ghp_{random}{}", github_checksum(random))
+    format!("ghp_{random}{}", Checksum::GITHUB.compute(random))
+}
+
+#[test]
+fn every_github_token_prefix_is_checked_with_the_same_checksum() {
+    let random = "Ab3De6Gh9Jk2Mn5Pq8St1Vw4Yz7Bc0";
+    let token = format!("gho_{random}{}", Checksum::GITHUB.compute(random));
+    let result = run(&format!("oauth = {token}"));
+    let found = matches(&result);
+    assert_eq!(result.findings[0].rule_id, 2);
+    assert_eq!(found[0].checksum_valid, Some(true));
+    assert_eq!(found[0].redacted_preview.as_deref(), Some("gh…"));
+}
+
+#[test]
+fn npm_tokens_are_found_and_checked_like_github_tokens() {
+    let random = "Kx4Mv7Pz1Qr3St6Uw9Yb2Dc5Fg8Hj0";
+    let valid = format!("npm_{random}{}", Checksum::GITHUB.compute(random));
+    let result = run(&format!("//registry.npmjs.org/:_authToken={valid}"));
+    let found = matches(&result);
+    let npm = result
+        .findings
+        .iter()
+        .position(|finding| finding.rule_id == 7)
+        .expect("the npm rule should match");
+    assert_eq!(found[npm].checksum_valid, Some(true));
+    assert_eq!(found[npm].confidence, 99);
+
+    let made_up = format!("npm_{}", "a".repeat(36));
+    let result = run(&format!("token: {made_up}"));
+    let npm = matches(&result)
+        .into_iter()
+        .zip(&result.findings)
+        .find(|(_, finding)| finding.rule_id == 7)
+        .map(|(details, _)| details.clone())
+        .expect("the npm rule should match");
+    assert_eq!(npm.checksum_valid, Some(false));
+}
+
+#[test]
+fn a_rule_author_can_describe_their_own_checksum() {
+    // An in-house token: "acme_", the covered part, then an 8-digit hex CRC32.
+    let setup = Checksum {
+        algorithm: ChecksumAlgorithm::Crc32,
+        encoding: ChecksumEncoding::Hex,
+        prefix_length: 5,
+        length: 8,
+    };
+    let mut rule_set = default_rule_set();
+    rule_set.rules.push(Rule {
+        id: 8,
+        definition: RuleDefinition {
+            name: Some("Acme service key".into()),
+            pattern: Some(r"\bacme_[0-9a-f]{20}\b".into()),
+            prefix: Some("acme_".into()),
+            checksum: Some(setup),
+            ..rule_set.rules[0].definition.clone()
+        },
+    });
+    let covered = "0123456789ab";
+    let valid = format!("acme_{covered}{}", setup.compute(covered));
+    let invalid = format!("acme_{covered}00000000");
+    let result =
+        scan(1, &format!("a = {valid}\nb = {invalid}"), &rule_set).expect("scan should run");
+    let found: Vec<Option<bool>> = result
+        .findings
+        .iter()
+        .zip(matches(&result))
+        .filter(|(finding, _)| finding.rule_id == 8)
+        .map(|(_, details)| details.checksum_valid)
+        .collect();
+    assert_eq!(found, [Some(true), Some(false)]);
 }
 
 #[test]
