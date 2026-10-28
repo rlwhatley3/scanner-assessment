@@ -247,7 +247,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
             {noRulesEnabled && phase.kind === "editing" && (
               <p className="banner warning" role="status">
                 No rules enabled in this rule set version, so a scan could only look clean.{" "}
-                <Link to={`/playground/rule-sets/${versionId}`}>Open the rule set</Link>
+                <Link to={`/playground/versions/${versionId}`}>Open the rule set</Link>
               </p>
             )}
             {phase.kind === "scanning" && (

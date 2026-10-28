@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   ApiError,
   checkRule,
@@ -11,6 +10,7 @@ import {
   type Severity,
   saveRule,
 } from "../api.ts";
+import { VersionLink } from "../rule-sets/RuleSetPanel.tsx";
 import { DETECTION_LABELS, SEVERITY_LABELS } from "../severity.tsx";
 import ChecksumFields, {
   type ChecksumForm,
@@ -195,7 +195,7 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
                 {rule.versionIds.map((id, index) => (
                   <span key={id}>
                     {index > 0 && ", "}
-                    <Link to={`/playground/rule-sets/${id}`}>version {id}</Link>
+                    <VersionLink versionId={id} />
                   </span>
                 ))}
                 .
