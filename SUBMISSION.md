@@ -245,7 +245,23 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 - **Concurrency cap:** at most 4 scans run at once. Others wait their turn, so a burst of scans can't starve the rest of the API.
 - **At scale:** scanning in the API process would compete with every other request. The intended production shape avoids that entirely: scanning runs on the client (a CLI or a real local app calling the engine in-process), and the hosted API only serves rule sets. If a hosted scanning service were ever needed, the next steps would be a separate worker pool, then a queue with independently scaled workers.
 
+### MCP server
+
+The API also serves an MCP server at `/mcp` (Streamable HTTP), so an AI agent can read and write the same data the UI will. It has 15 tools:
+
+- **Rules:** `list_rules`, `get_rule`, `create_rule`, `update_rule`, `delete_rule`, `check_rules`
+- **Rule set versions:** `list_rule_set_versions`, `get_rule_set_version`, `create_rule_set_version`, `set_rule_set_version_archived`
+- **Scan sessions and scans:** `list_scan_sessions`, `get_scan_session`, `create_scan_session`, `get_scan`, `run_scan`
+
+The tools follow the same rules as the rest of the API, through a shared storage module (`server/src/store.rs`):
+
+- New rules are drafts and aren't validated. `delete_rule` only deletes drafts; a rule in a version can be disabled or left out of the next version instead.
+- `create_rule_set_version` takes the full list of rule ids, runs the engine's checks on them as a set, and saves nothing if any check fails. Otherwise it snapshots each rule's current definition and clears `drafting`. A saved version can only be archived or restored, and an archived version can't start a new session.
+- `run_scan` uses the same code as the scan endpoint, so the text is never stored or logged, and findings never contain matched values.
+- **Local only:** like the API, the server listens on loopback. It accepts only loopback `Host` headers, which protects against DNS rebinding, and it rejects any request that has an `Origin` header, so a web page can't drive the write tools through the user's browser.
+- **Stateless:** each tool call is one request and one JSON response, with no MCP session to keep.
+
 ### Known gaps
 
 - **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.
-- **No endpoint to create a scan session yet.**
+- **No REST endpoints for rules, versions, or sessions yet.** The MCP server's tools cover them, and the REST routes can reuse the same storage module.
