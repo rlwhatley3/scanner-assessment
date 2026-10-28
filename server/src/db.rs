@@ -6,7 +6,10 @@ use std::{
 
 /// Applied in order. The connection's `user_version` records how many have run,
 /// so only append to this list; never edit a migration that has shipped.
-const MIGRATIONS: &[&str] = &[include_str!("db/migrations/0001_initial.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("db/migrations/0001_initial.sql"),
+    include_str!("db/migrations/0002_rule_sets.sql"),
+];
 
 /// A shared SQLite connection. Cloning is cheap; all clones use the same connection.
 #[derive(Clone)]

@@ -1,4 +1,6 @@
-use super::{app, create_rule, create_version, send, valid_definition};
+use super::{
+    app, create_rule, create_rule_set, create_version, create_version_in, send, valid_definition,
+};
 use axum::http::StatusCode;
 use serde_json::json;
 
@@ -47,7 +49,7 @@ async fn an_invalid_rule_blocks_the_whole_version() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "ruleIds": [good, bad] })),
+        Some(json!({ "ruleSetId": create_rule_set(&app, "Team").await, "ruleIds": [good, bad] })),
     )
     .await;
 
@@ -70,7 +72,9 @@ async fn two_rules_in_a_version_cannot_share_a_name() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "ruleIds": [first, second] })),
+        Some(
+            json!({ "ruleSetId": create_rule_set(&app, "Team").await, "ruleIds": [first, second] }),
+        ),
     )
     .await;
 
@@ -87,7 +91,7 @@ async fn a_version_rejects_a_rule_listed_twice() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "ruleIds": [id, id] })),
+        Some(json!({ "ruleSetId": create_rule_set(&app, "Team").await, "ruleIds": [id, id] })),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -101,7 +105,7 @@ async fn a_version_needs_rules_that_exist() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "ruleIds": [] })),
+        Some(json!({ "ruleSetId": create_rule_set(&app, "Team").await, "ruleIds": [] })),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -109,7 +113,7 @@ async fn a_version_needs_rules_that_exist() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "ruleIds": [42] })),
+        Some(json!({ "ruleSetId": create_rule_set(&app, "Other team").await, "ruleIds": [42] })),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -119,12 +123,13 @@ async fn a_version_needs_rules_that_exist() {
 async fn archived_versions_are_hidden_unless_asked_for() {
     let app = app();
     let id = create_rule(&app, valid_definition("AWS key")).await;
-    let first = create_version(&app, &[id]).await;
+    let rule_set = create_rule_set(&app, "Team").await;
+    let first = create_version_in(&app, rule_set, &[id]).await;
     let (status, second) = send(
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "parentId": first, "ruleIds": [id] })),
+        Some(json!({ "ruleSetId": rule_set, "parentId": first, "ruleIds": [id] })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -171,7 +176,7 @@ async fn the_seeded_built_in_rules_save_as_a_new_version() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "parentId": 1, "ruleIds": ids })),
+        Some(json!({ "ruleSetId": 1, "parentId": 1, "ruleIds": ids })),
     )
     .await;
 

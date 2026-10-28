@@ -26,6 +26,8 @@ pub fn router() -> Router<AppState> {
 #[serde(rename_all = "camelCase")]
 #[into_params(rename_all = "camelCase")]
 pub struct ListQuery {
+    /// Only this rule set's versions. Omit for every set's.
+    rule_set_id: Option<i64>,
     /// Include archived versions. Defaults to false.
     #[serde(default)]
     include_archived: bool,
@@ -34,7 +36,9 @@ pub struct ListQuery {
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateVersion {
-    /// The version this one is based on.
+    /// The rule set the version is added to.
+    rule_set_id: i64,
+    /// The version this one is based on, from the same rule set.
     parent_id: Option<i64>,
     /// The rules to add, by id, each listed once. Each one's current definition is snapshotted
     /// into the version.
@@ -52,7 +56,7 @@ pub struct UpdateVersion {
     path = "/api/rule-set-versions",
     tag = "Rule set versions",
     summary = "List rule set versions",
-    description = "The version timeline, oldest first. Archived versions are left out unless asked for.",
+    description = "Versions oldest first, for every rule set or one. Archived versions are left out unless asked for.",
     params(ListQuery),
     responses((status = 200, body = [RuleSetVersionSummary]))
 )]
@@ -61,7 +65,13 @@ pub async fn list(
     Query(query): Query<ListQuery>,
 ) -> Result<Json<Vec<RuleSetVersionSummary>>, ApiError> {
     let versions = db
-        .call(move |connection| Ok(store::list_versions(connection, query.include_archived)))
+        .call(move |connection| {
+            Ok(store::list_versions(
+                connection,
+                query.rule_set_id,
+                query.include_archived,
+            ))
+        })
         .await??;
     Ok(Json(versions))
 }
@@ -88,14 +98,14 @@ pub async fn fetch(
     post,
     path = "/api/rule-set-versions",
     tag = "Rule set versions",
-    summary = "Save a new rule set version",
+    summary = "Save a new version of a rule set",
     description = "Runs the engine's checks on the listed rules as one set, snapshots each one's \
                    current definition into the new version, and clears drafting on them. Nothing \
                    is saved if any rule fails, so every saved version is valid.",
     request_body = CreateVersion,
     responses(
         (status = 201, body = RuleSetVersionRecord),
-        (status = 422, description = "No rules, a repeated or unknown rule or parent, or rules that fail their checks", body = ErrorBody)
+        (status = 422, description = "No rules, a repeated or unknown rule, an unknown or archived rule set, a parent from another set, or rules that fail their checks", body = ErrorBody)
     )
 )]
 pub async fn create(
@@ -106,6 +116,7 @@ pub async fn create(
         .call(move |connection| {
             Ok(store::create_version(
                 connection,
+                body.rule_set_id,
                 body.parent_id,
                 &body.rule_ids,
             ))
