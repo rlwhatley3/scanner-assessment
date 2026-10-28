@@ -247,9 +247,11 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 
 ### MCP server
 
-The API also serves an MCP server at `/mcp` (Streamable HTTP), so an AI agent can read and write the same data the UI will. It has 15 tools:
+The API also serves an MCP server at `/mcp` (Streamable HTTP), so an AI agent can read and write the same data the UI will. It has 20 tools:
 
+- **Rule authoring:** `rule_authoring_guide` explains every mechanism a rule can use (patterns and their `value` and `key` groups, detection types, key names, entropy, checksums, password shape, placeholders, model rules), when to use each and why, and how each built-in rule is assembled from them. It returns the whole guide or one section by topic, and the server's instructions tell agents to read it before writing rules. The guide lives in `server/src/rule_guide.md`.
 - **Rules:** `list_rules`, `get_rule`, `create_rule`, `update_rule`, `delete_rule`, `check_rules`
+- **Rule sets:** `list_rule_sets`, `get_rule_set`, `create_rule_set`, `update_rule_set`
 - **Rule set versions:** `list_rule_set_versions`, `get_rule_set_version`, `create_rule_set_version`, `set_rule_set_version_archived`
 - **Scan sessions and scans:** `list_scan_sessions`, `get_scan_session`, `create_scan_session`, `get_scan`, `run_scan`
 

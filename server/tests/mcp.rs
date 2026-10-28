@@ -149,6 +149,7 @@ async fn initializes_and_lists_every_tool() {
             "list_rule_sets",
             "list_rules",
             "list_scan_sessions",
+            "rule_authoring_guide",
             "run_scan",
             "set_rule_set_version_archived",
             "update_rule",
@@ -452,4 +453,65 @@ async fn rule_sets_are_named_and_can_start_from_a_copy() {
     assert_eq!(renamed["name"], "Strict v2");
     let versions = ok(&app, "list_rule_set_versions", json!({"ruleSetId": id})).await;
     assert_eq!(versions["versions"][0]["ruleSetName"], "Strict v2");
+}
+
+#[tokio::test]
+async fn the_rule_authoring_guide_covers_every_mechanism_by_topic() {
+    let (app, _) = app().await;
+    let whole = ok(&app, "rule_authoring_guide", json!({})).await;
+    assert_eq!(
+        whole["topics"],
+        json!([
+            "overview",
+            "workflow",
+            "detection-types",
+            "patterns",
+            "key-names",
+            "entropy",
+            "checksums",
+            "password-shape",
+            "placeholders",
+            "models",
+            "scoring",
+            "parsing",
+            "validation",
+            "recipes",
+            "pitfalls"
+        ])
+    );
+    let text = whole["text"].as_str().expect("the guide is text");
+    // Every definition field is explained somewhere in it.
+    for field in [
+        "name",
+        "enabled",
+        "detectionType",
+        "severity",
+        "pattern",
+        "prefix",
+        "keyNames",
+        "minEntropy",
+        "checksum",
+        "passwordShape",
+        "remediation",
+        "model",
+        "threshold",
+    ] {
+        assert!(
+            text.contains(&format!("`{field}`")),
+            "{field} is not documented"
+        );
+    }
+
+    let section = ok(&app, "rule_authoring_guide", json!({"topic": "checksums"})).await;
+    let section_text = section["text"].as_str().expect("a section is text");
+    assert!(section_text.starts_with("## Checksums"));
+    assert!(section_text.contains("prefixLength"));
+    assert!(!section_text.contains("## Password shape"));
+
+    let error = err(&app, "rule_authoring_guide", json!({"topic": "regex"})).await;
+    assert!(
+        error.contains("There is no guide section \"regex\""),
+        "{error}"
+    );
+    assert!(error.contains("detection-types"), "{error}");
 }
