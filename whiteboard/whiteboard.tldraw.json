@@ -741,15 +741,6 @@
                   }
                 ],
                 "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "Open: does the engine or the UI group overlapping ranges?",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
               }
             ],
             "type": "doc"
@@ -1220,7 +1211,7 @@
               {
                 "content": [
                   {
-                    "text": "• Starts a new inspection and pastes the file",
+                    "text": "• Starts a new scan and pastes the file",
                     "type": "text"
                   }
                 ],
@@ -1777,7 +1768,7 @@
               {
                 "content": [
                   {
-                    "text": "• Reports every match, overlaps included",
+                    "text": "• Reports every match and groups the ones that overlap",
                     "type": "text"
                   }
                 ],
@@ -1795,7 +1786,7 @@
               {
                 "content": [
                   {
-                    "text": "• Stops at 1,000 and says the list was cut short",
+                    "text": "• Stops at 200 and says the list was cut short (the UI warns about the cap before scanning)",
                     "type": "text"
                   }
                 ],

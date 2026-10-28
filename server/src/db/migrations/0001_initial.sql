@@ -1,95 +1,78 @@
--- Inspection text, matched values, and input hashes are never stored.
+-- Scan text is never stored.
+-- Every table carries created_at and updated_at; the app sets updated_at when it writes a row.
 
 CREATE TABLE rule_set_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     parent_id INTEGER REFERENCES rule_set_versions (id),
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    -- Archived versions are hidden from the version timeline, not deleted.
     archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
-    -- Canonical JSON: an array of known placeholder values, and an array of rules.
-    placeholders TEXT NOT NULL,
-    rules TEXT NOT NULL
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
--- The one editable copy of the rule set, where edits and draft rules live until they are
--- applied as a new rule set version. Rules here may carry "draft": true; drafts are not
--- validated, and applying clears the flag, so saved versions never contain drafts.
-CREATE TABLE rule_set_working_copy (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    base_version_id INTEGER REFERENCES rule_set_versions (id),
+-- A rule exists on its own, with one id for life. It joins rule set versions through
+-- rule_set_version_rules, so the same rule can appear in many versions, or in none yet.
+CREATE TABLE rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- Name, pattern, severity, and the other rule fields, filled in from the rule form.
+    -- A new draft starts empty.
+    definition TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(definition)),
+    -- New rules start as drafts; drafts are not validated until drafting is cleared.
+    drafting INTEGER NOT NULL DEFAULT 1 CHECK (drafting IN (0, 1)),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Adding a rule into a version creates one of these rows.
+CREATE TABLE rule_set_version_rules (
+    rule_set_version_id INTEGER NOT NULL REFERENCES rule_set_versions (id),
+    rule_id INTEGER NOT NULL REFERENCES rules (id),
+    -- The rule's definition as it was when added, so the version keeps what it scanned with
+    -- even if the rule is edited later.
+    definition TEXT NOT NULL CHECK (json_valid(definition)),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    placeholders TEXT NOT NULL,
-    rules TEXT NOT NULL
+    PRIMARY KEY (rule_set_version_id, rule_id)
 );
 
--- Allocates rule ids. AUTOINCREMENT never reuses an id, even after its row is deleted.
-CREATE TABLE rule_ids (
-    id INTEGER PRIMARY KEY AUTOINCREMENT
-);
+CREATE INDEX rule_set_version_rules_rule_id ON rule_set_version_rules (rule_id);
 
 CREATE TABLE scan_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    rule_set_version_id INTEGER NOT NULL REFERENCES rule_set_versions (id),
+    -- Null until the session's first scan runs.
+    last_ran TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
--- Cancelled and errored scans have no results, so they are not stored.
-CREATE TABLE inspections (
+CREATE TABLE scans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_session_id INTEGER NOT NULL REFERENCES scan_sessions (id),
-    rule_set_version_id INTEGER NOT NULL REFERENCES rule_set_versions (id),
-    log_id TEXT NOT NULL,
+    -- True when the scan found more than the 200-finding cap and the rest were not saved.
+    truncated INTEGER NOT NULL DEFAULT 0 CHECK (truncated IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    outcome TEXT NOT NULL CHECK (outcome IN ('findings', 'clean', 'partial')),
-    truncated INTEGER NOT NULL DEFAULT 0 CHECK (truncated IN (0, 1))
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-CREATE INDEX inspections_scan_session_id ON inspections (scan_session_id);
-CREATE INDEX inspections_rule_set_version_id ON inspections (rule_set_version_id);
+CREATE INDEX scans_scan_session_id ON scans (scan_session_id);
 
 CREATE TABLE findings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    inspection_id INTEGER NOT NULL REFERENCES inspections (id),
-    rule_id INTEGER NOT NULL,
-    rule_name TEXT NOT NULL,
-    detection_type TEXT NOT NULL
-        CHECK (detection_type IN ('direct_credential', 'likely_credential', 'unsafe_handling')),
-    severity TEXT NOT NULL CHECK (severity IN ('high', 'medium', 'low')),
-    confidence INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 100),
-    -- Absent for unsafe handling findings, which point at a pattern rather than a value.
-    placeholder_score INTEGER CHECK (placeholder_score BETWEEN 0 AND 100),
-    start_line INTEGER NOT NULL,
-    start_column INTEGER NOT NULL,
-    end_line INTEGER NOT NULL,
-    end_column INTEGER NOT NULL,
-    start_byte INTEGER NOT NULL,
-    end_byte INTEGER NOT NULL,
-    -- Taken from the rule's declared prefix, never from the match.
-    redacted_preview TEXT,
-    why_flagged TEXT NOT NULL,
-    remediation TEXT NOT NULL
+    scan_id INTEGER NOT NULL REFERENCES scans (id),
+    -- The rule this finding is about.
+    rule_id INTEGER NOT NULL REFERENCES rules (id),
+    -- 'match': the rule found something in the text.
+    -- 'rule_error': the rule could not run (e.g. its pattern does not compile), which makes
+    -- the scan partial.
+    kind TEXT NOT NULL CHECK (kind IN ('match', 'rule_error')),
+    -- Machine-readable details of the violation.
+    violation TEXT NOT NULL CHECK (json_valid(violation)),
+    -- Human-readable summary of the same violation.
+    violation_pretty TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-CREATE INDEX findings_inspection_id ON findings (inspection_id);
-
-CREATE TABLE rule_errors (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    inspection_id INTEGER NOT NULL REFERENCES inspections (id),
-    rule_id INTEGER NOT NULL,
-    -- A missing name is itself a rule error.
-    rule_name TEXT,
-    -- The rule field the error belongs to, so a reopened session can point at it.
-    field TEXT NOT NULL CHECK (field IN (
-        'name', 'enabled', 'detection_type', 'severity', 'pattern',
-        'prefix', 'key_names', 'min_entropy', 'remediation'
-    )),
-    code TEXT NOT NULL CHECK (code IN (
-        'required', 'invalid_regex', 'too_large', 'out_of_range', 'duplicate_name'
-    )),
-    message TEXT NOT NULL,
-    -- Byte range within the field's value (e.g. the bad spot in a pattern), when known.
-    span_start INTEGER,
-    span_end INTEGER,
-    CHECK ((span_start IS NULL) = (span_end IS NULL)),
-    CHECK (span_start IS NULL OR span_start <= span_end)
-);
-
-CREATE INDEX rule_errors_inspection_id ON rule_errors (inspection_id);
+CREATE INDEX findings_scan_id ON findings (scan_id);
+CREATE INDEX findings_rule_id ON findings (rule_id);

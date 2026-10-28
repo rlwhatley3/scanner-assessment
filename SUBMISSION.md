@@ -22,8 +22,8 @@ Use this document to guide your project walkthrough.
 
 Use case 1: scan a source file. An engineer pastes a configuration file that may contain a live credential and runs the known rule-sets against it.
 
-1. Create or reopen a **scan session**, then click **New inspection**. If the current inspection has text that was pasted but never scanned, prompt "Discard current inspection?"; confirm clears, cancel keeps it. Scanned inspections need no prompt, since their results are already saved to the session.
-2. Empty inspection: paste the config file text. Scan is disabled until text is present. Inspection text is never persisted (not to disk, not to browser storage).
+1. Create or reopen a **scan session**, then click **New scan**. If the current scan has text that was pasted but never scanned, prompt "Discard current scan?"; confirm clears, cancel keeps it. Scans that already ran need no prompt, since their results are already saved to the session.
+2. Empty scan: paste the config file text. Scan is disabled until text is present. Scan text is never persisted (not to disk, not to browser storage).
 3. Click **Scan**. While scanning, a "Do not refresh or close this page" warning is shown. The button reads **Cancel** for 5 seconds; a click in that window aborts. After 5 seconds the button returns to a running state; clicking it again re-arms Cancel for another 5 seconds (arm, then confirm).
 4. Outcomes:
    - **Findings:** highlight the matched area in the text and show the rule it violates.
@@ -31,9 +31,9 @@ Use case 1: scan a source file. An engineer pastes a configuration file that may
    - **Partial:** findings from the rules that ran, plus a warning naming the rule(s) that failed.
    - **Cancelled:** back to ready, text intact, no results.
    - **Error:** API unreachable, 5xx, or input rejected. Error message shown, text intact, Scan re-enabled.
-5. Text is read-only after a scan. To fix an issue and rescan, start a New inspection in the same scan session and paste the fixed content into a fresh input. In-place editing (with results marked stale) is not ruled out for later.
-6. Reload: no inspection is open. Inspection text does not persist; inspection results do. A past scan session can be reopened: it shows each inspection's broken rules and locations, but no content, and new inspections can be added to it. Rule set versions in the rule set version control UI also persist.
-7. One active scan session at a time, and one inspection at a time: due to non-persistence of potentially live creds.
+5. Text is read-only after a scan. To fix an issue and rescan, start a New scan in the same scan session and paste the fixed content into a fresh input. In-place editing (with results marked stale) is not ruled out for later.
+6. Reload: no scan is open. Scan text does not persist; scan results do. A past scan session can be reopened: it shows each scan's broken rules and locations, but no content, and new scans can be added to it. Rule set versions in the rule set version control UI also persist.
+7. One active scan session at a time, and one scan at a time: due to non-persistence of potentially live creds.
 
 The rule set is versioned in the **rule set version control UI**, shown as a small timeline: persisted locally, each version viewable with its attached scan results, re-usable as the basis for a new version, and archivable (hidden from the timeline, not deleted).
 
@@ -41,8 +41,8 @@ The rule set is versioned in the **rule set version control UI**, shown as a sma
 
 | State | Trigger | What the user sees |
 |---|---|---|
-| No inspection | Page load / reload | Rule set version control UI, past scan sessions, New inspection button |
-| Empty | New inspection | Empty text box, Scan disabled |
+| No scan | Page load / reload | Rule set version control UI, past scan sessions, New scan button |
+| Empty | New scan | Empty text box, Scan disabled |
 | Ready | Text present | Scan enabled |
 | Scanning | Scan clicked | Cancel button (5 s window), progress indicator, do-not-refresh warning |
 | Cancelled | Cancel confirmed | Ready, text intact, no results |
@@ -63,22 +63,22 @@ The rule set is versioned in the **rule set version control UI**, shown as a sma
 
 ### 3. Frontend, API, and detection-engine boundaries
 
-**Frontend (`ui/`):** the inspection UI and the rule set version control UI. Sends inspection text and the rule set to the API over loopback. Contains no detection logic.
+**Frontend (`ui/`):** the scan UI and the rule set version control UI. Sends scan text and the rule set to the API over loopback. Contains no detection logic.
 
-**API (`server/`):** keeps its current structure, with local storage for rule set versions. Calls the engine in-process (a function call, not a network hop). Never logs request content. Generates a log id per scan, passes it to the engine, and writes the engine's log events so the two can be correlated.
+**API (`server/`):** keeps its current structure, with local storage for rule set versions. Calls the engine in-process (a function call, not a network hop). Never logs request content. Passes each scan's id to the engine as its log id and writes the engine's log events, so a scan's logs can be found by its id.
 
 **Engine (`engine/`, top-level Rust crate):** a pure library with no HTTP, disk, or network access. `server/` depends on it by path; a future CLI will too.
 
 - Validates and compiles rules, returning per-rule errors instead of failing the whole scan.
 - Returns both byte offsets and line/column for every finding.
-- Emits log events tagged with the log id, containing redacted values only, never the full match. The caller decides where they are written.
+- Emits log events tagged with the scan id, containing redacted values only, never the full match. The caller decides where they are written.
 - Covers four detection types:
   - **Direct credentials:** a secret value is present (`AKIA...`, `ghp_...`, `-----BEGIN PRIVATE KEY-----`, `password=hunter2`).
   - **Likely credentials:** high-entropy strings next to suspicious key names, with no known format.
   - **Placeholder vs. real:** classify a match as an example value (`YOUR_KEY_HERE`, `xxxx`) or as likely real.
   - **Unsafe handling, no value present:** code or config that handles a secret unsafely (logging it, putting it in a URL, passing it on the command line). An unsafe handling finding points at a risky pattern, not a secret value, so the finding shape must support both.
 
-**CLI (later):** pulls rule-sets from a hosted API, reads files itself, calls the engine in-process, and returns a well-documented, stable response shape to its local caller (shell, CI step, pre-commit hook). Inspection text never goes over a wire.
+**CLI (later):** pulls rule-sets from a hosted API, reads files itself, calls the engine in-process, and returns a well-documented, stable response shape to its local caller (shell, CI step, pre-commit hook). Scan text never goes over a wire.
 
 ```
 browser (has the text)  --loopback-->  API (server/)  --function call-->  engine/
@@ -87,22 +87,26 @@ CLI (reads files)  -----------------------function call------------------>  engi
 CLI  <--rule-sets--  hosted API
 ```
 
-**Exposure (accepted, documented):** FE to API traffic is loopback only and never leaves the machine. In dev it makes two loopback hops: browser to the Vite dev server (`127.0.0.1:5173`), then Vite's `/api` proxy to the API (`127.0.0.1:3001`). Inspection text is still visible in browser devtools and readable by local processes that can observe loopback traffic. I think a production version would need to be its own app with I/O privileges, reading files directly and running the engine in-process, rather than a browser talking to a local API.
+**Exposure (accepted, documented):** FE to API traffic is loopback only and never leaves the machine. In dev it makes two loopback hops: browser to the Vite dev server (`127.0.0.1:5173`), then Vite's `/api` proxy to the API (`127.0.0.1:3001`). Scan text is still visible in browser devtools and readable by local processes that can observe loopback traffic. I think a production version would need to be its own app with I/O privileges, reading files directly and running the engine in-process, rather than a browser talking to a local API.
 
 ### 4. What a finding contains, and how it is represented in the source text
 
 **Storage model**
 
 ```
-scan session (id)                        : one active at a time, reopenable
-  └─ inspection (id, timestamp, rule set version, log id, outcome)
-       └─ finding
-       └─ rule errors
+scan session (id, rule set version, last ran)    : one active at a time, reopenable
+  └─ scan (id, truncated)
+       └─ finding (rule, kind: match | rule_error, violation JSON, violation_pretty)
+
+rule set version (id, parent, archived)
+  └─ rule set version rule (definition snapshot) ──► rule (id, definition JSON, drafting)
 ```
 
-A scan session has many inspections; each inspection is one scan. Fixing an issue and rescanning creates a new inspection in the same session, so all inspections stay tied to the session id.
+Every table also carries `created_at` and `updated_at`.
 
-Never stored: the inspection text, matched values, or a hash of the input. A hash was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
+A scan session uses one rule set version and has many scans. Fixing an issue and rescanning creates a new scan in the same session, so all scans stay tied to the session. A scan's id doubles as its log id: the engine tags its log events with it. A rule that fails to run is recorded as a finding of kind `rule_error` on that rule, so a scan is partial when it has one, and clean when it has no findings at all.
+
+Never stored: the pasted text, matched values, or a hash of the input. A hash was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
 
 **A finding contains**
 
@@ -118,13 +122,15 @@ Never stored: the inspection text, matched values, or a hash of the input. A has
 | Why flagged | A note explaining the scores using signals only (e.g. entropy, suspicious key name, not a known placeholder), never input text | Engine, per finding |
 | Remediation hint | Static text | Rule |
 
-**Redacted preview:** taken from the rule definition, not from the match, so no byte of a matched value reaches storage, logs, CLI output, or the API response. The same format is used in all four. It is needed wherever the text is unavailable or output could leak: engine log events, the past scan session view, CLI output, and the API scan response. The live inspection view does not need it, since the frontend highlights its own copy of the text. Trade-off: two findings from the same rule on the same line can only be told apart by column in the past scan session view.
+These fields live in the finding's `violation` JSON. `violation_pretty` holds the human-readable summary shown in lists, and `kind` says whether the finding is a match or a rule error.
+
+**Redacted preview:** taken from the rule definition, not from the match, so no byte of a matched value reaches storage, logs, CLI output, or the API response. The same format is used in all four. It is needed wherever the text is unavailable or output could leak: engine log events, the past scan session view, CLI output, and the API scan response. The live scan view does not need it, since the frontend highlights its own copy of the text. Trade-off: two findings from the same rule on the same line can only be told apart by column in the past scan session view.
 
 **Represented in the source text**
 
 - **Color by severity,** with fixed defaults and no user config: high = red, medium = amber, low = blue.
 - **Severity icon** next to each highlight and in the findings list, so severity is not conveyed by color alone.
-- **Overlap:** overlapping findings get one highlight in a distinct color not used for any severity (purple). Clicking it selects and shows all the findings it covers.
+- **Overlap:** overlapping findings get one highlight in a distinct color not used for any severity (purple). Clicking it selects and shows all the findings it covers. The engine decides which findings overlap and gives each overlapping set a shared group id (in the finding's `violation` details), so the UI and the future CLI group them the same way; the UI only draws the groups.
 - **Multi-line matches** (e.g. a private key block) are highlighted as a whole block.
 - **Linking** works both ways: clicking a highlight selects its finding in the list, and clicking a finding scrolls to its highlight.
 - **Past scan sessions** have no text, so findings are shown as a list with rule, location, scores, preview, and notes.
@@ -133,18 +139,20 @@ Never stored: the inspection text, matched values, or a hash of the input. A has
 
 **Rules**
 
-- Rules live in rule set versions, managed in the rule set version control UI and persisted locally.
+- Rules exist on their own and are added into rule set versions, managed in the rule set version control UI and persisted locally. Adding a rule to a version stores a snapshot of its definition with that version, so an old version keeps what it scanned with even if the rule is edited later.
 - A **built-in default rule set** is seeded as the first rule set version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
 - Rules are edited through **forms**, never raw text, and always saved as canonical **JSON**.
 - Rule ids are assigned by the system, unique, and stable across rule set versions, like a database primary key. A rule keeps its id when renamed or edited; a deleted rule's id is never reused. Users never see or edit ids.
-- A rule gets its real id as soon as it is added in the form, with `draft` set to true. Drafts live inside the rule set's single editable working copy, so they survive a reload. Drafts get no validation. Applying the working copy as a new rule set version clears the flag and validates them; saved versions never contain drafts. Errors point at the rule's real id, so a new rule needs no temporary key.
+- A rule gets its real id as soon as it is added in the form, with `drafting` set to true, and is stored right away, so drafts survive a reload. Drafts get no validation. Adding a rule into a rule set version validates it and clears `drafting`. Errors point at the rule's real id, so a new rule needs no temporary key.
 - Severity is fixed per rule by the rule author.
+
+A rule row holds `id`, `drafting`, and a `definition` JSON column. Every other field below lives inside `definition`, filled in from the rule form's separate fields.
 
 | Field | Purpose |
 |---|---|
 | `id` | Assigned by the system |
+| `drafting` | True until the rule is added into a rule set version |
 | `name` | Shown in findings |
-| `draft` | True while the rule is only in the working copy; cleared when applied into a rule set version |
 | `enabled` | Disable without deleting |
 | `detectionType` | Direct credential, likely credential, or unsafe handling |
 | `severity` | High, medium, or low |
@@ -167,8 +175,8 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 - **No rules enabled:** the scan is blocked. The Scan button is disabled with "No rules enabled in this rule set version," because "clean" would be misleading.
 - **How a compile error reaches the user:**
   - *While editing:* validate and save both run the engine's compile step. The error comes back keyed by rule id and field and is shown under the pattern input, with the bad spot underlined when the engine knows it. Save stays disabled, so an uncompilable rule cannot get into a saved version from the form.
-  - *At scan time:* a saved rule can still fail later (an engine update tightens a limit, or the CLI pulls a rule set the UI never validated). The engine skips that rule, runs the rest, and adds a rule error (rule id, field, code, message, and the byte span when known) to the scan result. The API returns these as `ruleErrors` with the findings and saves every one of those fields with the inspection, so a reopened session can still point at the exact field. The UI shows the Partial outcome with a warning naming each broken rule and its error, on the live inspection and when reopening the session. The CLI (later) prints the rule errors and exits with a distinct code, so CI cannot treat the scan as clean.
-  - *Acting on it:* the Partial warning links straight to that rule in the rule set version control UI, with the form open on the error. Fixing it saves a new rule set version; the user then starts a new inspection to rescan.
+  - *At scan time:* a saved rule can still fail later (an engine update tightens a limit, or the CLI pulls a rule set the UI never validated). The engine skips that rule, runs the rest, and records the failure as a finding of kind `rule_error` on that rule, with the field, code, message, and byte span (when known) in its `violation` details, so a reopened session can still point at the exact field. The API returns it with the other findings. The UI shows the Partial outcome with a warning naming each broken rule and its error, on the live scan and when reopening the session. The CLI (later) prints the rule errors and exits with a distinct code, so CI cannot treat the scan as clean.
+  - *Acting on it:* the Partial warning links straight to that rule in the rule set version control UI, with the form open on the error. Fixing it saves a new rule set version; the user then starts a new scan to rescan.
 - Rust's `regex` crate runs in linear time, so catastrophic backtracking cannot happen. Size limits still apply to patterns and inputs.
 
 **Scan results**
@@ -176,7 +184,8 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 - **Deterministic:** the same text and the same rule set version always give the same results.
 - **Repeated secret:** one finding per occurrence, since each location must be fixed.
 - **Ordering:** by position in the text. The findings list can be sorted by severity in the UI.
-- **Limits:** 1 MB maximum input, rejected with a clear message. Findings are capped at 1,000 per scan; anything over the cap is reported as truncated, never silently dropped.
+- **Limits:** 1 MB maximum input, rejected with a clear message. Findings are capped at 200 per scan; anything over the cap is reported as truncated, never silently dropped. The cap exists because a too-broad rule can match almost every line, which would bloat storage, slow the response, and flood the page with highlights; hitting it usually means a bad rule, not hundreds of real secrets.
+- **Tell the user about the cap before it happens:** the scan UI states the 200-finding cap up front (next to the Scan button), so a cut-short list is never a surprise. When the cap is hit, the results say the list was cut short.
 
 ### 6. What to build first, and what to deliberately leave out
 
@@ -193,7 +202,7 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 
 **Left out of the POC**
 
-1. **A real storage database, CLI usage, and hosted API concepts.** A local SQLite file (`server/data/scanner.sqlite3`, git-ignored) stands in for a real database: rule set versions, scan sessions, inspections, findings, and rule errors persist there. The whiteboard still saves as a JSON file.
+1. **A real storage database, CLI usage, and hosted API concepts.** A local SQLite file (`server/data/scanner.sqlite3`, git-ignored) stands in for a real database: rule set versions, rules, scan sessions, scans, and findings persist there. The whiteboard still saves as a JSON file.
 2. **Editing in place:** input is copy/paste only for now, so it would not be helpful.
 3. **Follow-up actions like dismiss or suppress:** again, input is copy/paste only, so these are not that helpful yet.
 4. **File or repository scanning:** this becomes the most likely MVP point to tackle next.
