@@ -171,3 +171,25 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 - **Repeated secret:** one finding per occurrence, since each location must be fixed.
 - **Ordering:** by position in the text. The findings list can be sorted by severity in the UI.
 - **Limits:** 1 MB maximum input, rejected with a clear message. Findings are capped at 1,000 per scan; anything over the cap is reported as truncated, never silently dropped.
+
+### 6. What to build first, and what to deliberately leave out
+
+**First**
+
+1. **Engine crate:** rules and checking implementation, with unit tests for scanning and returned results. What this step finds drives the model structure and surfaces real needs before anything is formally modeled.
+2. **Model the structures** for frontend use (backend).
+3. **API endpoints** built around that model, with unit tests.
+4. **Frontend UI.**
+
+**Second**
+
+1. Human end-to-end testing.
+
+**Left out of the POC**
+
+1. **A real storage database, CLI usage, and hosted API concepts.** Config versions and scan sessions persist as local JSON files, the same way the whiteboard does.
+2. **Editing in place:** input is copy/paste only for now, so it would not be helpful.
+3. **Follow-up actions like dismiss or suppress:** again, input is copy/paste only, so these are not that helpful yet.
+4. **File or repository scanning:** this becomes the most likely MVP point to tackle next.
+5. **WASM in the browser:** it has use cases, like building a local pre-check model, but it is large and specialized. I think the better solution is a real local application anyway, and I really dislike this whole concept being in a browser.
+6. **Auth and multiple users:** these go with the hosted API.
