@@ -19,7 +19,8 @@ const { result } = concurrently(
       env: { VITE_APP_BASE_PATH: basePath },
     },
     {
-      command: 'cargo watch --watch src --watch Cargo.toml --exec "run --locked"',
+      command:
+        'cargo watch --watch src --watch Cargo.toml --watch ../engine/src --watch ../engine/rule_sets --watch ../engine/Cargo.toml --exec "run --locked"',
       name: "API",
       cwd: serverDir,
     },

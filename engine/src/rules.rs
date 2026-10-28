@@ -125,6 +125,7 @@ pub enum ErrorCode {
 
 /// A problem that stops a rule from running, pointing at the exact field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuleError {
     pub rule_id: i64,
     pub field: RuleField,
@@ -142,6 +143,7 @@ pub enum WarningCode {
 
 /// Worth showing the rule author, but does not stop the rule from saving or running.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuleWarning {
     pub rule_id: i64,
     pub field: RuleField,
