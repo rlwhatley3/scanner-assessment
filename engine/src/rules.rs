@@ -19,12 +19,29 @@ pub enum DetectionType {
     /// Known fake values such as `changeme`. These rules never create findings of their own:
     /// a match that falls inside another rule's finding marks that finding as a likely example.
     PlaceholderVsReal,
+    /// A model that rates each finding's value as likely real or likely an example. Like
+    /// placeholder rules, these never create findings of their own.
+    ModelAssessment,
+    /// A model that reads the text itself and flags spans that look like secrets, including ones
+    /// no pattern describes.
+    ModelDetection,
 }
 
 impl DetectionType {
     /// Whether this rule type's matches become findings of their own.
     pub fn creates_findings(self) -> bool {
-        self != DetectionType::PlaceholderVsReal
+        !matches!(
+            self,
+            DetectionType::PlaceholderVsReal | DetectionType::ModelAssessment
+        )
+    }
+
+    /// Whether this rule type runs a model instead of a pattern.
+    pub fn uses_model(self) -> bool {
+        matches!(
+            self,
+            DetectionType::ModelAssessment | DetectionType::ModelDetection
+        )
     }
 }
 
@@ -85,6 +102,22 @@ pub struct RuleDefinition {
     /// parsed key/value pair is checked too, whatever its key, unless `key_names` narrows it.
     pub password_shape: Option<PasswordShape>,
     pub remediation: Option<String>,
+    /// The model a model rule runs. Other rule types ignore it.
+    pub model: Option<ModelRef>,
+    /// For model rules: a model score (0–100) at or above this counts as a secret. Other rule
+    /// types ignore it.
+    pub threshold: Option<i64>,
+}
+
+/// Which model a model rule runs. The hash is what identifies it, so a rule set version always
+/// names the exact model it scanned with.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct ModelRef {
+    /// A readable name for the model, used in messages.
+    pub id: Option<String>,
+    /// The SHA-256 of the model file, as 64 hexadecimal characters.
+    pub sha256: Option<String>,
 }
 
 impl RuleDefinition {
@@ -125,6 +158,8 @@ pub enum RuleField {
     Checksum,
     PasswordShape,
     Remediation,
+    Model,
+    Threshold,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -135,6 +170,11 @@ pub enum ErrorCode {
     TooLarge,
     OutOfRange,
     DuplicateName,
+    InvalidFormat,
+    /// The rule's model was not loaded into the engine, or does not fit the rule type.
+    ModelUnavailable,
+    /// The rule's model failed while running.
+    ModelFailed,
 }
 
 /// A problem that stops a rule from running, pointing at the exact field.
@@ -177,15 +217,27 @@ impl RuleCheck {
     }
 }
 
+/// How a compiled rule finds things: a pattern, or a model plus its threshold.
+#[derive(Debug)]
+pub(crate) enum Matcher {
+    Pattern(Regex),
+    Model {
+        sha256: String,
+        label: Option<String>,
+        threshold: u8,
+    },
+}
+
 /// A rule that passed its checks, ready to run.
 #[derive(Debug)]
 pub(crate) struct CompiledRule {
     pub id: i64,
     pub name: String,
     pub detection_type: DetectionType,
-    /// Always set for rule types that create findings; placeholder rules don't need one.
+    /// Always set for rule types that create findings; placeholder and model assessment rules
+    /// don't need one.
     pub severity: Option<Severity>,
-    pub regex: Regex,
+    pub matcher: Matcher,
     pub prefix: Option<String>,
     pub key_names: Vec<String>,
     pub min_entropy: Option<f64>,
@@ -319,8 +371,19 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
         ));
     }
 
+    let uses_model = definition
+        .detection_type
+        .is_some_and(DetectionType::uses_model);
+    let model = if uses_model {
+        check_model(definition, &error, &mut check.errors)
+    } else {
+        None
+    };
+
     let pattern = definition.pattern.as_deref().unwrap_or("");
-    let regex = if pattern.is_empty() {
+    let regex = if uses_model {
+        None
+    } else if pattern.is_empty() {
         check.errors.push(error(
             RuleField::Pattern,
             ErrorCode::Required,
@@ -351,13 +414,18 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
         });
     }
 
-    let compiled = match (regex, definition.detection_type) {
-        (Some(regex), Some(detection_type)) if check.is_valid() => Some(CompiledRule {
+    let matcher = match (regex, model) {
+        (Some(regex), _) => Some(Matcher::Pattern(regex)),
+        (None, Some(model)) => Some(model),
+        (None, None) => None,
+    };
+    let compiled = match (matcher, definition.detection_type) {
+        (Some(matcher), Some(detection_type)) if check.is_valid() => Some(CompiledRule {
             id: rule.id,
             name: name.to_string(),
             detection_type,
             severity: definition.severity,
-            regex,
+            matcher,
             prefix: definition
                 .prefix
                 .clone()
@@ -376,6 +444,75 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
         _ => None,
     };
     (compiled, check)
+}
+
+/// Checks a model rule's model and threshold, returning its matcher when both are valid.
+fn check_model(
+    definition: &RuleDefinition,
+    error: &impl Fn(RuleField, ErrorCode, &str, Option<(usize, usize)>) -> RuleError,
+    errors: &mut Vec<RuleError>,
+) -> Option<Matcher> {
+    let sha256 = definition
+        .model
+        .as_ref()
+        .and_then(|model| model.sha256.as_deref())
+        .map(str::trim)
+        .unwrap_or("");
+    let sha256 = if sha256.is_empty() {
+        errors.push(error(
+            RuleField::Model,
+            ErrorCode::Required,
+            "A model, identified by its SHA-256 hash, is required.",
+            None,
+        ));
+        None
+    } else if sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        errors.push(error(
+            RuleField::Model,
+            ErrorCode::InvalidFormat,
+            "The model hash must be 64 hexadecimal characters.",
+            None,
+        ));
+        None
+    } else {
+        Some(sha256.to_ascii_lowercase())
+    };
+
+    let threshold = match definition.threshold {
+        None => {
+            errors.push(error(
+                RuleField::Threshold,
+                ErrorCode::Required,
+                "A threshold is required.",
+                None,
+            ));
+            None
+        }
+        Some(threshold) => match u8::try_from(threshold) {
+            Ok(threshold) if threshold <= 100 => Some(threshold),
+            _ => {
+                errors.push(error(
+                    RuleField::Threshold,
+                    ErrorCode::OutOfRange,
+                    "The threshold must be between 0 and 100.",
+                    None,
+                ));
+                None
+            }
+        },
+    };
+
+    Some(Matcher::Model {
+        sha256: sha256?,
+        label: definition
+            .model
+            .as_ref()
+            .and_then(|model| model.id.as_deref())
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(String::from),
+        threshold: threshold?,
+    })
 }
 
 /// Why a pattern did not compile: the error code, a message, and the bad span when known.

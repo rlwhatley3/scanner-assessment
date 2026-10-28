@@ -1,6 +1,6 @@
 use secrets_scanner_engine::{
-    DetectionType, ErrorCode, Rule, RuleDefinition, RuleField, RuleSet, Severity, WarningCode,
-    check_rule, check_rule_set, default_rule_set,
+    DetectionType, ErrorCode, ModelRef, Rule, RuleDefinition, RuleField, RuleSet, Severity,
+    WarningCode, check_rule, check_rule_set, default_rule_set,
 };
 
 fn rule(id: i64, definition: RuleDefinition) -> Rule {
@@ -236,4 +236,98 @@ fn luhn_and_base58check_setups_need_no_other_fields() {
             format!(r#"{{"rules": [{{"id": 1, "definition": {{"checksum": {checksum}}}}}]}}"#);
         assert!(serde_json::from_str::<RuleSet>(&json).is_ok(), "{checksum}");
     }
+}
+
+fn model_rule(detection_type: DetectionType) -> RuleDefinition {
+    RuleDefinition {
+        name: Some("Model rule".into()),
+        detection_type: Some(detection_type),
+        model: Some(ModelRef {
+            id: Some("triage-small".into()),
+            sha256: Some("AB".repeat(32)),
+        }),
+        threshold: Some(80),
+        ..RuleDefinition::default()
+    }
+}
+
+fn errors(definition: RuleDefinition) -> Vec<(RuleField, ErrorCode)> {
+    check_rule(&rule(1, definition))
+        .errors
+        .iter()
+        .map(|error| (error.field, error.code))
+        .collect()
+}
+
+#[test]
+fn a_model_rule_needs_a_model_and_threshold_but_no_pattern() {
+    assert_eq!(errors(model_rule(DetectionType::ModelAssessment)), []);
+    assert_eq!(
+        errors(RuleDefinition {
+            model: None,
+            threshold: None,
+            ..model_rule(DetectionType::ModelAssessment)
+        }),
+        [
+            (RuleField::Model, ErrorCode::Required),
+            (RuleField::Threshold, ErrorCode::Required),
+        ]
+    );
+}
+
+#[test]
+fn a_model_hash_must_be_64_hex_characters_and_the_threshold_0_to_100() {
+    for (sha256, threshold) in [("abc", 80), (&*"g".repeat(64), 80)] {
+        assert_eq!(
+            errors(RuleDefinition {
+                model: Some(ModelRef {
+                    id: None,
+                    sha256: Some(sha256.into()),
+                }),
+                threshold: Some(threshold),
+                ..model_rule(DetectionType::ModelAssessment)
+            }),
+            [(RuleField::Model, ErrorCode::InvalidFormat)]
+        );
+    }
+    for threshold in [-1, 101] {
+        assert_eq!(
+            errors(RuleDefinition {
+                threshold: Some(threshold),
+                ..model_rule(DetectionType::ModelAssessment)
+            }),
+            [(RuleField::Threshold, ErrorCode::OutOfRange)]
+        );
+    }
+}
+
+#[test]
+fn a_model_detection_rule_needs_a_severity_and_an_assessment_rule_does_not() {
+    assert_eq!(
+        errors(model_rule(DetectionType::ModelDetection)),
+        [(RuleField::Severity, ErrorCode::Required)]
+    );
+    assert_eq!(
+        errors(RuleDefinition {
+            severity: Some(Severity::High),
+            ..model_rule(DetectionType::ModelDetection)
+        }),
+        []
+    );
+}
+
+#[test]
+fn a_model_rule_reads_from_the_forms_camel_case_json() {
+    let definition: RuleDefinition = serde_json::from_str(&format!(
+        r#"{{"name": "ML: real vs example", "detectionType": "model_assessment",
+            "model": {{"id": "triage-small", "sha256": "{}"}}, "threshold": 80}}"#,
+        "0f".repeat(32)
+    ))
+    .expect("definition should parse");
+    assert_eq!(definition.threshold, Some(80));
+    assert!(check_rule(&rule(1, definition)).is_valid());
+    assert!(
+        serde_json::from_str::<RuleDefinition>(r#"{"model": {"sha": "x"}}"#).is_err(),
+        "a misspelled model field should be rejected"
+    );
 }

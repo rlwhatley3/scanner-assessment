@@ -572,6 +572,61 @@ fn card_numbers_outside_the_card_ranges_are_not_reported() {
 }
 
 #[test]
+fn each_card_network_and_length_the_rule_covers_is_reported() {
+    // Published test numbers, one per network and length, in the forms people write them.
+    let cards = [
+        "4222222222222",       // Visa, 13 digits
+        "4111 1111 1111 1111", // Visa
+        "4000000000000000006", // Visa, 19 digits
+        "5555-5555-5555-4444", // Mastercard
+        "2223 0031 2200 3222", // Mastercard 2-series
+        "3782 822463 10005",   // Amex
+        "6011 0009 9013 9424", // Discover
+        "3622 720627 1667",    // Diners Club
+        "30569309025904",      // Diners Club
+        "3566 0020 2036 0505", // JCB
+        "6200 0000 0000 0005", // UnionPay
+        "6205500000000000004", // UnionPay, 19 digits
+    ];
+    let text: String = cards.iter().map(|card| format!("card: {card}\n")).collect();
+    let result = run(&text);
+    let reported: Vec<&str> = reported_values(&text, &result)
+        .into_iter()
+        .map(|(_, value)| value)
+        .collect();
+    assert_eq!(reported, cards);
+    assert!(
+        from_rule(&result, 10)
+            .iter()
+            .all(|card| card.checksum_valid == Some(true))
+    );
+}
+
+#[test]
+fn a_card_number_split_once_across_lines_is_reported_but_a_column_of_numbers_is_not() {
+    let text = "card was 4000 0566\n  55665556, call back\n";
+    let result = run(text);
+    assert_eq!(
+        reported_values(text, &result),
+        [(10, "4000 0566\n  55665556")]
+    );
+    assert_eq!(from_rule(&result, 10)[0].checksum_valid, Some(true));
+
+    let result = run("ports:\n4000\n4001\n4002\n4003\n");
+    assert!(from_rule(&result, 10).is_empty());
+}
+
+#[test]
+fn a_grouped_card_followed_by_a_cvv_is_reported_without_the_cvv() {
+    let text = "card: 4111 1111 1111 1111 123\n";
+    let result = run(text);
+    assert_eq!(
+        reported_values(text, &result),
+        [(10, "4111 1111 1111 1111")]
+    );
+}
+
+#[test]
 fn a_bitcoin_private_key_is_checked_with_base58check() {
     // The private key example from the Bitcoin wiki's Wallet Import Format page.
     let wif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
@@ -663,6 +718,44 @@ fn the_password_lookalikes_sample_is_clean() {
     let result = run(text);
     assert_eq!(result.format, Format::Yaml);
     assert_eq!(reported_values(text, &result), []);
+}
+
+#[test]
+fn the_orders_export_sample_reports_each_card_and_no_masked_number_or_order_id() {
+    let text = include_str!("../../tests/orders-export.csv");
+    let result = run(text);
+    assert_eq!(result.format, Format::Text);
+    assert_eq!(
+        reported_values(text, &result),
+        [
+            (10, "4012 8888 8888 1881"),
+            (10, "4111111111111111"),
+            (10, "5555 5555 5555 4444"),
+            (10, "2223-0031-2200-3222"),
+            (10, "3782 822463 10005"),
+            (10, "371449635398431"),
+            (10, "6011111111111117"),
+            (10, "6011000990139424"),
+            (10, "4111 1111 1111 1112"),
+            (10, "4111111111111111"),
+            (10, "5105105105105100"),
+            (10, "4222222222222"),
+            (10, "36227206271667"),
+            (10, "6200000000000005"),
+            (10, "3530111333300000"),
+            (10, "6205500000000000004"),
+            (10, "4000 0566\n55665556"),
+        ]
+    );
+    let cards = from_rule(&result, 10);
+    assert!(cards[0].in_comment);
+    assert_eq!(cards[8].checksum_valid, Some(false));
+    assert!(
+        cards
+            .iter()
+            .enumerate()
+            .all(|(index, card)| index == 8 || card.checksum_valid == Some(true))
+    );
 }
 
 #[test]
@@ -1051,4 +1144,38 @@ fn registry_auth_netrc_cookies_and_presigned_urls_are_found() {
         assert_eq!(found.len(), 1, "{rule_name}: {found:?}");
         assert!(found[0].starts_with(expected), "{rule_name}: {found:?}");
     }
+}
+#[cfg(not(feature = "ml"))]
+#[test]
+fn without_the_ml_feature_a_model_rule_is_a_rule_error() {
+    use secrets_scanner_engine::{DetectionType, ModelRef};
+
+    let mut rule_set = default_rule_set();
+    rule_set.rules.push(Rule {
+        id: 100,
+        definition: RuleDefinition {
+            name: Some("Model rule".into()),
+            detection_type: Some(DetectionType::ModelAssessment),
+            model: Some(ModelRef {
+                id: None,
+                sha256: Some("0".repeat(64)),
+            }),
+            threshold: Some(50),
+            ..RuleDefinition::default()
+        },
+    });
+    let result = scan(1, &format!("key: {AWS_KEY}"), &rule_set).expect("scan should run");
+    assert_eq!(matches(&result).len(), 1);
+    let error = match &result.findings.last().unwrap().violation {
+        Violation::RuleError(error) => error,
+        Violation::Match(_) => panic!("expected a rule error last"),
+    };
+    assert_eq!(
+        (error.rule_id, error.field, error.code),
+        (100, RuleField::Model, ErrorCode::ModelUnavailable)
+    );
+    assert_eq!(
+        error.message,
+        "This engine was built without model support."
+    );
 }
