@@ -619,6 +619,11 @@ a.button {
   &.invalid {
     border-color: var(--danger);
   }
+
+  .field-checkbox {
+    align-self: flex-start;
+    padding-top: 0;
+  }
 }
 
 .form-actions {

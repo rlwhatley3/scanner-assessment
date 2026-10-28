@@ -8,6 +8,7 @@ mod checksum;
 mod defaults;
 mod format;
 mod location;
+mod password_shape;
 mod rules;
 mod scan;
 
@@ -15,6 +16,7 @@ pub use checksum::{Checksum, ChecksumEncoding, Crc32Checksum};
 pub use defaults::default_rule_set;
 pub use format::Format;
 pub use location::Location;
+pub use password_shape::PasswordShape;
 pub use rules::{
     DetectionType, ErrorCode, Rule, RuleCheck, RuleDefinition, RuleError, RuleField, RuleSet,
     RuleWarning, Severity, WarningCode, check_rule, check_rule_set,

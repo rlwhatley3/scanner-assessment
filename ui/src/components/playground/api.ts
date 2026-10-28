@@ -86,6 +86,11 @@ export interface Crc32Checksum {
   length: number;
 }
 
+/** Keep only values that look like a password a person made up, scoring at least `minScore`. */
+export interface PasswordShape {
+  minScore: number;
+}
+
 /** How a token format's built-in check works, so the engine can test each match offline. */
 export type Checksum = Crc32Checksum | { algorithm: "luhn" } | { algorithm: "base58check" };
 
@@ -101,6 +106,7 @@ export interface RuleDefinition {
   keyNames?: string[];
   minEntropy?: number | null;
   checksum?: Checksum | null;
+  passwordShape?: PasswordShape | null;
   remediation?: string;
   /** Fields this UI doesn't edit (e.g. a newer engine's `checksum`) are kept as-is. */
   [other: string]: unknown;
