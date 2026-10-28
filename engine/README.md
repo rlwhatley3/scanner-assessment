@@ -72,6 +72,11 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 | Secret-looking assignment | Likely credential | Medium | A value of 8+ characters assigned with `=` or `:` to a name containing `password`, `passwd`, `secret`, `api_key`, `apikey`, or `token`, with at least 3.0 bits of entropy per character | Short or low-randomness secrets; secrets under other names. Values starting with `$`, `{`, or `(` are treated as references (`${DB_PASSWORD}`) and skipped |
 | Secret written to a log | Unsafe handling | Medium | `console.log`/`info`/`warn`/`error`/`debug`, `print`, `println!`, `logger.*`, or `log.*` with a secret-sounding name among its arguments | Calls split across lines; secrets passed through a renamed variable |
 | Known placeholder values | Placeholder vs. real | n/a | `your_key_here`, `changeme`, `xxxx`, `example`, `dummy`, or `test` (any case) inside another rule's finding, which then scores as a likely example | Fake values not on the list; a real secret that happens to contain `test` scores as an example |
+| npm token | Direct credential | High | `npm_` followed by 36 letters or digits, checked with the same CRC32 checksum as GitHub | Legacy npm tokens (UUIDs), which npm retired |
+| GitLab personal access token | Direct credential | High | Routable `glpat-` tokens (37 to 310 characters after the prefix), checked with GitLab's base36 CRC32 checksum | Other GitLab token types (`gldt-`, `glrt-`, ...) |
+| GitLab personal access token (legacy format) | Direct credential | High | `glpat-` followed by exactly 20 characters, the format before routable tokens; it has no checksum | Same as above |
+| Payment card number | Direct credential | High | 15- and 16-digit Visa, Mastercard, Amex, and Discover numbers, plain or in space- or dash-separated groups, checked with Luhn | 13- and 19-digit cards; other networks; numbers split across lines |
+| Bitcoin private key (WIF) | Direct credential | High | Wallet Import Format keys (51 or 52 Base58 characters starting with `5`, `K`, or `L`), checked with Base58Check | Raw hex private keys; other coins' formats |
 
 ## Scores
 
@@ -85,9 +90,17 @@ Every match also reports `inComment` and `checksumValid` (absent when the rule h
 
 ## Checksums
 
-Some token formats carry a checksum, so a match can be checked offline, with no network call: a real-format token passes, and a made-up one (an example, a test value, random text) almost always fails.
+Some formats carry a checksum, so a match can be checked offline, with no network call: a real value passes, and a made-up one (an example, a test value, random text) almost always fails.
 
-A rule describes its token format's checksum in its `checksum` field. A token is read as `prefix + covered part + checksum`:
+A rule picks a checksum `algorithm` in its `checksum` field:
+
+| `algorithm` | Other fields | Used for |
+|---|---|---|
+| `crc32` | `encoding`, `prefixLength`, `length` (below) | Tokens that end in a CRC32 of the rest: GitHub, npm, GitLab, and in-house formats |
+| `luhn` | none | The mod-10 check digit on payment card numbers. Spaces and dashes between digit groups are ignored |
+| `base58check` | none | Base58 with a 4-byte double-SHA-256 checksum, as in Bitcoin private keys (WIF) |
+
+A `crc32` token is read as `prefix + covered part + checksum`:
 
 ```json
 "checksum": { "algorithm": "crc32", "encoding": "base62", "prefixLength": 4, "length": 6 }
@@ -95,21 +108,25 @@ A rule describes its token format's checksum in its `checksum` field. A token is
 
 | Field | Values | Meaning |
 |---|---|---|
-| `algorithm` | `crc32` | How the checksum is computed from the covered part |
-| `encoding` | `base62` (digits `0-9A-Za-z`), `hex` (either case) | How the value is written |
+| `encoding` | `base62` (digits `0-9A-Za-z`), `base36` (`0-9a-z`, either case), `hex` (either case) | How the value is written |
 | `prefixLength` | 0 or more | Characters at the start the checksum doesn't cover, such as `ghp_` |
-| `length` | 6–16 for base62, 8–16 for hex | Characters at the end holding the checksum, zero-padded |
+| `length` | 6–16 for base62, 7–16 for base36, 8–16 for hex | Characters at the end holding the checksum, zero-padded |
 
 **Seeded setups:** the built-in rules carry the common ones, so a rule author can copy them:
 
-| Built-in rule | Setup |
-|---|---|
-| GitHub token (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`) | `crc32`, `base62`, prefix 4, length 6 ([GitHub](https://github.blog/engineering/behind-githubs-new-authentication-token-formats/)) |
-| npm token (`npm_`) | `crc32`, `base62`, prefix 4, length 6 ([npm uses GitHub's format](https://github.blog/security/announcing-npms-new-access-token-format)) |
+| Built-in rule | Setup | Source |
+|---|---|---|
+| GitHub token (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`) | `crc32`, `base62`, prefix 4, length 6 | [GitHub](https://github.blog/engineering/behind-githubs-new-authentication-token-formats/) |
+| npm token (`npm_`) | `crc32`, `base62`, prefix 4, length 6 | [npm uses GitHub's format](https://github.blog/security/announcing-npms-new-access-token-format) |
+| GitLab personal access token (routable `glpat-`) | `crc32`, `base36`, prefix 0 (the CRC covers the whole token before it), length 7 | [GitLab's routable tokens design](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/cells/routable_tokens/) |
+| Payment card number | `luhn` | ISO/IEC 7812 |
+| Bitcoin private key (WIF) | `base58check` | [Bitcoin wiki: Wallet Import Format](https://en.bitcoin.it/wiki/Wallet_import_format) |
 
 **Custom setups:** a rule for an in-house token format describes its own, e.g. `acme_` followed by the covered part and an 8-digit hex CRC32 is `{ "algorithm": "crc32", "encoding": "hex", "prefixLength": 5, "length": 8 }`. A length too short to hold the full value, or longer than 16, is a rule error on the `checksum` field.
 
-A failed checksum lowers confidence and raises the placeholder score; it never drops the finding. GitHub and npm haven't published test tokens, so the seeded setups follow their descriptions and existing open-source validators. If a setup were ever subtly wrong, real tokens would still be reported, just at lower confidence. The same holds for a mistaken custom setup.
+A failed checksum lowers confidence and raises the placeholder score; it never drops the finding. GitHub, npm, and GitLab haven't published test tokens, so those setups follow their descriptions and existing open-source validators. If a setup were ever subtly wrong, real tokens would still be reported, just at lower confidence. The same holds for a mistaken custom setup.
+
+**Not seeded:** Microsoft/Azure identifiable keys carry a checksum, but its algorithm couldn't be confirmed. Ethereum addresses (EIP-55) and IBANs (mod-97) have checksums, but they're public identifiers, not secrets, so flagging them would only add noise.
 
 ## File format parsing
 

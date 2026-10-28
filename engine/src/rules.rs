@@ -1,4 +1,4 @@
-use crate::checksum::Checksum;
+use crate::checksum::{Checksum, Crc32Checksum};
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -263,13 +263,13 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
             None,
         ));
     }
-    if let Some(checksum) = definition.checksum
-        && !(checksum.min_length()..=Checksum::MAX_LENGTH).contains(&checksum.length)
+    if let Some(Checksum::Crc32(checksum)) = definition.checksum
+        && !(checksum.min_length()..=Crc32Checksum::MAX_LENGTH).contains(&checksum.length)
     {
         let message = format!(
             "This checksum needs {} to {} characters to hold its full value.",
             checksum.min_length(),
-            Checksum::MAX_LENGTH
+            Crc32Checksum::MAX_LENGTH
         );
         check.errors.push(error(
             RuleField::Checksum,

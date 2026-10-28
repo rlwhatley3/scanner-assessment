@@ -11,7 +11,7 @@ mod location;
 mod rules;
 mod scan;
 
-pub use checksum::{Checksum, ChecksumAlgorithm, ChecksumEncoding};
+pub use checksum::{Checksum, ChecksumEncoding, Crc32Checksum};
 pub use defaults::default_rule_set;
 pub use format::Format;
 pub use location::Location;

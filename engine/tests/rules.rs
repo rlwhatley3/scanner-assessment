@@ -28,7 +28,7 @@ fn the_built_in_rules_are_valid_and_raise_no_warnings() {
 fn the_built_in_rule_set_file_is_in_the_scan_contract_shape() {
     let rule_set = default_rule_set();
     let ids: Vec<i64> = rule_set.rules.iter().map(|rule| rule.id).collect();
-    assert_eq!(ids, [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(ids, (1..=11).collect::<Vec<i64>>());
     let types: Vec<DetectionType> = rule_set
         .rules
         .iter()
@@ -195,6 +195,7 @@ fn an_unknown_checksum_is_rejected_by_the_contract() {
         r#""github_crc32""#,
         r#"{"algorithm": "md5", "encoding": "hex", "prefixLength": 0, "length": 8}"#,
         r#"{"algorithm": "crc32", "encoding": "base64", "prefixLength": 0, "length": 8}"#,
+        r#"{"encoding": "hex", "prefixLength": 0, "length": 8}"#,
         r#"{"algorithm": "crc32", "encoding": "hex", "length": 8}"#,
         r#"{"algorithm": "crc32", "encoding": "hex", "prefixLength": 0, "length": 8, "x": 1}"#,
     ] {
@@ -222,5 +223,17 @@ fn a_checksum_too_short_or_too_long_for_its_value_is_out_of_range() {
             (check.errors[0].field, check.errors[0].code),
             (RuleField::Checksum, ErrorCode::OutOfRange)
         );
+    }
+}
+
+#[test]
+fn luhn_and_base58check_setups_need_no_other_fields() {
+    for checksum in [
+        r#"{"algorithm": "luhn"}"#,
+        r#"{"algorithm": "base58check"}"#,
+    ] {
+        let json =
+            format!(r#"{{"rules": [{{"id": 1, "definition": {{"checksum": {checksum}}}}}]}}"#);
+        assert!(serde_json::from_str::<RuleSet>(&json).is_ok(), "{checksum}");
     }
 }
