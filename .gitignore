@@ -19,3 +19,6 @@ target/
 
 # Operating system
 .DS_Store
+
+# Local SQLite database
+/server/data/

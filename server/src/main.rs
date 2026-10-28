@@ -1,11 +1,17 @@
-use secrets_scanner_api::{ApiDoc, routes};
+use secrets_scanner_api::{ApiDoc, db, routes};
 use std::net::{IpAddr, SocketAddr};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 #[tokio::main]
 async fn main() {
-    let app = routes::router()
+    let database_path = db::default_path();
+    if let Some(directory) = database_path.parent() {
+        std::fs::create_dir_all(directory).expect("failed to create database directory");
+    }
+    let db = db::Db::open(&database_path).expect("failed to open database");
+
+    let app = routes::router(db)
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))
         .merge(SwaggerUi::new("/swagger-ui").url("/api/openapi.json", ApiDoc::openapi()));
     let port = std::env::var("API_PORT")

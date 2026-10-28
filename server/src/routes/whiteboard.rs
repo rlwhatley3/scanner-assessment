@@ -7,7 +7,7 @@ use tokio::fs;
 
 static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(0);
 
-pub fn router() -> Router {
+pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new().route("/{name}", get(load).put(save))
 }
 
