@@ -47,7 +47,10 @@ placeholder_vs_real or model_assessment); pattern \
 checked against keyNames); prefix (the public prefix shown as the redacted preview); keyNames \
 (string array); minEntropy (0 to 8 bits per character); checksum ({\"algorithm\": \"luhn\"}, \
 {\"algorithm\": \"base58check\"}, or {\"algorithm\": \"crc32\", \"encoding\": \
-\"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); remediation (string). \
+\"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); passwordShape \
+({\"minScore\": 1 to 10}: keep only values that look like a password a person made up, scoring at \
+least minScore on password-like signals; a likely_credential rule with it checks every parsed \
+key/value pair, whatever its key, unless keyNames narrows it); remediation (string). \
 Model rules take model ({\"id\": name, \"sha256\": hash}, from list_models) and threshold (0 to \
 100: a model score at or above it counts as a secret) instead of a pattern. valueClassifier \
 ({\"model\": {\"id\": name, \"sha256\": hash}, \"minScore\": 0 to 100}) runs a value classifier \
@@ -624,8 +627,9 @@ impl ScannerMcp {
     }
 
     #[tool(
-        description = "Get a saved scan and its findings. Findings hold rule, location, scores, \
-                       and a redacted preview, never the matched text.",
+        description = "Get a saved scan and its findings. Findings never contain the matched \
+                       text; the output schema explains confidence, valueClass, and the other \
+                       finding fields.",
         annotations(read_only_hint = true)
     )]
     async fn get_scan(
@@ -642,7 +646,8 @@ impl ScannerMcp {
     #[tool(
         description = "Scan text with the session's rule set version and save the scan and \
                           its findings to the session. The text is never stored or logged. \
-                          Findings are capped at 200.",
+                          Findings are capped at 200; the output schema explains confidence, \
+                          valueClass, and the other finding fields.",
         annotations(destructive_hint = false)
     )]
     async fn run_scan(

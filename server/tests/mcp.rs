@@ -466,3 +466,34 @@ async fn lists_the_loaded_models() {
     );
     assert_eq!(models["models"][0]["uses"], json!(["value_classifier"]));
 }
+
+#[tokio::test]
+async fn the_scan_tools_explain_findings_and_the_rule_tools_list_every_field() {
+    let (app, _) = app().await;
+    let tools = rpc(&app, "tools/list", json!({})).await;
+    let tools = tools["result"]["tools"].as_array().unwrap();
+    let tool = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap_or_else(|| panic!("{name} should be listed"))
+            .to_string()
+    };
+    for name in ["get_scan", "run_scan"] {
+        let schema = tool(name);
+        for field in [
+            "confidence",
+            "valueClass",
+            "placeholderScore",
+            "modelAssessments",
+        ] {
+            assert!(schema.contains(field), "{name} should explain {field}");
+        }
+    }
+    for name in ["create_rule", "update_rule"] {
+        let schema = tool(name);
+        for field in ["passwordShape", "valueClassifier", "checksum"] {
+            assert!(schema.contains(field), "{name} should list {field}");
+        }
+    }
+}
