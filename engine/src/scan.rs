@@ -120,7 +120,11 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
         .filter(|rule| rule.definition.is_enabled())
         .cloned()
         .collect();
-    if enabled.is_empty() {
+    // Placeholder rules only adjust other findings, so on their own nothing can be found.
+    let only_placeholder_rules = enabled
+        .iter()
+        .all(|rule| rule.definition.detection_type == Some(DetectionType::PlaceholderVsReal));
+    if only_placeholder_rules {
         return Err(ScanError::NoRulesEnabled);
     }
 
@@ -145,16 +149,24 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
         rule_errors.len()
     ));
 
-    let placeholders: Vec<String> = rule_set
-        .placeholders
+    let (finding_rules, placeholder_rules): (Vec<_>, Vec<_>) = compiled
         .iter()
-        .map(|placeholder| placeholder.to_lowercase())
-        .filter(|placeholder| !placeholder.is_empty())
-        .collect();
-    let mut candidates: Vec<Candidate> = compiled
+        .partition(|rule| rule.detection_type.creates_findings());
+    let placeholder_ranges: Vec<(usize, usize)> = placeholder_rules
         .iter()
-        .flat_map(|rule| find_candidates(rule, text, &placeholders))
+        .flat_map(|rule| rule.regex.find_iter(text))
+        .filter(|found| !found.is_empty())
+        .map(|found| (found.start(), found.end()))
         .collect();
+    let mut candidates: Vec<Candidate> = finding_rules
+        .into_iter()
+        .flat_map(|rule| find_candidates(rule, text))
+        .collect();
+    for candidate in &mut candidates {
+        candidate.placeholder_hit = placeholder_ranges
+            .iter()
+            .any(|&(start, end)| candidate.start <= start && end <= candidate.end);
+    }
     candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.rule.id));
 
     let truncated = candidates.len() > MAX_FINDINGS;
@@ -223,11 +235,7 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
     })
 }
 
-fn find_candidates<'r>(
-    rule: &'r CompiledRule,
-    text: &str,
-    placeholders: &[String],
-) -> Vec<Candidate<'r>> {
+fn find_candidates<'r>(rule: &'r CompiledRule, text: &str) -> Vec<Candidate<'r>> {
     let mut candidates = Vec::new();
     for captures in rule.regex.captures_iter(text) {
         let whole = captures.get(0).expect("group 0 always matches");
@@ -256,15 +264,13 @@ fn find_candidates<'r>(
         {
             continue;
         }
-        let lowered = value.as_str().to_lowercase();
         candidates.push(Candidate {
             rule,
             start: value.start(),
             end: value.end(),
             entropy,
-            placeholder_hit: placeholders
-                .iter()
-                .any(|placeholder| lowered.contains(placeholder.as_str())),
+            // Set once placeholder rules have run.
+            placeholder_hit: false,
         });
     }
     candidates
@@ -346,7 +352,9 @@ fn match_details(
     MatchDetails {
         rule_name: rule.name.clone(),
         detection_type: rule.detection_type,
-        severity: rule.severity,
+        severity: rule
+            .severity
+            .expect("rules that create findings always have a severity"),
         confidence,
         placeholder_score,
         location: index.location(candidate.start, candidate.end),

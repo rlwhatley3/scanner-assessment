@@ -1,12 +1,4 @@
 {
-  "placeholders": [
-    "your_key_here",
-    "changeme",
-    "xxxx",
-    "example",
-    "dummy",
-    "test"
-  ],
   "rules": [
     {
       "id": 1,
@@ -72,6 +64,15 @@
         "severity": "medium",
         "pattern": "(?i)\\b(?:console\\.(?:log|info|warn|error|debug)|println!?|print|logger\\.\\w+|log\\.\\w+)\\s*\\([^)\\n]*(?:password|passwd|secret|api_?key|token)",
         "remediation": "Remove the secret from this log call, or log a fixed placeholder such as \"[redacted]\" instead.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 6,
+      "definition": {
+        "name": "Known placeholder values",
+        "detectionType": "placeholder_vs_real",
+        "pattern": "(?i)your_key_here|changeme|xxxx|example|dummy|test",
         "enabled": true
       }
     }

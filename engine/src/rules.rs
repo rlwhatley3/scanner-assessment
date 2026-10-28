@@ -14,6 +14,16 @@ pub enum DetectionType {
     LikelyCredential,
     /// Code that handles a secret unsafely; no secret value is involved.
     UnsafeHandling,
+    /// Known fake values such as `changeme`. These rules never create findings of their own:
+    /// a match that falls inside another rule's finding marks that finding as a likely example.
+    PlaceholderVsReal,
+}
+
+impl DetectionType {
+    /// Whether this rule type's matches become findings of their own.
+    pub fn creates_findings(self) -> bool {
+        self != DetectionType::PlaceholderVsReal
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,14 +89,13 @@ pub struct Rule {
     pub definition: RuleDefinition,
 }
 
-/// What the API hands the engine for a scan: one rule set version's rules (with each rule's
-/// definition as snapshotted into that version) and its placeholder list. The built-in rule set
-/// in `rule_sets/default.json` is written in exactly this shape.
+/// What the API hands the engine for a scan: one rule set version's rules, each with its
+/// definition as snapshotted into that version. Known placeholder values are rules too, of type
+/// placeholder vs. real. The built-in rule set in `rule_sets/default.json` is written in exactly
+/// this shape.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleSet {
-    /// Known placeholder values; a match containing one scores as a likely example.
-    pub placeholders: Vec<String>,
     pub rules: Vec<Rule>,
 }
 
@@ -158,7 +167,8 @@ pub(crate) struct CompiledRule {
     pub id: i64,
     pub name: String,
     pub detection_type: DetectionType,
-    pub severity: Severity,
+    /// Always set for rule types that create findings; placeholder rules don't need one.
+    pub severity: Option<Severity>,
     pub regex: Regex,
     pub prefix: Option<String>,
     pub key_names: Vec<String>,
@@ -232,7 +242,10 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
             None,
         ));
     }
-    if definition.severity.is_none() {
+    let creates_findings = definition
+        .detection_type
+        .is_none_or(DetectionType::creates_findings);
+    if creates_findings && definition.severity.is_none() {
         check.errors.push(error(
             RuleField::Severity,
             ErrorCode::Required,
@@ -283,28 +296,26 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
         });
     }
 
-    let compiled = match (regex, definition.detection_type, definition.severity) {
-        (Some(regex), Some(detection_type), Some(severity)) if check.is_valid() => {
-            Some(CompiledRule {
-                id: rule.id,
-                name: name.to_string(),
-                detection_type,
-                severity,
-                regex,
-                prefix: definition
-                    .prefix
-                    .clone()
-                    .filter(|prefix| !prefix.is_empty()),
-                key_names: definition
-                    .key_names
-                    .iter()
-                    .map(|key| key.to_lowercase())
-                    .filter(|key| !key.is_empty())
-                    .collect(),
-                min_entropy: definition.min_entropy,
-                remediation: definition.remediation.clone().unwrap_or_default(),
-            })
-        }
+    let compiled = match (regex, definition.detection_type) {
+        (Some(regex), Some(detection_type)) if check.is_valid() => Some(CompiledRule {
+            id: rule.id,
+            name: name.to_string(),
+            detection_type,
+            severity: definition.severity,
+            regex,
+            prefix: definition
+                .prefix
+                .clone()
+                .filter(|prefix| !prefix.is_empty()),
+            key_names: definition
+                .key_names
+                .iter()
+                .map(|key| key.to_lowercase())
+                .filter(|key| !key.is_empty())
+                .collect(),
+            min_entropy: definition.min_entropy,
+            remediation: definition.remediation.clone().unwrap_or_default(),
+        }),
         _ => None,
     };
     (compiled, check)

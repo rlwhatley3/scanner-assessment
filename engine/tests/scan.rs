@@ -7,8 +7,8 @@ const AWS_KEY: &str = "AKIAZ7Q3LMN4XWY2PRT6";
 const GITHUB_TOKEN: &str = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
 const RANDOM_PASSWORD: &str = "q8Z!fP2xL7mR";
 
-/// Scans with the built-in rule set: ids 1–5 are the AWS key, GitHub token, private key,
-/// assignment, and logging rules.
+/// Scans with the built-in rule set: ids 1–6 are the AWS key, GitHub token, private key,
+/// assignment, logging, and known placeholder values rules.
 fn run(text: &str) -> ScanResult {
     scan(42, text, &default_rule_set()).expect("scan should run")
 }
@@ -207,6 +207,37 @@ fn a_repeated_rule_name_is_a_rule_error_and_the_first_rule_still_runs() {
         .map(|finding| finding.rule_id)
         .collect();
     assert_eq!(errors, [6]);
+}
+
+#[test]
+fn placeholder_values_on_their_own_are_not_findings() {
+    let result = run("# example config; replace changeme before use
+mode: test
+");
+    assert!(result.findings.is_empty());
+}
+
+#[test]
+fn turning_off_the_placeholder_rule_stops_examples_scoring_as_examples() {
+    let mut rule_set = default_rule_set();
+    rule_set.rules[5].definition.enabled = Some(false);
+    let result = scan(1, "key: AKIAIOSFODNN7EXAMPLE", &rule_set).expect("scan should run");
+    assert_eq!(matches(&result)[0].placeholder_score, Some(5));
+}
+
+#[test]
+fn a_placeholder_only_counts_when_it_falls_inside_the_finding() {
+    let result = run(&format!("example key: {AWS_KEY}"));
+    assert_eq!(matches(&result)[0].placeholder_score, Some(5));
+}
+
+#[test]
+fn a_rule_set_with_only_placeholder_rules_enabled_has_nothing_to_find() {
+    let mut rule_set = default_rule_set();
+    for rule in &mut rule_set.rules {
+        rule.definition.enabled = Some(rule.id == 6);
+    }
+    assert_eq!(scan(1, "text", &rule_set), Err(ScanError::NoRulesEnabled));
 }
 
 #[test]

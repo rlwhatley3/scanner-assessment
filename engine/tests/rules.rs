@@ -28,8 +28,23 @@ fn the_built_in_rules_are_valid_and_raise_no_warnings() {
 fn the_built_in_rule_set_file_is_in_the_scan_contract_shape() {
     let rule_set = default_rule_set();
     let ids: Vec<i64> = rule_set.rules.iter().map(|rule| rule.id).collect();
-    assert_eq!(ids, [1, 2, 3, 4, 5]);
-    assert!(rule_set.placeholders.contains(&"example".to_string()));
+    assert_eq!(ids, [1, 2, 3, 4, 5, 6]);
+    let types: Vec<DetectionType> = rule_set
+        .rules
+        .iter()
+        .filter_map(|rule| rule.definition.detection_type)
+        .collect();
+    for detection_type in [
+        DetectionType::DirectCredential,
+        DetectionType::LikelyCredential,
+        DetectionType::UnsafeHandling,
+        DetectionType::PlaceholderVsReal,
+    ] {
+        assert!(
+            types.contains(&detection_type),
+            "no {detection_type:?} rule"
+        );
+    }
 
     let json = serde_json::to_string(&rule_set).expect("rule set should serialize");
     let reparsed: RuleSet = serde_json::from_str(&json).expect("rule set should parse back");
@@ -38,10 +53,9 @@ fn the_built_in_rule_set_file_is_in_the_scan_contract_shape() {
 
 #[test]
 fn the_contract_rejects_unknown_or_misspelled_fields_at_every_level() {
-    let rule_set = r#"{"placeholders": [], "rules": [], "extra": 1}"#;
-    let rule = r#"{"placeholders": [], "rules": [{"id": 1, "definition": {}, "draft": true}]}"#;
-    let definition =
-        r#"{"placeholders": [], "rules": [{"id": 1, "definition": {"detectiontype": "x"}}]}"#;
+    let rule_set = r#"{"rules": [], "placeholders": []}"#;
+    let rule = r#"{"rules": [{"id": 1, "definition": {}, "draft": true}]}"#;
+    let definition = r#"{"rules": [{"id": 1, "definition": {"detectiontype": "x"}}]}"#;
     for json in [rule_set, rule, definition] {
         assert!(
             serde_json::from_str::<RuleSet>(json).is_err(),
@@ -53,8 +67,8 @@ fn the_contract_rejects_unknown_or_misspelled_fields_at_every_level() {
 #[test]
 fn the_contract_requires_a_rule_id_and_definition() {
     for json in [
-        r#"{"placeholders": [], "rules": [{"definition": {}}]}"#,
-        r#"{"placeholders": [], "rules": [{"id": 1}]}"#,
+        r#"{"rules": [{"definition": {}}]}"#,
+        r#"{"rules": [{"id": 1}]}"#,
     ] {
         assert!(serde_json::from_str::<RuleSet>(json).is_err(), "{json}");
     }
@@ -139,6 +153,24 @@ fn repeated_names_in_a_set_flag_the_later_rule_ignoring_case() {
     assert_eq!(check.errors.len(), 1);
     assert_eq!(check.errors[0].rule_id, 2);
     assert_eq!(check.errors[0].code, ErrorCode::DuplicateName);
+}
+
+#[test]
+fn a_placeholder_rule_needs_no_severity_but_other_types_do() {
+    let placeholder = RuleDefinition {
+        detection_type: Some(DetectionType::PlaceholderVsReal),
+        severity: None,
+        ..valid("changeme")
+    };
+    assert!(check_rule(&rule(1, placeholder)).is_valid());
+
+    let credential = RuleDefinition {
+        severity: None,
+        ..valid("x")
+    };
+    let check = check_rule(&rule(2, credential));
+    assert_eq!(check.errors.len(), 1);
+    assert_eq!(check.errors[0].field, RuleField::Severity);
 }
 
 #[test]
