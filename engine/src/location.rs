@@ -6,6 +6,7 @@ use serde::Serialize;
 /// UTF-8 text. Lines and columns are 1-based and derived from them for display; columns count
 /// characters, not bytes. The end position is exclusive, like `end_byte`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Location {
     pub start_byte: usize,
     pub end_byte: usize,

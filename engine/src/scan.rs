@@ -23,6 +23,7 @@ pub enum FindingKind {
 
 /// Everything about a match except the matched text itself.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MatchDetails {
     pub rule_name: String,
     pub detection_type: DetectionType,
@@ -51,6 +52,7 @@ pub enum Violation {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Finding {
     pub rule_id: i64,
     pub kind: FindingKind,
@@ -61,12 +63,14 @@ pub struct Finding {
 
 /// A log line about one scan. It never contains the scanned text or a matched value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LogEvent {
     pub scan_id: i64,
     pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScanResult {
     /// Matches in text order, then rule errors.
     pub findings: Vec<Finding>,

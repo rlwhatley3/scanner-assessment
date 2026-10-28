@@ -1,4 +1,4 @@
-use secrets_scanner_api::{ApiDoc, db, routes};
+use secrets_scanner_api::{ApiDoc, db, routes, seed};
 use std::net::{IpAddr, SocketAddr};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -10,6 +10,9 @@ async fn main() {
         std::fs::create_dir_all(directory).expect("failed to create database directory");
     }
     let db = db::Db::open(&database_path).expect("failed to open database");
+    seed::seed_default_rule_set(&db)
+        .await
+        .expect("failed to seed the built-in rule set");
 
     let app = routes::router(db)
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))

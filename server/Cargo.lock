@@ -604,11 +604,23 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "rusqlite",
+ "secrets-scanner-engine",
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "utoipa",
  "utoipa-swagger-ui",
+]
+
+[[package]]
+name = "secrets-scanner-engine"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "regex-syntax",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
