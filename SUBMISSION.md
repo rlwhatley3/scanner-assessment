@@ -22,7 +22,7 @@ Use this document to guide your project walkthrough.
 
 Use case 1: scan a source file. An engineer pastes a configuration file that may contain a live credential and runs the known rule-sets against it.
 
-1. Click **New inspection**. If the current inspection has text or results, prompt "Discard current inspection?"; confirm clears, cancel keeps it.
+1. Create or reopen a **scan session**, then click **New inspection**. If the current inspection has text that was pasted but never scanned, prompt "Discard current inspection?"; confirm clears, cancel keeps it. Scanned inspections need no prompt, since their results are already saved to the session.
 2. Empty inspection: paste the config file text. Scan is disabled until text is present. Inspection text is never persisted (not to disk, not to browser storage).
 3. Click **Scan**. While scanning, a "Do not refresh or close this page" warning is shown. The button reads **Cancel** for 5 seconds; a click in that window aborts. After 5 seconds the button returns to a running state; clicking it again re-arms Cancel for another 5 seconds (arm, then confirm).
 4. Outcomes:
@@ -31,9 +31,9 @@ Use case 1: scan a source file. An engineer pastes a configuration file that may
    - **Partial:** findings from the rules that ran, plus a warning naming the rule(s) that failed.
    - **Cancelled:** back to ready, text intact, no results.
    - **Error:** API unreachable, 5xx, or input rejected. Error message shown, text intact, Scan re-enabled.
-5. Text is read-only after a scan. Start a New inspection to change it. In-place editing (with results marked stale) is not ruled out for later.
-6. Reload: no inspection is open. Config versions in the config version control UI persist; inspection text and results do not.
-7. One inspection at a time: due to non-persistence of potentially live creds.
+5. Text is read-only after a scan. To fix an issue and rescan, start a New inspection in the same scan session and paste the fixed content into a fresh input. In-place editing (with results marked stale) is not ruled out for later.
+6. Reload: no inspection is open. Inspection text does not persist; inspection results do. A past scan session can be reopened: it shows each inspection's broken rules and locations, but no content, and new inspections can be added to it. Config versions in the config version control UI also persist.
+7. One active scan session at a time, and one inspection at a time: due to non-persistence of potentially live creds.
 
 Rule config is versioned in the **config version control UI**, shown as a small timeline: persisted locally, each version viewable with its attached scan results, re-usable as the basis for a new version, and archivable (hidden from the timeline, not deleted).
 
@@ -41,7 +41,7 @@ Rule config is versioned in the **config version control UI**, shown as a small 
 
 | State | Trigger | What the user sees |
 |---|---|---|
-| No inspection | Page load / reload | Config version control UI, New inspection button |
+| No inspection | Page load / reload | Config version control UI, past scan sessions, New inspection button |
 | Empty | New inspection | Empty text box, Scan disabled |
 | Ready | Text present | Scan enabled |
 | Scanning | Scan clicked | Cancel button (5 s window), progress indicator, do-not-refresh warning |
@@ -59,7 +59,7 @@ Rule config is versioned in the **config version control UI**, shown as a small 
 - Rules: no rules enabled, so "clean" would be misleading; a rule's regex is invalid or catastrophically slow; config version changed between two scans of the same text.
 - Output safety: highlight or list shows the full secret value on screen; error messages echo the input back.
 
-**Still undefined:** what clicking a finding does, which actions exist on a finding, and how overlapping findings are displayed.
+**Still undefined:** which actions exist on a finding. Clicking and overlap are defined in entry 4.
 
 ### 3. Frontend, API, and detection-engine boundaries
 
@@ -72,11 +72,11 @@ Rule config is versioned in the **config version control UI**, shown as a small 
 - Validates and compiles rules, returning per-rule errors instead of failing the whole scan.
 - Returns both byte offsets and line/column for every finding.
 - Emits log events tagged with the log id, containing redacted values only, never the full match. The caller decides where they are written.
-- Covers four detection tiers:
-  1. **Direct credentials:** a secret value is present (`AKIA...`, `ghp_...`, `-----BEGIN PRIVATE KEY-----`, `password=hunter2`).
-  2. **Likely credentials:** high-entropy strings next to suspicious key names, with no known format.
-  3. **Placeholder vs. real:** classify a match as an example value (`YOUR_KEY_HERE`, `xxxx`) or as likely real.
-  4. **Unsafe handling, no value present:** code or config that handles a secret unsafely (logging it, putting it in a URL, passing it on the command line). A tier 4 finding points at a risky pattern, not a secret value, so the finding shape must support both.
+- Covers four detection types:
+  - **Direct credentials:** a secret value is present (`AKIA...`, `ghp_...`, `-----BEGIN PRIVATE KEY-----`, `password=hunter2`).
+  - **Likely credentials:** high-entropy strings next to suspicious key names, with no known format.
+  - **Placeholder vs. real:** classify a match as an example value (`YOUR_KEY_HERE`, `xxxx`) or as likely real.
+  - **Unsafe handling, no value present:** code or config that handles a secret unsafely (logging it, putting it in a URL, passing it on the command line). An unsafe handling finding points at a risky pattern, not a secret value, so the finding shape must support both.
 
 **CLI (later):** pulls rule-sets from a hosted API, reads files itself, calls the engine in-process, and returns a well-documented, stable response shape to its local caller (shell, CI step, pre-commit hook). Inspection text never goes over a wire.
 
@@ -87,4 +87,44 @@ CLI (reads files)  -----------------------function call------------------>  engi
 CLI  <--rule-sets--  hosted API
 ```
 
-**Exposure (accepted, documented):** FE to API traffic is loopback only and never leaves the machine, but inspection text is still visible in browser devtools and readable by local processes that can observe loopback traffic. I think a production version would need to be its own app with I/O privileges, reading files directly and running the engine in-process, rather than a browser talking to a local API.
+**Exposure (accepted, documented):** FE to API traffic is loopback only and never leaves the machine. In dev it makes two loopback hops: browser to the Vite dev server (`127.0.0.1:5173`), then Vite's `/api` proxy to the API (`127.0.0.1:3001`). Inspection text is still visible in browser devtools and readable by local processes that can observe loopback traffic. I think a production version would need to be its own app with I/O privileges, reading files directly and running the engine in-process, rather than a browser talking to a local API.
+
+### 4. What a finding contains, and how it is represented in the source text
+
+**Storage model**
+
+```
+scan session (id)                        : one active at a time, reopenable
+  └─ inspection (id, timestamp, config version, log id, outcome)
+       └─ finding
+       └─ rule errors
+```
+
+A scan session has many inspections; each inspection is one scan. Fixing an issue and rescanning creates a new inspection in the same session, so all inspections stay tied to the session id.
+
+Never stored: the inspection text, matched values, or a hash of the input. A hash was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
+
+**A finding contains**
+
+| Field | Form | Source |
+|---|---|---|
+| Rule id and name | Text | Rule |
+| Detection type | Label (direct credential, likely credential, unsafe handling) | Engine |
+| Severity | Label | Fixed per rule by the rule author |
+| Confidence | Score, 0–100 | Engine, per finding |
+| Placeholder vs. real | Score, 0–100 | Engine, per finding |
+| Location | Line/column and byte offsets | Engine |
+| Redacted preview | Format prefix declared by the rule (e.g. `AKIA…`), or nothing if the rule has no known prefix | Rule |
+| Why flagged | A note explaining the scores using signals only (e.g. entropy, suspicious key name, not a known placeholder), never input text | Engine, per finding |
+| Remediation hint | Static text | Rule |
+
+**Redacted preview:** taken from the rule definition, not from the match, so no byte of a matched value reaches storage, logs, CLI output, or the API response. The same format is used in all four. It is needed wherever the text is unavailable or output could leak: engine log events, the past scan session view, CLI output, and the API scan response. The live inspection view does not need it, since the frontend highlights its own copy of the text. Trade-off: two findings from the same rule on the same line can only be told apart by column in the past scan session view.
+
+**Represented in the source text**
+
+- **Color by severity,** with fixed defaults and no user config: high = red, medium = amber, low = blue.
+- **Severity icon** next to each highlight and in the findings list, so severity is not conveyed by color alone.
+- **Overlap:** overlapping findings get one highlight in a distinct color not used for any severity (purple). Clicking it selects and shows all the findings it covers.
+- **Multi-line matches** (e.g. a private key block) are highlighted as a whole block.
+- **Linking** works both ways: clicking a highlight selects its finding in the list, and clicking a finding scrolls to its highlight.
+- **Past scan sessions** have no text, so findings are shown as a list with rule, location, scores, preview, and notes.
