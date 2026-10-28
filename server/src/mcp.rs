@@ -4,6 +4,7 @@
 //! never stored or logged here either.
 
 use crate::routes::AppState;
+use crate::routes::models::{self, ModelResponse};
 use crate::routes::scans::{self, ApiError, ScanResponse};
 use crate::store::{
     self, RuleRecord, RuleSetRecord, RuleSetSummary, RuleSetVersionRecord, RuleSetVersionSummary,
@@ -33,18 +34,22 @@ an exact copy of any version. A version is added to a set from a list of rule id
 checked as a set, and each one's current definition is snapshotted into the version, so later rule \
 edits never change a saved version. Versions are numbered within their set. Saved versions can only \
 be archived or restored. A scan session uses one version; each scan in it \
-runs that version's snapshots. Scan text is never stored, and findings never contain matched \
-values.";
+runs that version's snapshots. Model rules (model_assessment, model_detection) run a model the API \
+has loaded instead of a pattern; list_models shows which models are available and which rule types \
+each fits. Scan text is never stored, and findings never contain matched values.";
 
 const DEFINITION_HELP: &str = "The rule's definition as canonical JSON. Every field is optional \
 while drafting, and unknown fields are rejected. Fields: name (string); enabled (boolean, default \
-true); detectionType (direct_credential, likely_credential, unsafe_handling, or \
-placeholder_vs_real); severity (high, medium, or low; not used by placeholder_vs_real); pattern \
+true); detectionType (direct_credential, likely_credential, unsafe_handling, placeholder_vs_real, \
+model_assessment, or model_detection); severity (high, medium, or low; not used by \
+placeholder_vs_real or model_assessment); pattern \
 (a Rust regex: a named group `value` narrows the finding to the secret, a named group `key` is \
 checked against keyNames); prefix (the public prefix shown as the redacted preview); keyNames \
 (string array); minEntropy (0 to 8 bits per character); checksum ({\"algorithm\": \"luhn\"}, \
 {\"algorithm\": \"base58check\"}, or {\"algorithm\": \"crc32\", \"encoding\": \
-\"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); remediation (string).";
+\"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); remediation (string). \
+Model rules take model ({\"id\": name, \"sha256\": hash}, from list_models) and threshold (0 to \
+100: a model score at or above it counts as a secret) instead of a pattern.";
 
 /// The MCP service, ready to mount on the API router.
 pub fn service(state: AppState) -> StreamableHttpService<ScannerMcp, LocalSessionManager> {
@@ -225,6 +230,11 @@ pub struct RunScanParams {
 }
 
 #[derive(Serialize, JsonSchema)]
+pub struct ModelList {
+    models: Vec<ModelResponse>,
+}
+
+#[derive(Serialize, JsonSchema)]
 pub struct RuleList {
     rules: Vec<RuleRecord>,
 }
@@ -308,6 +318,17 @@ impl ScannerMcp {
 
 #[tool_router]
 impl ScannerMcp {
+    #[tool(
+        description = "List the models the API has loaded, which model rules name by sha256, \
+                       with the model rule types each one fits.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_models(&self) -> Result<Json<ModelList>, ToolError> {
+        Ok(Json(ModelList {
+            models: models::loaded_models(&self.state),
+        }))
+    }
+
     #[tool(
         description = "List rules with their current definitions.",
         annotations(read_only_hint = true)

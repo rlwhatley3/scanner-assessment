@@ -11,6 +11,8 @@
 //! Models run on the CPU through tract with the `ml` feature. Without it, nothing can be loaded
 //! and every model rule reports that the engine was built without model support.
 
+use crate::rules::DetectionType;
+use serde::Serialize;
 use std::collections::HashMap;
 
 const PAD_ID: i64 = 0;
@@ -64,6 +66,50 @@ impl Models {
 
     pub(crate) fn get(&self, sha256: &str) -> Option<&LoadedModel> {
         self.loaded.get(sha256)
+    }
+
+    /// Every loaded model, by hash, with the model rule types it can run as.
+    pub fn list(&self) -> Vec<ModelInfo> {
+        let mut models: Vec<ModelInfo> = self
+            .loaded
+            .iter()
+            .map(|(sha256, model)| ModelInfo {
+                sha256: sha256.clone(),
+                input_len: model.input_len(),
+                output_len: model.output_len(),
+                detection_types: [
+                    DetectionType::ModelAssessment,
+                    DetectionType::ModelDetection,
+                ]
+                .into_iter()
+                .filter(|&detection_type| model.fits(detection_type))
+                .collect(),
+            })
+            .collect();
+        models.sort_by(|a, b| a.sha256.cmp(&b.sha256));
+        models
+    }
+}
+
+/// A loaded model's shape, and which model rule types it fits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    pub sha256: String,
+    pub input_len: usize,
+    pub output_len: usize,
+    pub detection_types: Vec<DetectionType>,
+}
+
+impl LoadedModel {
+    /// Whether the model's shape fits a rule type: an assessment returns one score for a value
+    /// (with room for the value's markers), a detection one score per byte of its window.
+    pub(crate) fn fits(&self, detection_type: DetectionType) -> bool {
+        match detection_type {
+            DetectionType::ModelAssessment => self.output_len() == 1 && self.input_len() >= 3,
+            DetectionType::ModelDetection => self.output_len() == self.input_len(),
+            _ => false,
+        }
     }
 }
 

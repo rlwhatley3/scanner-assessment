@@ -1,8 +1,21 @@
 use crate::db::Db;
-use secrets_scanner_engine::default_rule_set;
+use secrets_scanner_engine::{
+    RuleDefinition, VALUE_CLASSIFIER_SHA256, default_rule_set, value_classifier_rule,
+};
 
 /// The name the built-in rules are seeded under. Users can rename it.
 pub const BUILT_IN_RULE_SET_NAME: &str = "Built-in rules";
+
+/// The rules a new database starts with: the engine's built-in rule set, then the value
+/// classifier, which the API can run because it loads the classifier at startup.
+pub fn built_in_rules() -> Vec<RuleDefinition> {
+    default_rule_set()
+        .rules
+        .into_iter()
+        .map(|rule| rule.definition)
+        .chain([value_classifier_rule()])
+        .collect()
+}
 
 /// Seeds the built-in rules as the first version of a "Built-in rules" rule set, once, on an
 /// empty database. Each built-in rule becomes a saved (non-draft) rule, joined to the version
@@ -31,9 +44,9 @@ pub async fn seed_default_rule_set(db: &Db) -> rusqlite::Result<()> {
             [transaction.last_insert_rowid()],
         )?;
         let version_id = transaction.last_insert_rowid();
-        for rule in default_rule_set().rules {
-            let definition = serde_json::to_string(&rule.definition)
-                .expect("a rule definition always serializes");
+        for definition in built_in_rules() {
+            let definition =
+                serde_json::to_string(&definition).expect("a rule definition always serializes");
             transaction.execute(
                 "INSERT INTO rules (definition, drafting) VALUES (?1, 0)",
                 [&definition],
@@ -46,6 +59,30 @@ pub async fn seed_default_rule_set(db: &Db) -> rusqlite::Result<()> {
             )?;
         }
         transaction.commit()
+    })
+    .await
+}
+
+/// Adds the value classifier rule to a database seeded before the API shipped it, once. It is
+/// saved as a rule on its own, outside any version, since versions never change; add it to a
+/// new version to use it. Databases that already have a rule naming the classifier are left
+/// alone, even if that rule was edited.
+pub async fn seed_value_classifier_rule(db: &Db) -> rusqlite::Result<()> {
+    db.call(|connection| {
+        let existing: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM rules WHERE json_extract(definition, '$.model.sha256') = ?1",
+            [VALUE_CLASSIFIER_SHA256],
+            |row| row.get(0),
+        )?;
+        if existing == 0 {
+            let definition = serde_json::to_string(&value_classifier_rule())
+                .expect("a rule definition always serializes");
+            connection.execute(
+                "INSERT INTO rules (definition, drafting) VALUES (?1, 0)",
+                [&definition],
+            )?;
+        }
+        Ok(())
     })
     .await
 }

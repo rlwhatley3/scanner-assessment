@@ -74,6 +74,14 @@ export default function FindingsList({ findings, selected, onSelect }: FindingsL
                   {details.checksumValid !== null &&
                     (details.checksumValid ? " · Checksum valid" : " · Checksum fails")}
                   {details.inComment && " · In a comment"}
+                  {details.modelAssessments?.map((assessment) => (
+                    <span key={assessment.ruleId} className={`model-verdict ${assessment.verdict}`}>
+                      {" "}
+                      · {assessment.ruleName}:{" "}
+                      {assessment.verdict === "likely_real" ? "likely real" : "likely an example"} (
+                      {assessment.score})
+                    </span>
+                  ))}
                   {details.redactedPreview && (
                     <>
                       {" "}

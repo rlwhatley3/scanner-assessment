@@ -3,7 +3,11 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
-use secrets_scanner_api::{db::Db, routes, seed::seed_default_rule_set};
+use secrets_scanner_api::{
+    db::Db,
+    routes,
+    seed::{seed_default_rule_set, seed_value_classifier_rule},
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -67,7 +71,7 @@ async fn seeding_twice_leaves_one_built_in_rule_set() {
         count(&db, "SELECT COUNT(*) FROM rule_set_versions").await,
         1
     );
-    let built_in = secrets_scanner_engine::default_rule_set().rules.len() as i64;
+    let built_in = secrets_scanner_api::seed::built_in_rules().len() as i64;
     assert_eq!(
         count(&db, "SELECT COUNT(*) FROM rules WHERE drafting = 0").await,
         built_in
@@ -237,4 +241,44 @@ fn scans_are_capped_at_a_fixed_number_running_at_once() {
         state.scan_permits.available_permits(),
         routes::MAX_CONCURRENT_SCANS
     );
+}
+
+#[tokio::test]
+async fn the_value_classifier_rates_each_finding() {
+    let (app, _) = app().await;
+    let (status, body) = post_scan(
+        &app,
+        1,
+        json!({ "text": format!("AWS_ACCESS_KEY_ID={AWS_KEY}\n") }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["partial"], false);
+    let assessments = &body["findings"][0]["violation"]["modelAssessments"];
+    assert_eq!(assessments[0]["ruleName"], "Value classifier");
+    assert_eq!(assessments[0]["verdict"], "likely_real");
+}
+
+#[tokio::test]
+async fn an_older_database_gets_the_classifier_rule_once_outside_any_version() {
+    let classifier_rules = "SELECT COUNT(*) FROM rules \
+        WHERE json_extract(definition, '$.model.sha256') IS NOT NULL";
+    let db = Db::open_in_memory().expect("in-memory database should open");
+    seed_value_classifier_rule(&db)
+        .await
+        .expect("seed should run");
+    seed_value_classifier_rule(&db)
+        .await
+        .expect("seed should run again");
+    assert_eq!(count(&db, classifier_rules).await, 1);
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM rule_set_version_rules").await,
+        0
+    );
+
+    let (_, seeded) = app().await;
+    seed_value_classifier_rule(&seeded)
+        .await
+        .expect("seed should run");
+    assert_eq!(count(&seeded, classifier_rules).await, 1);
 }

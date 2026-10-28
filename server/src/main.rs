@@ -13,6 +13,9 @@ async fn main() {
     seed::seed_default_rule_set(&db)
         .await
         .expect("failed to seed the built-in rule set");
+    seed::seed_value_classifier_rule(&db)
+        .await
+        .expect("failed to seed the value classifier rule");
 
     let app = routes::router(db)
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))

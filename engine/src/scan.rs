@@ -478,17 +478,19 @@ fn rule_model<'m>(
             "This engine was built without model support.".to_string()
         }));
     };
-    if rule.detection_type == DetectionType::ModelDetection {
-        if model.output_len() != model.input_len() {
-            return Err(unavailable(format!(
-                "The model {name} must return one score per input position to detect secrets."
-            )));
-        }
-    } else if model.output_len() != 1 || model.input_len() < 3 {
-        return Err(unavailable(format!(
-            "The model {name} must return a single score, and have room for a value, to assess \
-             findings."
-        )));
+    if !model.fits(rule.detection_type) {
+        return Err(unavailable(
+            if rule.detection_type == DetectionType::ModelDetection {
+                format!(
+                    "The model {name} must return one score per input position to detect secrets."
+                )
+            } else {
+                format!(
+                    "The model {name} must return a single score, and have room for a value, to \
+                     assess findings."
+                )
+            },
+        ));
     }
     Ok(Some(model))
 }

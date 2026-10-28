@@ -8,7 +8,7 @@ use axum::{
 };
 use rusqlite::{Connection, OptionalExtension};
 use secrets_scanner_engine::{
-    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanResult, scan,
+    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanResult, scan_with_models,
 };
 use serde::{Deserialize, Serialize};
 
@@ -191,7 +191,8 @@ async fn run_scan(
         .acquire_owned()
         .await
         .map_err(internal)?;
-    tokio::task::spawn_blocking(move || scan(scan_id, &text, &rule_set))
+    let models = state.models.clone();
+    tokio::task::spawn_blocking(move || scan_with_models(scan_id, &text, &rule_set, &models))
         .await
         .map_err(internal)?
         .map_err(ApiError::from)

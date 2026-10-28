@@ -8,7 +8,7 @@ axum = "0.8.9"
 rmcp = { version = "3.8.0", features = ["server", "macros", "transport-streamable-http-server"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 schemars = "1.0"
-secrets-scanner-engine = { path = "../engine" }
+secrets-scanner-engine = { path = "../engine", features = ["ml"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tokio = { version = "1.54.0", features = ["fs", "macros", "rt-multi-thread", "sync"] }

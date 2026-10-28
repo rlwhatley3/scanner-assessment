@@ -14,10 +14,12 @@ mod rules;
 mod scan;
 
 pub use checksum::{Checksum, ChecksumEncoding, Crc32Checksum};
-pub use defaults::default_rule_set;
+pub use defaults::{
+    VALUE_CLASSIFIER_ONNX, VALUE_CLASSIFIER_SHA256, default_rule_set, value_classifier_rule,
+};
 pub use format::Format;
 pub use location::Location;
-pub use models::{ModelLoadError, Models};
+pub use models::{ModelInfo, ModelLoadError, Models};
 pub use password_shape::PasswordShape;
 pub use rules::{
     DetectionType, ErrorCode, ModelRef, Rule, RuleCheck, RuleDefinition, RuleError, RuleField,

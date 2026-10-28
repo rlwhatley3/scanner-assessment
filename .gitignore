@@ -20,5 +20,9 @@ target/
 # Operating system
 .DS_Store
 
+# Model training (ml/)
+/ml/.venv/
+__pycache__/
+
 # Local SQLite database
 /server/data/

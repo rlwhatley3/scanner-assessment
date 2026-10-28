@@ -67,7 +67,7 @@ Rust's `regex` crate runs in linear time, so no pattern can backtrack catastroph
 
 ## Model rules
 
-Model rules add a model's judgment on top of the pattern rules. A rule set without them scans exactly as before. They run only when the engine is built with the `ml` feature (`cargo build --features ml`), which runs ONNX models on the CPU with [tract](https://github.com/sonos/tract), a pure-Rust runtime.
+Model rules add a model's judgment on top of the pattern rules; a [trained value classifier](#the-value-classifier) ships with the engine. A rule set without them scans exactly as before. They run only when the engine is built with the `ml` feature (`cargo build --features ml`), which runs ONNX models on the CPU with [tract](https://github.com/sonos/tract), a pure-Rust runtime.
 
 ```json
 {
@@ -95,9 +95,17 @@ Every model takes one row of token ids, `int64[1, L]`, with `L` fixed by the mod
 - **Assessments run after the 200-finding cap,** so a flood of matches can't multiply model runs. Findings with no value (unsafe handling) get no assessment. Detection findings are assessed too.
 - **Detection reads the whole text,** about `2 × bytes / L` model runs per scan, so it is the slowest rule type: a 1 MB input with `L = 256` means about 8,000 model runs.
 
-### Training a model
+### The value classifier
 
-The engine ships no model; any ONNX model with the shapes above works. The quickest start is a small byte-level convolutional network trained in PyTorch on synthetic data (real-shaped values in config and code lines labeled real, documentation and test values labeled examples, and secrets planted in ordinary text for detection), then exported to ONNX with a fixed `L`. A model trained only on synthetic data learns the generator, so it proves the pipeline but needs real labeled data before its verdicts can be trusted.
+[`models/value-classifier.onnx`](models/value-classifier.onnx) is a trained `model_assessment` model (about 140 KB, `L = 128`, SHA-256 `b72bdda9…8528`). It is not part of the engine's built-in rule set, which runs without models; the engine exports it as `VALUE_CLASSIFIER_ONNX` with a ready-made rule, `value_classifier_rule()`. The API loads it at startup, lists it at `GET /api/models` (and the MCP `list_models` tool), and seeds the rule into new databases. [`ml/`](../ml/README.md) has the code that trains it and how to retrain it.
+
+It is a small byte-level convolutional network trained only on synthetic data, so it has learned the generator, not real repositories:
+
+- It reads 128 bytes around a value, so an example or test cue further away than that doesn't count.
+- It rates any value in a test or example context as an example, including a real secret someone pasted into a test. The finding is still reported either way.
+- Retraining changes the file's hash. Rule set versions that name the old hash keep naming it, so scans with them report the classifier rule as unavailable until a new version uses the new rule.
+
+`tests/value_classifier.rs` runs it through the engine on hand-written cases. Treat its verdicts as a hint until it has been trained and checked on real labeled data.
 
 The tests in `tests/models.rs` build tiny hand-written ONNX models in code, so they need no model files.
 

@@ -145,6 +145,7 @@ async fn initializes_and_lists_every_tool() {
             "get_rule_set_version",
             "get_scan",
             "get_scan_session",
+            "list_models",
             "list_rule_set_versions",
             "list_rule_sets",
             "list_rules",
@@ -172,7 +173,7 @@ async fn rejects_browser_origins() {
 #[tokio::test]
 async fn reads_the_seeded_rules_and_version() {
     let (app, _) = app().await;
-    let built_in = secrets_scanner_engine::default_rule_set().rules.len();
+    let built_in = secrets_scanner_api::seed::built_in_rules().len();
 
     let rules = ok(&app, "list_rules", json!({})).await;
     assert_eq!(rules["rules"].as_array().unwrap().len(), built_in);
@@ -452,4 +453,19 @@ async fn rule_sets_are_named_and_can_start_from_a_copy() {
     assert_eq!(renamed["name"], "Strict v2");
     let versions = ok(&app, "list_rule_set_versions", json!({"ruleSetId": id})).await;
     assert_eq!(versions["versions"][0]["ruleSetName"], "Strict v2");
+}
+
+#[tokio::test]
+async fn lists_the_loaded_models() {
+    let (app, _) = app().await;
+    let models = ok(&app, "list_models", json!({})).await;
+    assert_eq!(models["models"][0]["id"], "value-classifier");
+    assert_eq!(
+        models["models"][0]["sha256"],
+        secrets_scanner_engine::VALUE_CLASSIFIER_SHA256
+    );
+    assert_eq!(
+        models["models"][0]["detectionTypes"],
+        json!(["model_assessment"])
+    );
 }
