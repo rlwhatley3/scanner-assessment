@@ -128,3 +128,46 @@ Never stored: the inspection text, matched values, or a hash of the input. A has
 - **Multi-line matches** (e.g. a private key block) are highlighted as a whole block.
 - **Linking** works both ways: clicking a highlight selects its finding in the list, and clicking a finding scrolls to its highlight.
 - **Past scan sessions** have no text, so findings are shown as a list with rule, location, scores, preview, and notes.
+
+### 5. Assumptions about rules, configuration errors, and scan results
+
+**Rules**
+
+- Rules live in config versions, managed in the config version control UI and persisted locally.
+- A **built-in default rule set** is seeded as the first config version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
+- Rules are edited through **forms**, never raw text, and always saved as canonical **JSON**.
+- Rule ids are assigned by the system, unique, and stable across config versions, like a database primary key. A rule keeps its id when renamed or edited; a deleted rule's id is never reused. Users never see or edit ids.
+- Severity is fixed per rule by the rule author.
+
+| Field | Purpose |
+|---|---|
+| `id` | Assigned by the system |
+| `name` | Shown in findings |
+| `enabled` | Disable without deleting |
+| `detectionType` | Direct credential, likely credential, or unsafe handling |
+| `severity` | High, medium, or low |
+| `pattern` | The regex to match |
+| `prefix` | Optional public prefix, used for the redacted preview |
+| `keyNames` | Optional suspicious key names (used by likely-credential rules) |
+| `minEntropy` | Optional entropy threshold, 0–8 bits/char |
+| `remediation` | Static hint text |
+
+A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set once per config version, not per rule, and is used to compute the placeholder vs. real score.
+
+**Configuration errors**
+
+- **Validated in three places:**
+  - inline in the form, field by field, as the user types;
+  - on save: an invalid config version cannot be saved, so every saved version is valid;
+  - in the engine at scan time, as a safety net for config from other sources (such as the CLI pulling from a hosted API). Errors are reported per rule and the scan returns a Partial outcome.
+- **Errors:** a missing required field (name, detection type, severity, pattern); an invalid regex; a pattern too large to compile (the `regex` crate's size limit); a threshold out of range (entropy outside 0–8 bits/char, scores outside 0–100); two rules in the same version with the same name.
+- **Warning, not an error:** a pattern that can match an empty string, which would flood results.
+- **No rules enabled:** the scan is blocked. The Scan button is disabled with "No rules enabled in this config version," because "clean" would be misleading.
+- Rust's `regex` crate runs in linear time, so catastrophic backtracking cannot happen. Size limits still apply to patterns and inputs.
+
+**Scan results**
+
+- **Deterministic:** the same text and the same config version always give the same results.
+- **Repeated secret:** one finding per occurrence, since each location must be fixed.
+- **Ordering:** by position in the text. The findings list can be sorted by severity in the UI.
+- **Limits:** 1 MB maximum input, rejected with a clear message. Findings are capped at 1,000 per scan; anything over the cap is reported as truncated, never silently dropped.
