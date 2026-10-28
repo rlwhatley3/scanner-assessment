@@ -104,7 +104,7 @@ rule set version (id, parent, archived)
 
 Every table also carries `created_at` and `updated_at`.
 
-A scan session uses one rule set version and has many scans. Fixing an issue and rescanning creates a new scan in the same session, so all scans stay tied to the session. A scan's id doubles as its log id: the engine tags its log events with it. A rule that fails to run is recorded as a finding of kind `rule_error` on that rule, so a scan is partial when it has one, and clean when it has no findings at all.
+A scan session uses one rule set version and has many scans. Fixing an issue and rescanning creates a new scan in the same session, so all scans stay tied to the session. Scan sessions, scans, and findings are never deleted: together they record what was scanned with which rule set version, so they can be created and read but not removed. A scan's id doubles as its log id: the engine tags its log events with it. A rule that fails to run is recorded as a finding of kind `rule_error` on that rule, so a scan is partial when it has one, and clean when it has no findings at all.
 
 Never stored: the pasted text, matched values, or a hash of the input. A hash was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
 
@@ -258,6 +258,7 @@ The tools follow the same rules as the rest of the API, through a shared storage
 - New rules are drafts and aren't validated. `delete_rule` only deletes drafts; a rule in a version can be disabled or left out of the next version instead.
 - `create_rule_set_version` takes the full list of rule ids, runs the engine's checks on them as a set, and saves nothing if any check fails. Otherwise it snapshots each rule's current definition and clears `drafting`. A saved version can only be archived or restored, and an archived version can't start a new session.
 - `run_scan` uses the same code as the scan endpoint, so the text is never stored or logged, and findings never contain matched values.
+- Scan sessions and scans can be created and read, but there are no tools to delete them, since scan results are kept as history.
 - **Local only:** like the API, the server listens on loopback. It accepts only loopback `Host` headers, which protects against DNS rebinding, and it rejects any request that has an `Origin` header, so a web page can't drive the write tools through the user's browser.
 - **Stateless:** each tool call is one request and one JSON response, with no MCP session to keep.
 
