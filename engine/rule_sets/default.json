@@ -36,7 +36,7 @@
         "name": "Private key block",
         "detectionType": "direct_credential",
         "severity": "high",
-        "pattern": "-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----)?",
+        "pattern": "-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----(?:[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----)?",
         "prefix": "-----BEGIN",
         "remediation": "Treat this key as compromised: replace it, revoke the old one, and keep private keys in a key store or secret manager.",
         "enabled": true
@@ -55,7 +55,17 @@
           "secret",
           "api_key",
           "apikey",
-          "token"
+          "token",
+          "passphrase",
+          "_pass",
+          "_pwd",
+          "api-key",
+          "signing_key",
+          "signingkey",
+          "encryption_key",
+          "encryptionkey",
+          "master_key",
+          "masterkey"
         ],
         "minEntropy": 3.0,
         "remediation": "If this is a real secret, rotate it and load it from a secret manager or environment variable instead of the file.",
@@ -68,7 +78,7 @@
         "name": "Secret written to a log",
         "detectionType": "unsafe_handling",
         "severity": "medium",
-        "pattern": "(?i)\\b(?:console\\.(?:log|info|warn|error|debug)|println!?|print|logger\\.\\w+|log\\.\\w+)\\s*\\([^)\\n]*(?:password|passwd|secret|api_?key|token)",
+        "pattern": "(?i)\\b(?:console\\.(?:log|info|warn|error|debug)|println!?|print|logger\\.\\w+|log\\.\\w+)\\s*\\([^)\\n]*(?:password|passwd|passphrase|secret|api[_-]?key|token|private[_ ]?key)",
         "remediation": "Remove the secret from this log call, or log a fixed placeholder such as \"[redacted]\" instead.",
         "enabled": true
       }
@@ -78,7 +88,7 @@
       "definition": {
         "name": "Known placeholder values",
         "detectionType": "placeholder_vs_real",
-        "pattern": "(?i)your_key_here|changeme|xxxx|example|dummy|test",
+        "pattern": "(?i)your_key_here|change_?me|xxxx|example|dummy|test|:password@",
         "enabled": true
       }
     },
@@ -136,7 +146,7 @@
         "name": "Payment card number",
         "detectionType": "direct_credential",
         "severity": "high",
-        "pattern": "\\b(?:4\\d{3}|5[1-5]\\d{2}|2[2-7]\\d{2}|6(?:011|5\\d{2}))(?:[ -]?\\d{4}){3}\\b|\\b3[47]\\d{2}[ -]?\\d{6}[ -]?\\d{5}\\b",
+        "pattern": "\\b(?:(?:4\\d{3}|5[1-5]\\d{2}|2[2-7]\\d{2}|6011|64[4-9]\\d|65\\d{2}|35(?:2[89]|[3-8]\\d)|62\\d{2})(?:[ -]?\\d{4}(?:[ -]?\\d{4}(?:[ -]?|[ \\t]*\\r?\\n[ \\t]*)|[ \\t]*\\r?\\n[ \\t]*\\d{4}[ -]?)|[ \\t]*\\r?\\n[ \\t]*\\d{4}[ -]?\\d{4}[ -]?)\\d{4}|3[47]\\d{2}(?:[ -]?\\d{6}(?:[ -]?|[ \\t]*\\r?\\n[ \\t]*)|[ \\t]*\\r?\\n[ \\t]*\\d{6}[ -]?)\\d{5}|(?:30[0-5]\\d|3095|3[689]\\d{2})(?:[ -]?\\d{6}(?:[ -]?|[ \\t]*\\r?\\n[ \\t]*)|[ \\t]*\\r?\\n[ \\t]*\\d{6}[ -]?)\\d{4}|(?:4\\d{3}|6011|64[4-9]\\d|65\\d{2}|35(?:2[89]|[3-8]\\d)|62\\d{2})\\d{13,15}|4\\d{12})\\b",
         "checksum": {
           "algorithm": "luhn"
         },
@@ -169,6 +179,327 @@
           "minScore": 2
         },
         "remediation": "If this is a real password, change it, since it has been stored in plain text, and load the new one from a secret manager or environment variable. If it isn't a secret, this low-severity finding can be ignored.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 13,
+      "definition": {
+        "name": "Slack token",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bxox[abposr]-\\d+-[0-9A-Za-z-]{10,}",
+        "prefix": "xox",
+        "remediation": "Revoke this token in your Slack app's settings (OAuth & Permissions), reinstall the app to get a new one, and load the new one from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 14,
+      "definition": {
+        "name": "Slack webhook URL",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bhttps://hooks\\.slack\\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]{20,}",
+        "prefix": "https://hooks.slack.com/services/",
+        "remediation": "Anyone with this URL can post to the channel. Remove the webhook in your Slack app's Incoming Webhooks page, add a new one, and load the new one from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 15,
+      "definition": {
+        "name": "Stripe live secret key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bsk_live_[0-9A-Za-z]{24,247}\\b",
+        "prefix": "sk_live_",
+        "remediation": "Roll this key in the Stripe Dashboard (Developers, API keys) and load the new one from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 16,
+      "definition": {
+        "name": "Stripe live restricted key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\brk_live_[0-9A-Za-z]{24,247}\\b",
+        "prefix": "rk_live_",
+        "remediation": "Roll this key in the Stripe Dashboard (Developers, API keys) and load the new one from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 17,
+      "definition": {
+        "name": "SendGrid API key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bSG\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}",
+        "prefix": "SG.",
+        "remediation": "Delete this key in SendGrid (Settings, API Keys), create a new one with only the permissions it needs, and load the new one from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 18,
+      "definition": {
+        "name": "Google API key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bAIza[0-9A-Za-z_-]{35}",
+        "prefix": "AIza",
+        "remediation": "Delete or regenerate this key in Google Cloud Console (APIs & Services, Credentials), restrict the new one to the APIs and apps that need it, and load the new one from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 19,
+      "definition": {
+        "name": "OpenAI API key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bsk-(?:(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20})",
+        "prefix": "sk-",
+        "remediation": "Revoke this key in the OpenAI dashboard (API keys), create a new one, and load the new one from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 20,
+      "definition": {
+        "name": "Anthropic API key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bsk-ant-(?:api|admin)\\d{2}-[A-Za-z0-9_-]{32,}",
+        "prefix": "sk-ant-",
+        "remediation": "Revoke this key in the Claude Console (API keys), create a new one, and load the new one from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 21,
+      "definition": {
+        "name": "GitHub fine-grained token",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bgithub_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}\\b",
+        "prefix": "github_pat_",
+        "remediation": "Revoke this token in GitHub settings (Developer settings, Fine-grained tokens) and create a new one with access to only the repositories and permissions it needs.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 22,
+      "definition": {
+        "name": "AWS secret access key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "(?i)(?:aws_?)?secret_?(?:access_?)?key[\\\"'`]?\\s*[:=]\\s*[\\\"'`]?(?P<value>[A-Za-z0-9/+]{40})(?:[^A-Za-z0-9/+=]|$)",
+        "remediation": "Deactivate the access key this secret belongs to in AWS IAM, create a new one, and load it from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 23,
+      "definition": {
+        "name": "Sentry DSN",
+        "detectionType": "direct_credential",
+        "severity": "low",
+        "pattern": "\\bhttps://(?P<value>[0-9a-f]{32})@[\\w.-]*sentry\\.io/\\d+",
+        "remediation": "A Sentry DSN is meant to be public in browser apps, but anyone who has it can send events to your project. If this DSN is for a server, create a new client key in Sentry (Project settings, Client Keys), disable this one, and load the DSN from config.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 24,
+      "definition": {
+        "name": "Credentials in a URL",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\b[A-Za-z][A-Za-z0-9+.-]{1,20}://[^\\s:@/]*:[^\\s:@/$%{<][^\\s@/]{2,}@",
+        "remediation": "Change this password, since it's stored in plain text, and build the URL at runtime from a password loaded from a secret manager or environment variable.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 25,
+      "definition": {
+        "name": "Basic auth header",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "(?i)\\bauthorization[\\\"']?\\s*[:=]\\s*[\\\"']?basic\\s+(?P<value>[A-Za-z0-9+/]{8,}={0,2})",
+        "remediation": "This is a base64-encoded username and password, not an encrypted one. Change the password, and add the header at runtime from a secret manager or environment variable.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 26,
+      "definition": {
+        "name": "Bearer token in a header",
+        "detectionType": "likely_credential",
+        "severity": "medium",
+        "pattern": "(?i)\\bauthorization[\\\"']?\\s*[:=]\\s*[\\\"']?bearer\\s+(?P<value>[A-Za-z0-9._~+/-]{16,}=*)",
+        "minEntropy": 3.0,
+        "remediation": "If this token is still valid, revoke it with the service that issued it, and add the header at runtime from a secret manager or environment variable.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 27,
+      "definition": {
+        "name": "JSON Web Token",
+        "detectionType": "direct_credential",
+        "severity": "medium",
+        "pattern": "\\beyJ[A-Za-z0-9_-]{10,}\\.eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}",
+        "prefix": "eyJ",
+        "remediation": "A signed JWT works as a credential until it expires. Invalidate the session it belongs to, rotate the signing key if the token is long-lived, and don't store tokens in files or logs.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 28,
+      "definition": {
+        "name": "Password hash",
+        "detectionType": "direct_credential",
+        "severity": "medium",
+        "pattern": "\\$2[abxy]?\\$\\d{2}\\$[./A-Za-z0-9]{53}|\\$argon2(?:id|i|d)\\$v=\\d+\\$m=\\d+,t=\\d+,p=\\d+\\$[A-Za-z0-9+/]+\\$[A-Za-z0-9+/]+|\\$[56]\\$(?:rounds=\\d+\\$)?[./A-Za-z0-9]{1,16}\\$[./A-Za-z0-9]{43,86}",
+        "remediation": "A password hash can be cracked offline. If it belongs to a real account, have that user change their password, and create seed or test users at runtime instead of storing their hashes in the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 29,
+      "definition": {
+        "name": "Password in a SQL statement",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "(?i)\\b(?:password|identified(?:\\s+with\\s+\\w+)?\\s+by)\\s+'(?P<value>[^'\\n]{3,})'",
+        "remediation": "Change this database password, since it's stored in plain text, and set it at deploy time from a secret manager instead of the migration or script.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 30,
+      "definition": {
+        "name": "Password in a connection string",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "(?i)\\b(?:server|data source|host|address|addr)\\s*=[^;\\\"'\\n]*;[^\\\"'\\n]*?\\b(?:password|pwd)\\s*=\\s*(?P<value>[^;\\\"'\\n{$%][^;\\\"'\\n]*)",
+        "remediation": "Change this database password, since it's stored in plain text, and load the connection string from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 31,
+      "definition": {
+        "name": "Azure account or shared access key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\b(?:AccountKey|SharedAccessKey)=(?P<value>[A-Za-z0-9+/]{86}==|[A-Za-z0-9+/]{43}=)",
+        "remediation": "Rotate this key in the Azure portal (Access keys, or Shared access policies), and load the connection string from Key Vault or an environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 32,
+      "definition": {
+        "name": "JSON Web Key with private material",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\{[^{}]*?(?:\\\"kty\\\"\\s*:\\s*\\\"(?:RSA|EC|OKP|oct)\\\"[^{}]*?\\\"[dk]\\\"\\s*:\\s*\\\"[A-Za-z0-9_-]{16,}\\\"|\\\"[dk]\\\"\\s*:\\s*\\\"[A-Za-z0-9_-]{16,}\\\"[^{}]*?\\\"kty\\\"\\s*:\\s*\\\"(?:RSA|EC|OKP|oct)\\\")[^{}]*\\}",
+        "remediation": "This JWK holds a private or symmetric key (its \"d\" or \"k\" member). Treat it as compromised: replace it, remove it from your key set, and keep signing keys in a key store or secret manager.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 33,
+      "definition": {
+        "name": "PuTTY private key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "PuTTY-User-Key-File-[23]:[^\\n]*(?:[\\s\\S]*?\\nPrivate-MAC:[^\\n]*)?",
+        "prefix": "PuTTY-User-Key-File-",
+        "remediation": "Treat this key as compromised: remove its public key from every server's authorized keys, create a new key pair, and keep private keys out of the repository.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 34,
+      "definition": {
+        "name": "Private key without PEM armor",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "[=\\\"':>\\t ](?P<value>(?:MI[IJKL][A-Za-z0-9+/]{2}[AQgw]IBA(?:AKC|DANBgkqhkiG9w0BAQEF)|MI[GH][A-Za-z0-9+/]AgEAMBMGByqGSM49AgEG|MHcCAQEEI|MIGkAgEBBDA|MC4CAQAwBQYDK2VwBCIEI)[A-Za-z0-9+/]{20,}={0,2})",
+        "remediation": "This is a base64 private key (RSA, EC, or Ed25519) with its PEM header removed. Treat it as compromised: replace it, revoke the old one, and keep private keys in a key store or secret manager.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 35,
+      "definition": {
+        "name": "Keystore file in base64",
+        "detectionType": "direct_credential",
+        "severity": "medium",
+        "pattern": "(?:^|[^A-Za-z0-9+/])(?P<value>MI[IJKL][A-Za-z0-9+/]{2}[AQgw]IBAzCC[A-Za-z0-9+/]{20,}={0,2}|/u3\\+7QAAAA[A-Za-z0-9+/]{20,}={0,2})",
+        "remediation": "This is a PKCS#12 or Java keystore written as base64. Its password may be weak or stored nearby, so replace the keys it holds and keep the keystore in a secret manager instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 36,
+      "definition": {
+        "name": "Kubernetes Secret with inline data",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "(?m)^kind:[ \\t]*[\\\"']?Secret[\\\"']?[ \\t]*\\r?(?:\\n(?:[^-\\n].*|-[^-\\n].*)?)*?\\n(?:data|stringData):[ \\t]*\\r?(?:\\n[ \\t]+[\\w.-]+:[ \\t]*[\\\"']?[^\\s\\\"'{$].*)+|^(?:data|stringData):[ \\t]*\\r?(?:\\n[ \\t]+[\\w.-]+:[ \\t]*[\\\"']?[^\\s\\\"'{$].*)+(?:\\n(?:[^-\\n].*|-[^-\\n].*)?)*?\\nkind:[ \\t]*[\\\"']?Secret[\\\"']?[ \\t]*\\r?$",
+        "remediation": "Values in a Secret's data are base64-encoded, not encrypted. Rotate every value in it, and keep the manifest out of the repository: create it from a secret manager (External Secrets) or commit it encrypted (Sealed Secrets, SOPS).",
+        "enabled": true
+      }
+    },
+    {
+      "id": 37,
+      "definition": {
+        "name": "Registry auth (base64 user and password)",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "(?m)(?:(?:^[ \\t]*|:)_auth[ \\t]*=[ \\t]*|\\\"auth\\\"\\s*:\\s*\\\")(?P<value>[A-Za-z0-9+/]{12,}={0,2})(?:[\\\"\\s]|$)",
+        "remediation": "This is a base64-encoded username and password for a package or container registry (.npmrc, Docker config.json). Change the password or revoke the token, and log in at build time from a secret instead of committing the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 38,
+      "definition": {
+        "name": ".netrc password",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "(?m)(?:\\bmachine\\s+\\S+|^[ \\t]*default)\\s+(?:login\\s+\\S+\\s+)?password\\s+(?P<value>[^\\s\\\"']+)",
+        "remediation": "Change this password or revoke the token, and keep .netrc files in the home directory with 600 permissions instead of in the repository or an image.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 39,
+      "definition": {
+        "name": "Session cookie",
+        "detectionType": "likely_credential",
+        "severity": "medium",
+        "pattern": "(?i)\\b(?:set-)?cookie[\\\"']?\\s*[:=]\\s*[\\\"']?(?:[^\\n;]*;\\s*)*?[\\w.-]*(?:sess|sid|auth|token|jwt)[\\w.-]*=(?P<value>[A-Za-z0-9%._~+/-]{16,})",
+        "minEntropy": 3.0,
+        "remediation": "Anyone with this cookie can act as the signed-in user. End the session it belongs to, and remove it from the file or log.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 40,
+      "definition": {
+        "name": "Pre-signed storage URL",
+        "detectionType": "direct_credential",
+        "severity": "medium",
+        "pattern": "(?i)\\bhttps?://[^\\s\\\"'<>]+?[?&]x-(?:amz|goog)-signature=[0-9a-f]{64,}[^\\s\\\"'<>]*",
+        "remediation": "Anyone with this URL can use it until it expires. If it hasn't expired, revoke the credentials that signed it, and generate pre-signed URLs when they're needed instead of storing them.",
         "enabled": true
       }
     }

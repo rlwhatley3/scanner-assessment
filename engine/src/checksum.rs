@@ -10,8 +10,8 @@ pub enum Checksum {
     /// A CRC32 written at the end of a token. Used by GitHub, npm, and GitLab tokens, and by
     /// in-house formats a rule author describes.
     Crc32(Crc32Checksum),
-    /// The mod-10 check digit on payment card numbers. Spaces and dashes between digit groups
-    /// are ignored.
+    /// The mod-10 check digit on payment card numbers. Whitespace (including a line break) and
+    /// dashes between digit groups are ignored.
     Luhn,
     /// Base58 with a 4-byte double-SHA-256 checksum at the end, as in Bitcoin private keys (WIF).
     Base58check,
@@ -123,7 +123,7 @@ impl Crc32Checksum {
 fn luhn_is_valid(value: &str) -> bool {
     let digits: Vec<u32> = value
         .chars()
-        .filter(|character| !matches!(character, ' ' | '-'))
+        .filter(|character| !character.is_whitespace() && *character != '-')
         .map(|character| character.to_digit(10))
         .collect::<Option<_>>()
         .unwrap_or_default();
@@ -259,6 +259,8 @@ mod tests {
             "4111111111111111",
             "4111 1111 1111 1111",
             "3782-822463-10005",
+            "4000 0566\n5566 5556",
+            "4000 0566\r\n  5566 5556",
         ] {
             assert!(Checksum::Luhn.is_valid(number), "{number}");
         }
