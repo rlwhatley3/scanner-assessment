@@ -17,6 +17,11 @@ import ChecksumFields, {
   checksumFormFrom,
   checksumFrom,
 } from "./ChecksumFields.tsx";
+import PasswordShapeFields, {
+  type PasswordShapeForm,
+  passwordShapeFormFrom,
+  passwordShapeFrom,
+} from "./PasswordShapeFields.tsx";
 
 interface FormState {
   name: string;
@@ -28,6 +33,7 @@ interface FormState {
   keyNames: string;
   minEntropy: string;
   checksum: ChecksumForm;
+  passwordShape: PasswordShapeForm;
   remediation: string;
 }
 
@@ -42,6 +48,7 @@ function fromDefinition(definition: RuleDefinition): FormState {
     keyNames: (definition.keyNames ?? []).join(", "),
     minEntropy: definition.minEntropy == null ? "" : String(definition.minEntropy),
     checksum: checksumFormFrom(definition.checksum),
+    passwordShape: passwordShapeFormFrom(definition.passwordShape),
     remediation: definition.remediation ?? "",
   };
 }
@@ -56,6 +63,7 @@ const FORM_KEYS = [
   "keyNames",
   "minEntropy",
   "checksum",
+  "passwordShape",
   "remediation",
 ];
 
@@ -71,6 +79,7 @@ function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinit
     .map((name) => name.trim())
     .filter(Boolean);
   const checksum = checksumFrom(form.checksum);
+  const passwordShape = passwordShapeFrom(form.passwordShape);
   return {
     ...others,
     ...(form.name.trim() && { name: form.name.trim() }),
@@ -82,6 +91,7 @@ function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinit
     ...(keyNames.length > 0 && { keyNames }),
     ...(form.minEntropy.trim() && { minEntropy: Number(form.minEntropy) }),
     ...(checksum && { checksum }),
+    ...(passwordShape && { passwordShape }),
     ...(form.remediation.trim() && { remediation: form.remediation.trim() }),
   };
 }
@@ -305,6 +315,12 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
         value={form.checksum}
         onChange={(checksum) => update("checksum", checksum)}
         errors={fieldErrors("checksum")}
+      />
+
+      <PasswordShapeFields
+        value={form.passwordShape}
+        onChange={(passwordShape) => update("passwordShape", passwordShape)}
+        errors={fieldErrors("password_shape")}
       />
 
       <Field label="Remediation" errors={fieldErrors("remediation")}>
