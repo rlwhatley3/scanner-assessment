@@ -6,7 +6,12 @@ export const MAX_INPUT_BYTES = 1024 * 1024;
 export const MAX_FINDINGS = 200;
 
 export type Severity = "high" | "medium" | "low";
-export type DetectionType = "direct_credential" | "likely_credential" | "unsafe_handling";
+export type DetectionType =
+  | "direct_credential"
+  | "likely_credential"
+  | "unsafe_handling"
+  /** Marks other findings as likely examples; creates no findings of its own. */
+  | "placeholder_vs_real";
 
 export interface Location {
   start_byte: number;
@@ -70,6 +75,8 @@ export interface RuleDefinition {
   keyNames?: string[];
   minEntropy?: number;
   remediation?: string;
+  /** Fields this UI doesn't edit (e.g. a newer engine's `checksum`) are kept as-is. */
+  [other: string]: unknown;
 }
 
 export interface Rule {

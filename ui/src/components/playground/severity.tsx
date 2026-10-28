@@ -12,6 +12,7 @@ export const DETECTION_LABELS: Record<DetectionType, string> = {
   direct_credential: "Direct credential",
   likely_credential: "Likely credential",
   unsafe_handling: "Unsafe handling",
+  placeholder_vs_real: "Placeholder vs. real",
 };
 
 // A distinct shape per tone, so severity never depends on color alone.

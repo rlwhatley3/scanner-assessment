@@ -10,6 +10,7 @@ async fn main() {
         std::fs::create_dir_all(directory).expect("failed to create database directory");
     }
     let db = db::Db::open(&database_path).expect("failed to open database");
+    db.seed().await.expect("failed to seed database");
 
     let app = routes::router(db)
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))

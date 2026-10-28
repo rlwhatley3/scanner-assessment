@@ -12,7 +12,12 @@ use std::collections::HashMap;
 /// The compiled-size limit for a rule's pattern.
 pub const MAX_PATTERN_SIZE: usize = 1024 * 1024;
 
-const DETECTION_TYPES: &[&str] = &["direct_credential", "likely_credential", "unsafe_handling"];
+const DETECTION_TYPES: &[&str] = &[
+    "direct_credential",
+    "likely_credential",
+    "unsafe_handling",
+    "placeholder_vs_real",
+];
 const SEVERITIES: &[&str] = &["high", "medium", "low"];
 
 /// A problem that stops a rule from being added to a rule set version.
@@ -85,9 +90,14 @@ pub fn check_rule(rule_id: i64, definition: &Value) -> RuleCheck {
         "detection_type",
         DETECTION_TYPES,
     );
-    one_of(
-        &mut check, rule_id, fields, "severity", "severity", SEVERITIES,
-    );
+    // Placeholder rules only mark other findings as likely examples, so severity doesn't apply.
+    let creates_findings =
+        fields.get("detectionType").and_then(Value::as_str) != Some("placeholder_vs_real");
+    if creates_findings || fields.contains_key("severity") {
+        one_of(
+            &mut check, rule_id, fields, "severity", "severity", SEVERITIES,
+        );
+    }
 
     match non_empty_string(fields.get("pattern")) {
         None => check.error(rule_id, "pattern", "required", "Enter a pattern to match."),
@@ -112,7 +122,11 @@ pub fn check_rule(rule_id: i64, definition: &Value) -> RuleCheck {
         },
     }
 
-    for (key, field) in [("prefix", "prefix"), ("remediation", "remediation")] {
+    for (key, field) in [
+        ("prefix", "prefix"),
+        ("remediation", "remediation"),
+        ("checksum", "checksum"),
+    ] {
         if fields.get(key).is_some_and(|value| !value.is_string()) {
             check.error(rule_id, field, "invalid_value", "Must be text.");
         }

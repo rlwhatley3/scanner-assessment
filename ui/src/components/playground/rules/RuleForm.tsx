@@ -39,13 +39,31 @@ function fromDefinition(definition: RuleDefinition): FormState {
   };
 }
 
+const FORM_KEYS = [
+  "name",
+  "enabled",
+  "detectionType",
+  "severity",
+  "pattern",
+  "prefix",
+  "keyNames",
+  "minEntropy",
+  "remediation",
+];
+
+/** Fields the form has no input for, carried through a save unchanged. */
+function otherFields(definition: RuleDefinition): RuleDefinition {
+  return Object.fromEntries(Object.entries(definition).filter(([key]) => !FORM_KEYS.includes(key)));
+}
+
 /** The canonical JSON for the form: empty fields are left out, enabled only when false. */
-function toDefinition(form: FormState): RuleDefinition {
+function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinition {
   const keyNames = form.keyNames
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
   return {
+    ...others,
     ...(form.name.trim() && { name: form.name.trim() }),
     ...(!form.enabled && { enabled: false }),
     ...(form.detectionType && { detectionType: form.detectionType }),
@@ -73,11 +91,13 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ tone: "error" | "success"; message: string } | null>(null);
 
-  const definition = useMemo(() => toDefinition(form), [form]);
+  const others = useMemo(() => otherFields(rule.definition), [rule.definition]);
+  const definition = useMemo(() => toDefinition(form, others), [form, others]);
   const saved = useMemo(
-    () => JSON.stringify(toDefinition(fromDefinition(rule.definition))),
-    [rule.definition],
+    () => JSON.stringify(toDefinition(fromDefinition(rule.definition), others)),
+    [rule.definition, others],
   );
+  const isPlaceholder = form.detectionType === "placeholder_vs_real";
   const dirty = JSON.stringify(definition) !== saved;
 
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
@@ -193,7 +213,11 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
             ))}
           </select>
         </Field>
-        <Field label="Severity" errors={fieldErrors("severity")}>
+        <Field
+          label="Severity"
+          hint={isPlaceholder ? "Not used: placeholder rules create no findings." : undefined}
+          errors={fieldErrors("severity")}
+        >
           <select
             value={form.severity}
             onChange={(event) => update("severity", event.target.value as Severity)}
