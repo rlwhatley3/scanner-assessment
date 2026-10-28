@@ -204,6 +204,171 @@
         "x": 286,
         "y": 210
       },
+      "shape:fARVp82yGkvwK4s6WQFKe": {
+        "id": "shape:fARVp82yGkvwK4s6WQFKe",
+        "index": "a9P8r",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "page:page",
+        "props": {
+          "align": "start",
+          "color": "blue",
+          "dash": "draw",
+          "fill": "semi",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 188,
+          "h": 348,
+          "labelColor": "black",
+          "richText": {
+            "attrs": {
+              "dir": "auto"
+            },
+            "content": [
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "User Types:",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "Sophisticated - devs, engineers, IT departments, personnel knowledgable about secrets, their handling, and their relevance. They understand the risks associated with mismanagement of creds. ",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "Goal: maximize security while minimizing friction",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "Positives: they already understand the root goal of the practice, and as long as the friction point is lower than manual management, they will be ok with it. ",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "Negatives: they may be highly opinionated about how, when, and where the scans occurs logically",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "Unsophisticated - little to no knowledge of secrets, their usage, or why it matters to keep them secrets. ie, new AI users self building a piece of software for their small business",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "Goal: they want to create their tool with as little friction as possible",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "Positives: they only care about the ease of its use, not the technicals",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "attrs": {
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "text": "Negatives: they may not understand the importance of this type of security. Adoption will depend on the product making the importance relevant to them, and the friction point extremely low. ",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "m",
+          "url": "",
+          "verticalAlign": "start",
+          "w": 561
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 320,
+        "y": -400
+      },
       "shape:ohojdEFeacKNU76xzaHKS": {
         "id": "shape:ohojdEFeacKNU76xzaHKS",
         "index": "a8Gs2",
@@ -368,6 +533,14 @@
         "name": "",
         "typeName": "user"
       },
+      "user:X1rnXj85d_68lxWkUi8al": {
+        "color": "#11B3A3",
+        "id": "user:X1rnXj85d_68lxWkUi8al",
+        "imageUrl": "",
+        "meta": {},
+        "name": "",
+        "typeName": "user"
+      },
       "user:n2gnwL6INz8DHkx84pcpv": {
         "color": "#9D5BD2",
         "id": "user:n2gnwL6INz8DHkx84pcpv",
@@ -388,13 +561,15 @@
     "pageStates": [
       {
         "camera": {
-          "x": -44.37499999999994,
-          "y": -139.25,
+          "x": 7.625000000000057,
+          "y": 363.6145370286199,
           "z": 1
         },
         "focusedGroupId": null,
         "pageId": "page:page",
-        "selectedShapeIds": []
+        "selectedShapeIds": [
+          "shape:fARVp82yGkvwK4s6WQFKe"
+        ]
       }
     ],
     "version": 0
