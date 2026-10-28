@@ -32,16 +32,16 @@ Use case 1: scan a source file. An engineer pastes a configuration file that may
    - **Cancelled:** back to ready, text intact, no results.
    - **Error:** API unreachable, 5xx, or input rejected. Error message shown, text intact, Scan re-enabled.
 5. Text is read-only after a scan. Start a New inspection to change it. In-place editing (with results marked stale) is not ruled out for later.
-6. Reload: no inspection is open. The rule config timeline persists; inspection text and results do not.
+6. Reload: no inspection is open. Config versions in the config version control UI persist; inspection text and results do not.
 7. One inspection at a time: due to non-persistence of potentially live creds.
 
-Rule config is versioned in a small timeline: persisted locally, each version viewable with its attached scan results, re-usable as the basis for a new version, and archivable (hidden from the timeline, not deleted).
+Rule config is versioned in the **config version control UI**, shown as a small timeline: persisted locally, each version viewable with its attached scan results, re-usable as the basis for a new version, and archivable (hidden from the timeline, not deleted).
 
 **States**
 
 | State | Trigger | What the user sees |
 |---|---|---|
-| No inspection | Page load / reload | Config timeline, New inspection button |
+| No inspection | Page load / reload | Config version control UI, New inspection button |
 | Empty | New inspection | Empty text box, Scan disabled |
 | Ready | Text present | Scan enabled |
 | Scanning | Scan clicked | Cancel button (5 s window), progress indicator, do-not-refresh warning |
@@ -60,3 +60,31 @@ Rule config is versioned in a small timeline: persisted locally, each version vi
 - Output safety: highlight or list shows the full secret value on screen; error messages echo the input back.
 
 **Still undefined:** what clicking a finding does, which actions exist on a finding, and how overlapping findings are displayed.
+
+### 3. Frontend, API, and detection-engine boundaries
+
+**Frontend (`ui/`):** the inspection UI and the config version control UI. Sends inspection text and config to the API over loopback. Contains no detection logic.
+
+**API (`server/`):** keeps its current structure, with local storage for config versions. Calls the engine in-process (a function call, not a network hop). Never logs request content. Generates a log id per scan, passes it to the engine, and writes the engine's log events so the two can be correlated.
+
+**Engine (`engine/`, top-level Rust crate):** a pure library with no HTTP, disk, or network access. `server/` depends on it by path; a future CLI will too.
+
+- Validates and compiles rules, returning per-rule errors instead of failing the whole scan.
+- Returns both byte offsets and line/column for every finding.
+- Emits log events tagged with the log id, containing redacted values only, never the full match. The caller decides where they are written.
+- Covers four detection tiers:
+  1. **Direct credentials:** a secret value is present (`AKIA...`, `ghp_...`, `-----BEGIN PRIVATE KEY-----`, `password=hunter2`).
+  2. **Likely credentials:** high-entropy strings next to suspicious key names, with no known format.
+  3. **Placeholder vs. real:** classify a match as an example value (`YOUR_KEY_HERE`, `xxxx`) or as likely real.
+  4. **Unsafe handling, no value present:** code or config that handles a secret unsafely (logging it, putting it in a URL, passing it on the command line). A tier 4 finding points at a risky pattern, not a secret value, so the finding shape must support both.
+
+**CLI (later):** pulls rule-sets from a hosted API, reads files itself, calls the engine in-process, and returns a well-documented, stable response shape to its local caller (shell, CI step, pre-commit hook). Inspection text never goes over a wire.
+
+```
+browser (has the text)  --loopback-->  API (server/)  --function call-->  engine/
+                        <--findings--                 <--findings + log events--
+CLI (reads files)  -----------------------function call------------------>  engine/
+CLI  <--rule-sets--  hosted API
+```
+
+**Exposure (accepted, documented):** FE to API traffic is loopback only and never leaves the machine, but inspection text is still visible in browser devtools and readable by local processes that can observe loopback traffic. I think a production version would need to be its own app with I/O privileges, reading files directly and running the engine in-process, rather than a browser talking to a local API.
