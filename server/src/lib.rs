@@ -1,8 +1,9 @@
 pub mod db;
 pub mod routes;
+pub mod seed;
 pub mod validation;
 
-use routes::{health, rule_set_versions, rules, scan_sessions};
+use routes::{health, rule_set_versions, rules, scan_sessions, scans};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -21,8 +22,16 @@ use routes::{health, rule_set_versions, rules, scan_sessions};
         scan_sessions::list,
         scan_sessions::create,
         scan_sessions::fetch,
+        scans::create_scan,
     ),
-    components(schemas(health::HealthResponse, routes::ErrorBody)),
+    components(schemas(
+        health::HealthResponse,
+        routes::ErrorBody,
+        scans::CreateScanRequest,
+        scans::ScanResponse,
+        scans::FindingResponse,
+        scans::ErrorResponse
+    )),
     tags(
         (name = "API", description = "API for managing and scanning secrets"),
         (name = "Rules", description = "Detection rules, drafts included"),

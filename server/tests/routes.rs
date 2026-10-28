@@ -6,13 +6,14 @@ mod rule_set_versions;
 mod rules;
 #[path = "routes/scan_sessions.rs"]
 mod scan_sessions;
+#[path = "routes/scans.rs"]
+mod scans;
 
 use axum::{
     Router,
-    body::Body,
+    body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
-use http_body_util::BodyExt;
 use secrets_scanner_api::{db::Db, routes};
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -43,12 +44,9 @@ pub async fn send(
         .await
         .expect("router should respond");
     let status = response.status();
-    let bytes = response
-        .into_body()
-        .collect()
+    let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
-        .expect("body should read")
-        .to_bytes();
+        .expect("body should read");
     let body = if bytes.is_empty() {
         Value::Null
     } else {
@@ -87,7 +85,7 @@ pub async fn create_version(app: &Router, rule_ids: &[i64]) -> i64 {
         app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "rule_ids": rule_ids })),
+        Some(json!({ "ruleIds": rule_ids })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{version}");

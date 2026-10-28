@@ -161,7 +161,7 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
     }
   }
 
-  const inVersions = rule.version_ids.length > 0;
+  const inVersions = rule.versionIds.length > 0;
 
   return (
     <form
@@ -182,7 +182,7 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
               <>
                 {" "}
                 In{" "}
-                {rule.version_ids.map((id, index) => (
+                {rule.versionIds.map((id, index) => (
                   <span key={id}>
                     {index > 0 && ", "}
                     <Link to={`/playground/rule-sets/${id}`}>version {id}</Link>

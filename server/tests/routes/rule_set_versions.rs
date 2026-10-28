@@ -10,7 +10,7 @@ async fn saving_a_version_snapshots_rules_and_clears_drafting() {
 
     let (_, rule) = send(&app, "GET", &format!("/api/rules/{id}"), None).await;
     assert_eq!(rule["drafting"], false);
-    assert_eq!(rule["version_ids"], json!([version]));
+    assert_eq!(rule["versionIds"], json!([version]));
 
     let mut edited = valid_definition("AWS key");
     edited["pattern"] = json!("AKIA[0-9A-Z]{20}");
@@ -30,7 +30,7 @@ async fn saving_a_version_snapshots_rules_and_clears_drafting() {
         None,
     )
     .await;
-    assert_eq!(detail["rule_count"], 1);
+    assert_eq!(detail["ruleCount"], 1);
     assert_eq!(
         detail["rules"][0]["definition"]["pattern"],
         "AKIA[0-9A-Z]{16}"
@@ -47,13 +47,13 @@ async fn an_invalid_rule_blocks_the_whole_version() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "rule_ids": [good, bad] })),
+        Some(json!({ "ruleIds": [good, bad] })),
     )
     .await;
 
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     let errors = body["errors"].as_array().expect("errors should be listed");
-    assert!(errors.iter().all(|error| error["rule_id"] == bad));
+    assert!(errors.iter().all(|error| error["ruleId"] == bad));
     let (_, versions) = send(&app, "GET", "/api/rule-set-versions", None).await;
     assert_eq!(versions, json!([]));
     let (_, rule) = send(&app, "GET", &format!("/api/rules/{good}"), None).await;
@@ -70,13 +70,13 @@ async fn two_rules_in_a_version_cannot_share_a_name() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "rule_ids": [first, second] })),
+        Some(json!({ "ruleIds": [first, second] })),
     )
     .await;
 
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["errors"][0]["code"], "duplicate_name");
-    assert_eq!(body["errors"][0]["rule_id"], second);
+    assert_eq!(body["errors"][0]["ruleId"], second);
 }
 
 #[tokio::test]
@@ -86,7 +86,7 @@ async fn a_version_needs_rules_that_exist() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "rule_ids": [] })),
+        Some(json!({ "ruleIds": [] })),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -94,7 +94,7 @@ async fn a_version_needs_rules_that_exist() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "rule_ids": [42] })),
+        Some(json!({ "ruleIds": [42] })),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -109,11 +109,11 @@ async fn archived_versions_are_hidden_unless_asked_for() {
         &app,
         "POST",
         "/api/rule-set-versions",
-        Some(json!({ "parent_id": first, "rule_ids": [id] })),
+        Some(json!({ "parentId": first, "ruleIds": [id] })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(second["parent_id"], first);
+    assert_eq!(second["parentId"], first);
 
     let (status, archived) = send(
         &app,
@@ -130,9 +130,36 @@ async fn archived_versions_are_hidden_unless_asked_for() {
     let (_, all) = send(
         &app,
         "GET",
-        "/api/rule-set-versions?include_archived=true",
+        "/api/rule-set-versions?includeArchived=true",
         None,
     )
     .await;
     assert_eq!(all.as_array().map(Vec::len), Some(2));
+}
+
+#[tokio::test]
+async fn the_seeded_built_in_rules_save_as_a_new_version() {
+    let db = secrets_scanner_api::db::Db::open_in_memory().expect("database should open");
+    secrets_scanner_api::seed::seed_default_rule_set(&db)
+        .await
+        .expect("seed should run");
+    let app = secrets_scanner_api::routes::router(db);
+
+    let (_, rules) = send(&app, "GET", "/api/rules", None).await;
+    let ids: Vec<_> = rules
+        .as_array()
+        .expect("rules should list")
+        .iter()
+        .map(|rule| rule["id"].as_i64().unwrap())
+        .collect();
+    let (status, version) = send(
+        &app,
+        "POST",
+        "/api/rule-set-versions",
+        Some(json!({ "parentId": 1, "ruleIds": ids })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{version}");
+    assert_eq!(version["ruleCount"], ids.len());
 }

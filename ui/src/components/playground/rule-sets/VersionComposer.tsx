@@ -22,14 +22,14 @@ interface VersionComposerProps {
 export default function VersionComposer({ parent, onCreated, onCancel }: VersionComposerProps) {
   const rules = useLoad(listRules, []);
   const [included, setIncluded] = useState(
-    () => new Set(parent?.rules.map((rule) => rule.rule_id) ?? []),
+    () => new Set(parent?.rules.map((rule) => rule.ruleId) ?? []),
   );
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [ruleErrors, setRuleErrors] = useState<RuleError[]>([]);
 
   const snapshots = new Map(
-    parent?.rules.map((rule) => [rule.rule_id, JSON.stringify(rule.definition)]) ?? [],
+    parent?.rules.map((rule) => [rule.ruleId, JSON.stringify(rule.definition)]) ?? [],
   );
 
   function toggle(id: number, on: boolean) {
@@ -79,7 +79,7 @@ export default function VersionComposer({ parent, onCreated, onCancel }: Version
       <ul className="composer-list">
         {rules.data?.map((rule) => {
           const snapshot = snapshots.get(rule.id);
-          const errors = ruleErrors.filter((error) => error.rule_id === rule.id);
+          const errors = ruleErrors.filter((error) => error.ruleId === rule.id);
           return (
             <li key={rule.id} className={errors.length > 0 ? "invalid" : undefined}>
               <label className="composer-item">

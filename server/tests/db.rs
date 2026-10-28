@@ -33,8 +33,7 @@ async fn migrations_create_the_storage_tables() {
             "rule_set_versions",
             "rules",
             "scan_sessions",
-            "scans",
-            "seeds"
+            "scans"
         ]
     );
 }
@@ -373,84 +372,4 @@ async fn reopening_a_file_database_keeps_data_and_skips_applied_migrations() {
         let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
     }
     assert_eq!(sessions, 1);
-}
-
-#[tokio::test]
-async fn seeding_adds_the_built_in_rules_as_one_valid_version_once() {
-    let db = Db::open_in_memory().expect("in-memory database should open");
-    db.seed().await.expect("first seed should apply");
-    db.seed().await.expect("second seed should be a no-op");
-
-    let (versions, rules, drafting, snapshots_match) = db
-        .call(|connection| {
-            let count = |sql: &str| connection.query_row(sql, [], |row| row.get::<_, i64>(0));
-            Ok((
-                count("SELECT COUNT(*) FROM rule_set_versions")?,
-                count("SELECT COUNT(*) FROM rules")?,
-                count("SELECT COUNT(*) FROM rules WHERE drafting = 1")?,
-                count(
-                    "SELECT COUNT(*) FROM rules JOIN rule_set_version_rules v
-                     ON v.rule_id = rules.id AND v.definition = rules.definition
-                     WHERE v.rule_set_version_id = 1",
-                )?,
-            ))
-        })
-        .await
-        .expect("seeded rows should be countable");
-
-    assert_eq!(versions, 1);
-    assert_eq!(rules, 6);
-    assert_eq!(drafting, 0);
-    assert_eq!(snapshots_match, 6);
-}
-
-#[tokio::test]
-async fn the_built_in_rules_pass_validation() {
-    let db = Db::open_in_memory().expect("in-memory database should open");
-    db.seed().await.expect("seed should apply");
-    let rules = db
-        .call(|connection| {
-            let mut statement =
-                connection.prepare("SELECT rule_id, definition FROM rule_set_version_rules")?;
-            statement
-                .query_map([], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()
-        })
-        .await
-        .expect("seeded rules should be readable");
-    let rules: Vec<_> = rules
-        .into_iter()
-        .map(|(id, definition)| (id, serde_json::from_str(&definition).unwrap()))
-        .collect();
-
-    let check = secrets_scanner_api::validation::check_rule_set(&rules);
-    assert_eq!(check.errors, []);
-    let names: Vec<_> = rules
-        .iter()
-        .map(|(_, definition)| definition["name"].as_str().unwrap())
-        .collect();
-    assert!(names.contains(&"AWS access key"));
-    assert!(names.contains(&"Known placeholder values"));
-}
-
-#[tokio::test]
-async fn a_seed_does_not_come_back_after_its_rows_are_archived() {
-    let db = Db::open_in_memory().expect("in-memory database should open");
-    db.seed().await.expect("seed should apply");
-    db.call(|connection| connection.execute("UPDATE rule_set_versions SET archived = 1", []))
-        .await
-        .expect("archive should apply");
-    db.seed().await.expect("seed should be a no-op");
-    let versions: i64 = db
-        .call(|connection| {
-            connection.query_row("SELECT COUNT(*) FROM rule_set_versions", [], |row| {
-                row.get(0)
-            })
-        })
-        .await
-        .expect("versions should be countable");
-
-    assert_eq!(versions, 1);
 }

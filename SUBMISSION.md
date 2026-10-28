@@ -75,7 +75,7 @@ The rule set is versioned in the **rule set version control UI**, shown as a sma
 - Covers four detection types:
   - **Direct credentials:** a secret value is present (`AKIA...`, `ghp_...`, `-----BEGIN PRIVATE KEY-----`, `password=hunter2`).
   - **Likely credentials:** high-entropy strings next to suspicious key names, with no known format.
-  - **Placeholder vs. real:** classify a match as an example value (`YOUR_KEY_HERE`, `xxxx`) or as likely real.
+  - **Placeholder vs. real:** classify a match as an example value (`YOUR_KEY_HERE`, `xxxx`) or as likely real. These rules list known fake values and never create findings of their own: a match inside another rule's finding raises that finding's placeholder score.
   - **Unsafe handling, no value present:** code or config that handles a secret unsafely (logging it, putting it in a URL, passing it on the command line). An unsafe handling finding points at a risky pattern, not a secret value, so the finding shape must support both.
 
 **CLI (later):** pulls rule-sets from a hosted API, reads files itself, calls the engine in-process, and returns a well-documented, stable response shape to its local caller (shell, CI step, pre-commit hook). Scan text never goes over a wire.
@@ -140,7 +140,7 @@ These fields live in the finding's `violation` JSON. `violation_pretty` holds th
 **Rules**
 
 - Rules exist on their own and are added into rule set versions, managed in the rule set version control UI and persisted locally. Adding a rule to a version stores a snapshot of its definition with that version, so an old version keeps what it scanned with even if the rule is edited later.
-- A **built-in default rule set** is seeded as the first rule set version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
+- A **built-in default rule set** is seeded as the first rule set version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling, placeholder vs. real). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
 - Rules are edited through **forms**, never raw text, and always saved as canonical **JSON**.
 - Rule ids are assigned by the system, unique, and stable across rule set versions, like a database primary key. A rule keeps its id when renamed or edited; a deleted rule's id is never reused. Users never see or edit ids.
 - A rule gets its real id as soon as it is added in the form, with `drafting` set to true, and is stored right away, so drafts survive a reload. Drafts get no validation. Adding a rule into a rule set version validates it and clears `drafting`. Errors point at the rule's real id, so a new rule needs no temporary key.
@@ -162,7 +162,7 @@ A rule row holds `id`, `drafting`, and a `definition` JSON column. Every other f
 | `minEntropy` | Optional entropy threshold, 0–8 bits/char |
 | `remediation` | Static hint text |
 
-A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set once per rule set version, not per rule, and is used to compute the placeholder vs. real score.
+Known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) are rules of type placeholder vs. real, edited and versioned like any other rule. Severity and remediation don't apply to them.
 
 **Configuration errors**
 
@@ -209,3 +209,43 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 5. **WASM in the browser:** it has use cases, like building a local pre-check model, but it is large and specialized. I think the better solution is a real local application anyway, and I really dislike this whole concept being in a browser.
 6. **Auth and multiple users:** these go with the hosted API.
 7. **Compiled-rule caching:** rule set versions never change once saved, so the compiled rules could be cached per version instead of recompiled on every scan. That's an optimization, not a requirement for the POC, but likely needed for a production app.
+
+## Phase 2: Core implementation
+
+Phase 2 notes so far. The UI and the rest of the API are still to come.
+
+### Detection approach
+
+The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a pure Rust library: no network, disk, or HTTP. It layers four techniques, all running locally:
+
+1. **Regex rules** for known formats (AWS access keys, GitHub, npm, and GitLab tokens, private key blocks, payment card numbers, Bitcoin private keys) and for risky code (secrets written to logs).
+2. **Entropy** for likely credentials: a random-looking value (at least 3 bits per character) assigned to a name like `password`, `secret`, or `token`.
+3. **Checksums:** some formats carry one, so the engine can tell a real value from a made-up one offline. GitHub, npm, and GitLab tokens end in a CRC32 of the rest, card numbers carry a Luhn check digit, and Bitcoin private keys use Base58Check. A valid checksum raises confidence to 99; a failed one drops it to 50 and marks the finding as a likely example. A failed checksum never hides a finding, because GitHub, npm, and GitLab haven't published test tokens to confirm the exact encoding against.
+   - **Seeded and custom setups:** a checksum is a small description on the rule. `luhn` and `base58check` need nothing else; `crc32` also takes an encoding (`base62`, `base36`, or `hex`), a prefix length, and a checksum length. The built-in rules seed the common setups: GitHub, npm, GitLab (routable tokens, plus a separate rule for the older format, which has no checksum), payment cards, and Bitcoin private keys. A rule author can describe their own, e.g. for an in-house token format.
+   - **Not seeded:** Microsoft/Azure identifiable keys (their checksum algorithm couldn't be confirmed); Ethereum addresses and IBANs (public identifiers, not secrets). A wrong custom setup only lowers confidence on real tokens, so it can't hide them, and a length too short to hold the value is rejected as a rule error.
+4. **File format parsing:** the text is read as JSON, YAML, `.env`, or plain text. Parsed key/value pairs catch secrets a pattern alone misses (a quoted value containing `$` or `;`, a JSON key and value on separate lines). Comments are recognized, so a secret in a comment scores as a likely example, and commented-out code that logs a secret drops to low confidence.
+
+**Placeholder vs. real is a rule type.** Known fake values (`changeme`, `example`, ...) are rules like any other, edited and versioned the same way. They never create findings of their own; when one matches inside another rule's finding, that finding scores as a likely example. This is the fourth detection type from Phase 1, coming back as a rule type instead of a separate list.
+
+**Deliberately not used:**
+- **Live verification:** asking the provider whether a secret works is the strongest signal, but it sends the secret off the machine. Not built for the POC; a production build could offer it for certain rules:
+  - **Opt-in only:** off by default, chosen per scan (or a `--verify` flag in the CLI).
+  - **Only rules with a safe, read-only check:** GitHub (`GET /user`), npm (`whoami`), and GitLab (`GET /api/v4/personal_access_tokens/self`). AWS only when the secret access key is found alongside the key ID. Never for payment cards or Bitcoin keys (checking would mean attempting a charge or transaction), and never for likely credentials or unsafe handling (no provider to ask).
+  - **Built-in verifiers only:** a rule can turn on a verifier the app ships with, never point at its own URL, so a custom rule can't send secrets anywhere.
+  - **Only confident findings:** e.g. GitHub tokens whose checksum passes, not ones in comments or ones that look like examples.
+  - **Runs in the API or CLI, not the engine:** it happens during the scan request, while the text is still in memory, because findings never contain the secret itself. Results come back first and verification statuses fill in after, so a slow provider never holds up a scan.
+  - **Stores a status, never the provider's response:** `active`, `inactive`, `unknown`, or `not attempted`, with when it was checked, in a separate `verifications` table. Active findings would sort first in the UI and get their own CI exit code.
+- **AI or ML triage:** this would also send text off the machine unless the model ran locally, and it would make "why flagged" harder to explain.
+- **Parsing source code into syntax trees:** this would need a parser per language, so code is scanned as text with its comment lines recognized.
+
+### Scan endpoint
+
+`POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged.
+
+- **Concurrency cap:** at most 4 scans run at once. Others wait their turn, so a burst of scans can't starve the rest of the API.
+- **At scale:** scanning in the API process would compete with every other request. The intended production shape avoids that entirely: scanning runs on the client (a CLI or a real local app calling the engine in-process), and the hosted API only serves rule sets. If a hosted scanning service were ever needed, the next steps would be a separate worker pool, then a queue with independently scaled workers.
+
+### Known gaps
+
+- **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.
+- **No endpoint to create a scan session yet.**

@@ -1,3 +1,4 @@
+use super::AppState;
 use super::{
     error::{ApiError, ErrorBody, json_column},
     rules,
@@ -12,13 +13,14 @@ use axum::{
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
-pub fn router() -> Router<Db> {
+pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/{id}", get(fetch).patch(update))
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct RuleSetVersion {
     id: i64,
     /// The version this one was based on, if any.
@@ -32,6 +34,7 @@ pub struct RuleSetVersion {
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct VersionRule {
     rule_id: i64,
     /// The rule's definition as it was when added to this version.
@@ -40,6 +43,7 @@ pub struct VersionRule {
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct RuleSetVersionDetail {
     #[serde(flatten)]
     version: RuleSetVersion,
@@ -47,6 +51,8 @@ pub struct RuleSetVersionDetail {
 }
 
 #[derive(serde::Deserialize, utoipa::IntoParams)]
+#[serde(rename_all = "camelCase")]
+#[into_params(rename_all = "camelCase")]
 pub struct ListQuery {
     /// Include archived versions. Defaults to false.
     #[serde(default)]
@@ -54,6 +60,7 @@ pub struct ListQuery {
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateVersion {
     /// The version this one is based on.
     parent_id: Option<i64>,
@@ -62,6 +69,7 @@ pub struct CreateVersion {
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateVersion {
     archived: bool,
 }

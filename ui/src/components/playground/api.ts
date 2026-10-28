@@ -1,5 +1,4 @@
-// Client for the scanner API. The types mirror the server's serialized shapes (snake_case),
-// except rule definitions, which are stored in the rule form's camelCase.
+// Client for the scanner API. The types mirror the server's serialized shapes (camelCase).
 // Scan text goes out in the request body only; it is never put in a URL or stored here.
 
 export const MAX_INPUT_BYTES = 1024 * 1024;
@@ -14,30 +13,34 @@ export type DetectionType =
   | "placeholder_vs_real";
 
 export interface Location {
-  start_byte: number;
-  end_byte: number;
-  start_line: number;
-  start_column: number;
-  end_line: number;
-  end_column: number;
+  startByte: number;
+  endByte: number;
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
 }
 
 export interface MatchDetails {
-  rule_name: string;
-  detection_type: DetectionType;
+  ruleName: string;
+  detectionType: DetectionType;
   severity: Severity;
   confidence: number;
-  placeholder_score: number | null;
+  placeholderScore: number | null;
   location: Location;
-  redacted_preview: string | null;
-  why_flagged: string;
+  redactedPreview: string | null;
+  whyFlagged: string;
   remediation: string;
-  overlap_group: number | null;
+  overlapGroup: number | null;
+  /** Whether the match sits inside a comment, where examples and dead code usually live. */
+  inComment: boolean;
+  /** Whether the value passed the rule's checksum; null when the rule has none. */
+  checksumValid: boolean | null;
 }
 
 /** A problem that stops a rule from running or from joining a rule set version. */
 export interface RuleError {
-  rule_id: number;
+  ruleId: number;
   /** The definition field at fault, in snake_case (e.g. `pattern`, `min_entropy`). */
   field: string;
   code: string;
@@ -46,22 +49,29 @@ export interface RuleError {
 }
 
 export interface RuleWarning {
-  rule_id: number;
+  ruleId: number;
   field: string;
   code: string;
   message: string;
 }
 
 export type Finding =
-  | { rule_id: number; kind: "match"; violation: MatchDetails; violation_pretty: string }
-  | { rule_id: number; kind: "rule_error"; violation: RuleError; violation_pretty: string };
+  | { ruleId: number; kind: "match"; violation: MatchDetails; violationPretty: string }
+  | { ruleId: number; kind: "rule_error"; violation: RuleError; violationPretty: string };
 
 export type MatchFinding = Extract<Finding, { kind: "match" }>;
 
+/** A finding as stored and returned by the API. */
+export type SavedFinding = Finding & { id: number };
+
 export interface ScanResponse {
-  scan_id: number;
-  findings: Finding[];
+  scanId: number;
+  scanSessionId: number;
+  findings: SavedFinding[];
+  /** True when there were more findings than the cap and the rest were not saved. */
   truncated: boolean;
+  /** True when at least one rule could not run. */
+  partial: boolean;
 }
 
 export interface RuleDefinition {
@@ -83,9 +93,9 @@ export interface Rule {
   id: number;
   drafting: boolean;
   definition: RuleDefinition;
-  version_ids: number[];
-  created_at: string;
-  updated_at: string;
+  versionIds: number[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RuleCheck {
@@ -95,32 +105,32 @@ export interface RuleCheck {
 
 export interface RuleSetVersion {
   id: number;
-  parent_id: number | null;
+  parentId: number | null;
   archived: boolean;
-  rule_count: number;
-  scan_session_count: number;
-  created_at: string;
-  updated_at: string;
+  ruleCount: number;
+  scanSessionCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RuleSetVersionDetail extends RuleSetVersion {
-  rules: { rule_id: number; definition: RuleDefinition }[];
+  rules: { ruleId: number; definition: RuleDefinition }[];
 }
 
 export interface ScanSession {
   id: number;
-  rule_set_version_id: number;
-  last_ran: string | null;
-  scan_count: number;
-  created_at: string;
-  updated_at: string;
+  ruleSetVersionId: number;
+  lastRan: string | null;
+  scanCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface StoredScan {
   id: number;
   truncated: boolean;
-  created_at: string;
-  findings: (Finding & { id: number })[];
+  createdAt: string;
+  findings: SavedFinding[];
 }
 
 export interface ScanSessionDetail extends ScanSession {
@@ -167,7 +177,7 @@ async function request<T>(
   if (response.ok) return (await response.json()) as T;
 
   // Error bodies are the API's own messages; it never echoes scan text back.
-  let detail: { message?: string; errors?: RuleError[] } = {};
+  let detail: { error?: string; errors?: RuleError[] } = {};
   try {
     detail = await response.json();
   } catch {
@@ -178,7 +188,7 @@ async function request<T>(
   }
   throw new ApiError(
     response.status === 404 ? "unavailable" : "rejected",
-    detail.message || `The scanner API rejected the request (HTTP ${response.status}).`,
+    detail.error || `The scanner API rejected the request (HTTP ${response.status}).`,
     detail.errors ?? [],
   );
 }
@@ -205,14 +215,14 @@ export const checkRule = (id: number, definition: RuleDefinition, signal?: Abort
 export const listVersions = (includeArchived = false) =>
   request<RuleSetVersion[]>(
     "GET",
-    `/api/rule-set-versions${includeArchived ? "?include_archived=true" : ""}`,
+    `/api/rule-set-versions${includeArchived ? "?includeArchived=true" : ""}`,
   );
 export const getVersion = (id: number) =>
   request<RuleSetVersionDetail>("GET", `/api/rule-set-versions/${id}`);
 export const createVersion = (ruleIds: number[], parentId: number | null) =>
   request<RuleSetVersionDetail>("POST", "/api/rule-set-versions", {
-    rule_ids: ruleIds,
-    parent_id: parentId,
+    ruleIds,
+    parentId,
   });
 export const setVersionArchived = (id: number, archived: boolean) =>
   request<RuleSetVersion>("PATCH", `/api/rule-set-versions/${id}`, { archived });
@@ -222,28 +232,11 @@ export const getSession = (id: number) =>
   request<ScanSessionDetail>("GET", `/api/scan-sessions/${id}`);
 export const createSession = (ruleSetVersionId: number) =>
   request<ScanSessionDetail>("POST", "/api/scan-sessions", {
-    rule_set_version_id: ruleSetVersionId,
+    ruleSetVersionId,
   });
 
-export async function runScan(
-  sessionId: number,
-  text: string,
-  signal: AbortSignal,
-): Promise<ScanResponse> {
-  try {
-    return await request<ScanResponse>(
-      "POST",
-      `/api/scan-sessions/${sessionId}/scans`,
-      { text },
-      signal,
-    );
-  } catch (error) {
-    if (error instanceof ApiError && error.reason === "unavailable") {
-      throw new ApiError("unavailable", "The scan endpoint is not available on this API yet.");
-    }
-    throw error;
-  }
-}
+export const runScan = (sessionId: number, text: string, signal: AbortSignal) =>
+  request<ScanResponse>("POST", `/api/scan-sessions/${sessionId}/scans`, { text }, signal);
 
 /** A rule's display name, for rules whose definition has no name yet. */
 export function ruleName(definition: RuleDefinition, id: number): string {

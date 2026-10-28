@@ -1,3 +1,4 @@
+use super::AppState;
 use super::{
     error::{ApiError, ErrorBody, json_column},
     rule_set_versions,
@@ -12,13 +13,14 @@ use axum::{
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
 
-pub fn router() -> Router<Db> {
+pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/{id}", get(fetch))
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ScanSession {
     id: i64,
     rule_set_version_id: i64,
@@ -31,6 +33,7 @@ pub struct ScanSession {
 
 /// A stored finding. It holds no scan text and no matched value.
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct StoredFinding {
     id: i64,
     rule_id: i64,
@@ -42,6 +45,7 @@ pub struct StoredFinding {
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct StoredScan {
     id: i64,
     /// True when the scan hit the findings cap and the rest were not saved.
@@ -51,6 +55,7 @@ pub struct StoredScan {
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ScanSessionDetail {
     #[serde(flatten)]
     session: ScanSession,
@@ -59,6 +64,7 @@ pub struct ScanSessionDetail {
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSession {
     rule_set_version_id: i64,
 }

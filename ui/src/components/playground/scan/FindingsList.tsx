@@ -13,10 +13,10 @@ export function findingElementId(index: number): string {
 }
 
 function formatLocation({ location }: MatchFinding["violation"]): string {
-  const start = `${location.start_line}:${location.start_column}`;
-  return location.end_line === location.start_line
-    ? `Line ${start}–${location.end_column}`
-    : `Lines ${start} – ${location.end_line}:${location.end_column}`;
+  const start = `${location.startLine}:${location.startColumn}`;
+  return location.endLine === location.startLine
+    ? `Line ${start}–${location.endColumn}`
+    : `Lines ${start} – ${location.endLine}:${location.endColumn}`;
 }
 
 /** Matches in text order by default, or by severity. Clicking one selects its highlight. */
@@ -63,25 +63,28 @@ export default function FindingsList({ findings, selected, onSelect }: FindingsL
               >
                 <span className="finding-title">
                   <SeverityIcon tone={details.severity} />
-                  <strong>{details.rule_name}</strong>
+                  <strong>{details.ruleName}</strong>
                   <span className="finding-location">{formatLocation(details)}</span>
                 </span>
                 <span className="finding-meta">
-                  {SEVERITY_LABELS[details.severity]} · {DETECTION_LABELS[details.detection_type]} ·
+                  {SEVERITY_LABELS[details.severity]} · {DETECTION_LABELS[details.detectionType]} ·
                   Confidence {details.confidence}
-                  {details.placeholder_score !== null &&
-                    ` · Placeholder ${details.placeholder_score}`}
-                  {details.redacted_preview && (
+                  {details.placeholderScore !== null &&
+                    ` · Placeholder ${details.placeholderScore}`}
+                  {details.checksumValid !== null &&
+                    (details.checksumValid ? " · Checksum valid" : " · Checksum fails")}
+                  {details.inComment && " · In a comment"}
+                  {details.redactedPreview && (
                     <>
                       {" "}
-                      · <code>{details.redacted_preview}</code>
+                      · <code>{details.redactedPreview}</code>
                     </>
                   )}
                 </span>
                 {selected.includes(index) && (
                   <span className="finding-details">
                     <span>
-                      <b>Why flagged:</b> {details.why_flagged}
+                      <b>Why flagged:</b> {details.whyFlagged}
                     </span>
                     <span>
                       <b>Fix:</b> {details.remediation}

@@ -1,0 +1,53 @@
+# Expected result: CLEAN. Nothing in this file is a secret, but much of it looks
+# high-entropy or sits next to a suspicious key name.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  annotations:
+    git-commit: 9fceb02d0ae598e95dc970b74767f19372d61af8
+    image-digest: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    request-id: 1f3a7c2e-8b4d-4e6f-9a1b-2c3d4e5f6a7b
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: catalog
+          image: ghcr.io/acme/catalog@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: catalog-db
+                  key: password
+            - name: API_TOKEN
+              value: ""
+            - name: PASSWORD_MIN_LENGTH
+              value: "12"
+            - name: TOKEN_TTL
+              value: "3600"
+            - name: SECRET_NAME
+              value: "catalog-db"
+            - name: PUBLIC_KEY_URL
+              value: "https://auth.example.com/.well-known/jwks.json"
+            - name: CHECKSUM_MD5
+              value: "d41d8cd98f00b204e9800998ecf8427e"
+            - name: SUBRESOURCE_INTEGRITY
+              value: "sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC"
+            - name: TRACE_ID
+              value: "4bf92f3577b34da6a3ce929d0e0e4736"
+            - name: GOOGLE_ANALYTICS_ID
+              value: "G-XYZ12AB3CD"
+            - name: STRIPE_PUBLISHABLE_HINT
+              value: "use the publishable key from the dashboard"
+---
+# A ConfigMap that references a secret by name only
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-config
+data:
+  password_policy: "min=12,upper=1,digit=1,symbol=1"
+  auth_header_name: "Authorization"
+  token_endpoint: "https://auth.example.com/oauth/token"

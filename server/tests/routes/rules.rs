@@ -10,7 +10,7 @@ async fn a_new_rule_is_stored_as_a_draft_with_an_empty_definition() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(rule["drafting"], true);
     assert_eq!(rule["definition"], json!({}));
-    assert_eq!(rule["version_ids"], json!([]));
+    assert_eq!(rule["versionIds"], json!([]));
 
     let (_, rules) = send(&app, "GET", "/api/rules", None).await;
     assert_eq!(rules.as_array().map(Vec::len), Some(1));
@@ -50,7 +50,7 @@ async fn a_rule_in_a_version_must_stay_valid_when_saved() {
     let errors = body["errors"].as_array().expect("errors should be listed");
     assert!(errors.iter().any(|error| error["field"] == "pattern"
         && error["code"] == "invalid_regex"
-        && error["rule_id"] == id));
+        && error["ruleId"] == id));
     assert!(errors.iter().any(|error| error["field"] == "severity"));
 }
 
@@ -100,7 +100,7 @@ async fn only_a_rule_in_no_version_can_be_deleted() {
 
     let (status, body) = send(&app, "DELETE", &format!("/api/rules/{used}"), None).await;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert!(body["message"].as_str().is_some());
+    assert!(body["error"].as_str().is_some());
 }
 
 #[tokio::test]

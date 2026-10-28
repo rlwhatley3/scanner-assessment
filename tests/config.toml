@@ -1,0 +1,28 @@
+# Worker configuration
+title = "ingest-worker"
+
+[server]
+host = "0.0.0.0"
+port = 9000
+
+[database]
+url = "mysql://ingest:hunter2@10.0.4.12:3306/events"
+pool_size = 16
+
+[upstream.github]
+# Fine-grained PAT used to pull release artifacts
+token = "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"
+
+[upstream.anthropic]
+api_key = "sk-ant-api03-fnwnhJnDbhioAvbhs_jo2tSMvQeM-bXLxIYY_oEqP2Npf79TMdyWjEruLATfLnnrjWNbIRC0-nvHPeWFpMUVG5eYxSH8IAA"
+
+[signing]
+# Multi-line literal string: the secret spans several lines
+hmac_key = """
+BjPlFvB/qEoSHRWWQcKsUTyaWMkL
+vQ+FjJsmUAD0vns=
+"""
+
+[metrics]
+# Hash of the build, not a secret
+build_sha = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"

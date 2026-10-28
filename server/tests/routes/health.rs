@@ -14,3 +14,15 @@ fn openapi_documents_the_api_but_excludes_whiteboard_endpoints() {
     assert!(paths["/api/scan-sessions/{id}"].get.is_some());
     assert!(!paths.keys().any(|path| path.contains("whiteboard")));
 }
+
+#[test]
+fn openapi_documents_the_scan_endpoint() {
+    let openapi = ApiDoc::openapi();
+    let scans = openapi
+        .paths
+        .paths
+        .get("/api/scan-sessions/{scan_session_id}/scans")
+        .expect("scan endpoint should be documented");
+
+    assert!(scans.post.is_some());
+}

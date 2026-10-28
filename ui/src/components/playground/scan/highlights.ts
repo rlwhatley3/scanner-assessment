@@ -44,17 +44,17 @@ export function buildHighlights(text: string, findings: MatchFinding[]): Highlig
   const indices = byteOffsetsToIndices(
     text,
     findings.flatMap((finding) => [
-      finding.violation.location.start_byte,
-      finding.violation.location.end_byte,
+      finding.violation.location.startByte,
+      finding.violation.location.endByte,
     ]),
   );
 
   const byGroup = new Map<string, Highlight>();
   findings.forEach((finding, position) => {
-    const { location, overlap_group } = finding.violation;
-    const start = indices.get(location.start_byte) ?? 0;
-    const end = indices.get(location.end_byte) ?? start;
-    const key = overlap_group === null ? `finding-${position}` : `group-${overlap_group}`;
+    const { location, overlapGroup } = finding.violation;
+    const start = indices.get(location.startByte) ?? 0;
+    const end = indices.get(location.endByte) ?? start;
+    const key = overlapGroup === null ? `finding-${position}` : `group-${overlapGroup}`;
     const existing = byGroup.get(key);
     if (existing) {
       existing.start = Math.min(existing.start, start);

@@ -49,9 +49,9 @@ export default function SessionsView() {
                   {active?.id === entry.id && <span className="badge subtle">Open</span>}
                 </span>
                 <span className="muted small">
-                  Version {entry.rule_set_version_id} · {entry.scan_count}{" "}
-                  {entry.scan_count === 1 ? "scan" : "scans"} ·{" "}
-                  {entry.last_ran ? `last ran ${formatDate(entry.last_ran)}` : "not run yet"}
+                  Version {entry.ruleSetVersionId} · {entry.scanCount}{" "}
+                  {entry.scanCount === 1 ? "scan" : "scans"} ·{" "}
+                  {entry.lastRan ? `last ran ${formatDate(entry.lastRan)}` : "not run yet"}
                 </span>
               </NavLink>
             </li>
@@ -66,9 +66,9 @@ export default function SessionsView() {
               <div>
                 <h2>Session {session.id}</h2>
                 <p className="muted">
-                  Started {formatDate(session.created_at)} · rule set{" "}
-                  <Link to={`/playground/rule-sets/${session.rule_set_version_id}`}>
-                    version {session.rule_set_version_id}
+                  Started {formatDate(session.createdAt)} · rule set{" "}
+                  <Link to={`/playground/rule-sets/${session.ruleSetVersionId}`}>
+                    version {session.ruleSetVersionId}
                   </Link>
                 </p>
               </div>
@@ -106,7 +106,7 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
   return (
     <article className="scan-summary">
       <h3>
-        Scan {scan.id} · {formatDate(scan.created_at)} ·{" "}
+        Scan {scan.id} · {formatDate(scan.createdAt)} ·{" "}
         <span className={`outcome ${outcome.toLowerCase()}`}>{outcome}</span>
         {scan.truncated && <span className="badge">Cut off at 200</span>}
       </h3>
@@ -114,8 +114,8 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
         <ul className="banner warning">
           {ruleErrors.map((finding) => (
             <li key={finding.id}>
-              {finding.violation_pretty}{" "}
-              <Link to={`/playground/rules/${finding.rule_id}`}>Fix rule</Link>
+              {finding.violationPretty}{" "}
+              <Link to={`/playground/rules/${finding.ruleId}`}>Fix rule</Link>
             </li>
           ))}
         </ul>
@@ -135,14 +135,14 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
               const { violation } = finding;
               return (
                 <tr key={finding.id}>
-                  <td>{violation.rule_name}</td>
+                  <td>{violation.ruleName}</td>
                   <td>
                     <SeverityIcon tone={violation.severity} /> {SEVERITY_LABELS[violation.severity]}
                   </td>
                   <td>
-                    {violation.location.start_line}:{violation.location.start_column}
+                    {violation.location.startLine}:{violation.location.startColumn}
                   </td>
-                  <td>{violation.redacted_preview && <code>{violation.redacted_preview}</code>}</td>
+                  <td>{violation.redactedPreview && <code>{violation.redactedPreview}</code>}</td>
                 </tr>
               );
             })}

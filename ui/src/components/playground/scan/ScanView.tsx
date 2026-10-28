@@ -45,7 +45,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
   const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const versionId = session?.rule_set_version_id ?? null;
+  const versionId = session?.ruleSetVersionId ?? null;
   const version = useLoad(
     () => (versionId === null ? Promise.resolve(null) : getVersion(versionId)),
     [versionId],
@@ -62,7 +62,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
   const matches = useMemo(
     () =>
       (result?.findings ?? []).filter(
-        (finding): finding is MatchFinding => finding.kind === "match",
+        (finding): finding is MatchFinding & { id: number } => finding.kind === "match",
       ),
     [result],
   );
@@ -300,9 +300,9 @@ export default function ScanView({ visible }: { visible: boolean }) {
                     not run, so their results are missing.
                     <ul>
                       {ruleErrors.map((finding) => (
-                        <li key={finding.rule_id}>
-                          {finding.violation_pretty}{" "}
-                          <Link to={`/playground/rules/${finding.rule_id}`}>Fix rule</Link>
+                        <li key={finding.id}>
+                          {finding.violationPretty}{" "}
+                          <Link to={`/playground/rules/${finding.ruleId}`}>Fix rule</Link>
                         </li>
                       ))}
                     </ul>

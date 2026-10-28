@@ -1,2 +1,4 @@
 *.sh text eol=lf
 *.ps1 text eol=crlf
+# Scan test documents: keep line endings exactly as written
+tests/** -text

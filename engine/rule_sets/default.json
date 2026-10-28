@@ -1,0 +1,162 @@
+{
+  "rules": [
+    {
+      "id": 1,
+      "definition": {
+        "name": "AWS access key",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bAKIA[0-9A-Z]{16}\\b",
+        "prefix": "AKIA",
+        "remediation": "Deactivate this key in AWS IAM, create a new one, and load it from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 2,
+      "definition": {
+        "name": "GitHub token",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bgh[pousr]_[A-Za-z0-9]{36}\\b",
+        "prefix": "gh",
+        "remediation": "Revoke this token in GitHub settings and create a new one with only the scopes it needs.",
+        "enabled": true,
+        "checksum": {
+          "algorithm": "crc32",
+          "encoding": "base62",
+          "prefixLength": 4,
+          "length": 6
+        }
+      }
+    },
+    {
+      "id": 3,
+      "definition": {
+        "name": "Private key block",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----)?",
+        "prefix": "-----BEGIN",
+        "remediation": "Treat this key as compromised: replace it, revoke the old one, and keep private keys in a key store or secret manager.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 4,
+      "definition": {
+        "name": "Secret-looking assignment",
+        "detectionType": "likely_credential",
+        "severity": "medium",
+        "pattern": "(?P<key>[A-Za-z_][A-Za-z0-9_.-]*)[\"']?\\s*[:=]\\s*[\"']?(?P<value>[^\\s\"'`,;${}()]{8,})",
+        "keyNames": [
+          "password",
+          "passwd",
+          "secret",
+          "api_key",
+          "apikey",
+          "token"
+        ],
+        "minEntropy": 3.0,
+        "remediation": "If this is a real secret, rotate it and load it from a secret manager or environment variable instead of the file.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 5,
+      "definition": {
+        "name": "Secret written to a log",
+        "detectionType": "unsafe_handling",
+        "severity": "medium",
+        "pattern": "(?i)\\b(?:console\\.(?:log|info|warn|error|debug)|println!?|print|logger\\.\\w+|log\\.\\w+)\\s*\\([^)\\n]*(?:password|passwd|secret|api_?key|token)",
+        "remediation": "Remove the secret from this log call, or log a fixed placeholder such as \"[redacted]\" instead.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 6,
+      "definition": {
+        "name": "Known placeholder values",
+        "detectionType": "placeholder_vs_real",
+        "pattern": "(?i)your_key_here|changeme|xxxx|example|dummy|test",
+        "enabled": true
+      }
+    },
+    {
+      "id": 7,
+      "definition": {
+        "name": "npm token",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bnpm_[A-Za-z0-9]{36}\\b",
+        "prefix": "npm_",
+        "checksum": {
+          "algorithm": "crc32",
+          "encoding": "base62",
+          "prefixLength": 4,
+          "length": 6
+        },
+        "remediation": "Revoke this token in your npm account's Access Tokens page and create a new one with only the permissions it needs.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 8,
+      "definition": {
+        "name": "GitLab personal access token",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\bglpat-[A-Za-z0-9_.-]{37,310}",
+        "prefix": "glpat-",
+        "checksum": {
+          "algorithm": "crc32",
+          "encoding": "base36",
+          "prefixLength": 0,
+          "length": 7
+        },
+        "remediation": "Revoke this token in GitLab (User settings, Access tokens) and create a new one with only the scopes it needs.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 9,
+      "definition": {
+        "name": "GitLab personal access token (legacy format)",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\b(?P<value>glpat-[A-Za-z0-9_-]{20})(?:[^A-Za-z0-9_.-]|$)",
+        "prefix": "glpat-",
+        "remediation": "Revoke this token in GitLab (User settings, Access tokens) and create a new one with only the scopes it needs.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 10,
+      "definition": {
+        "name": "Payment card number",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\b(?:4\\d{3}|5[1-5]\\d{2}|2[2-7]\\d{2}|6(?:011|5\\d{2}))(?:[ -]?\\d{4}){3}\\b|\\b3[47]\\d{2}[ -]?\\d{6}[ -]?\\d{5}\\b",
+        "checksum": {
+          "algorithm": "luhn"
+        },
+        "remediation": "Remove the card number. If it's real, treat it as exposed card data: tell your payment provider and follow your PCI DSS incident process.",
+        "enabled": true
+      }
+    },
+    {
+      "id": 11,
+      "definition": {
+        "name": "Bitcoin private key (WIF)",
+        "detectionType": "direct_credential",
+        "severity": "high",
+        "pattern": "\\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\\b",
+        "checksum": {
+          "algorithm": "base58check"
+        },
+        "remediation": "Move any funds to a new wallet whose key has never been exposed. A leaked private key can't be revoked.",
+        "enabled": true
+      }
+    }
+  ]
+}

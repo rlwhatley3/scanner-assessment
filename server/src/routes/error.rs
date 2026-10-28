@@ -8,7 +8,7 @@ use axum::{
 /// The JSON body of every error response.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct ErrorBody {
-    pub message: String,
+    pub error: String,
     /// Per-rule problems, when the request failed validation.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<RuleError>,
@@ -58,7 +58,14 @@ impl IntoResponse for ApiError {
                 Vec::new(),
             ),
         };
-        (status, Json(ErrorBody { message, errors })).into_response()
+        (
+            status,
+            Json(ErrorBody {
+                error: message,
+                errors,
+            }),
+        )
+            .into_response()
     }
 }
 

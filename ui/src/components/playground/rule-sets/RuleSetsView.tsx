@@ -95,10 +95,9 @@ export default function RuleSetsView() {
               >
                 <span className="master-item-title">Version {entry.id}</span>
                 <span className="muted small">
-                  {entry.rule_count} {entry.rule_count === 1 ? "rule" : "rules"} ·{" "}
-                  {entry.scan_session_count}{" "}
-                  {entry.scan_session_count === 1 ? "session" : "sessions"}
-                  {entry.parent_id !== null && ` · from v${entry.parent_id}`}
+                  {entry.ruleCount} {entry.ruleCount === 1 ? "rule" : "rules"} ·{" "}
+                  {entry.scanSessionCount} {entry.scanSessionCount === 1 ? "session" : "sessions"}
+                  {entry.parentId !== null && ` · from v${entry.parentId}`}
                 </span>
                 {entry.archived && (
                   <span className="badges">
@@ -132,18 +131,18 @@ export default function RuleSetsView() {
                   {version.archived && <span className="badge">Archived</span>}
                 </h2>
                 <p className="muted">
-                  Saved {formatDate(version.created_at)}
-                  {version.parent_id !== null && (
+                  Saved {formatDate(version.createdAt)}
+                  {version.parentId !== null && (
                     <>
                       {" "}
                       · based on{" "}
-                      <Link to={`/playground/rule-sets/${version.parent_id}`}>
-                        version {version.parent_id}
+                      <Link to={`/playground/rule-sets/${version.parentId}`}>
+                        version {version.parentId}
                       </Link>
                     </>
                   )}{" "}
-                  · {version.scan_session_count}{" "}
-                  {version.scan_session_count === 1 ? "scan session" : "scan sessions"}
+                  · {version.scanSessionCount}{" "}
+                  {version.scanSessionCount === 1 ? "scan session" : "scan sessions"}
                 </p>
               </div>
             </header>
@@ -182,15 +181,13 @@ export default function RuleSetsView() {
                 </tr>
               </thead>
               <tbody>
-                {version.rules.map(({ rule_id, definition }) => (
+                {version.rules.map(({ ruleId, definition }) => (
                   <tr
-                    key={rule_id}
+                    key={ruleId}
                     className={definition.enabled === false ? "disabled" : undefined}
                   >
                     <td>
-                      <Link to={`/playground/rules/${rule_id}`}>
-                        {ruleName(definition, rule_id)}
-                      </Link>
+                      <Link to={`/playground/rules/${ruleId}`}>{ruleName(definition, ruleId)}</Link>
                       {definition.enabled === false && <span className="badge">Disabled</span>}
                     </td>
                     <td>

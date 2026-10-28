@@ -12,21 +12,21 @@ async fn a_session_starts_on_a_version_with_no_scans() {
         &app,
         "POST",
         "/api/scan-sessions",
-        Some(json!({ "rule_set_version_id": version })),
+        Some(json!({ "ruleSetVersionId": version })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(session["rule_set_version_id"], version);
-    assert_eq!(session["last_ran"], json!(null));
+    assert_eq!(session["ruleSetVersionId"], version);
+    assert_eq!(session["lastRan"], json!(null));
     assert_eq!(session["scans"], json!([]));
 
     let id = session["id"].as_i64().unwrap();
     let (status, reopened) = send(&app, "GET", &format!("/api/scan-sessions/{id}"), None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(reopened["scan_count"], 0);
+    assert_eq!(reopened["scanCount"], 0);
 
     let (_, versions) = send(&app, "GET", "/api/rule-set-versions", None).await;
-    assert_eq!(versions[0]["scan_session_count"], 1);
+    assert_eq!(versions[0]["scanSessionCount"], 1);
 }
 
 #[tokio::test]
@@ -36,7 +36,7 @@ async fn a_session_needs_a_live_version() {
         &app,
         "POST",
         "/api/scan-sessions",
-        Some(json!({ "rule_set_version_id": 7 })),
+        Some(json!({ "ruleSetVersionId": 7 })),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -54,11 +54,11 @@ async fn a_session_needs_a_live_version() {
         &app,
         "POST",
         "/api/scan-sessions",
-        Some(json!({ "rule_set_version_id": version })),
+        Some(json!({ "ruleSetVersionId": version })),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(body["message"].as_str().unwrap().contains("archived"));
+    assert!(body["error"].as_str().unwrap().contains("archived"));
 }
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn sessions_list_newest_first() {
             &app,
             "POST",
             "/api/scan-sessions",
-            Some(json!({ "rule_set_version_id": version })),
+            Some(json!({ "ruleSetVersionId": version })),
         )
         .await;
     }

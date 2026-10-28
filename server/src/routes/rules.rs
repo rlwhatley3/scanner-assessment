@@ -1,3 +1,4 @@
+use super::AppState;
 use super::error::{ApiError, ErrorBody, json_column};
 use crate::{
     db::Db,
@@ -12,7 +13,7 @@ use axum::{
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
-pub fn router() -> Router<Db> {
+pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/{id}", get(fetch).put(update).delete(remove))
@@ -20,6 +21,7 @@ pub fn router() -> Router<Db> {
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Rule {
     id: i64,
     /// True until the rule is added into a rule set version. Drafts are not validated.
@@ -40,6 +42,7 @@ impl Rule {
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct RuleBody {
     #[serde(default = "empty_definition")]
     #[schema(value_type = Object)]

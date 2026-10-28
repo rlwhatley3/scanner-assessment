@@ -71,11 +71,11 @@ export default function RulesView() {
                 <span className="badges">
                   {rule.drafting && <span className="badge">Draft</span>}
                   {rule.definition.enabled === false && <span className="badge">Disabled</span>}
-                  {rule.version_ids.length > 0 && (
+                  {rule.versionIds.length > 0 && (
                     <span className="badge subtle">
-                      {rule.version_ids.length === 1
-                        ? `In version ${rule.version_ids[0]}`
-                        : `In ${rule.version_ids.length} versions`}
+                      {rule.versionIds.length === 1
+                        ? `In version ${rule.versionIds[0]}`
+                        : `In ${rule.versionIds.length} versions`}
                     </span>
                   )}
                 </span>

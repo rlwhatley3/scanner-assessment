@@ -45,8 +45,8 @@ export default function SessionBar({ visible, version, locked, onLeave }: Sessio
       <div className="session-bar panel">
         <span>
           <b>Scan session {session.id}</b> · Rule set{" "}
-          <Link to={`/playground/rule-sets/${session.rule_set_version_id}`}>
-            version {session.rule_set_version_id}
+          <Link to={`/playground/rule-sets/${session.ruleSetVersionId}`}>
+            version {session.ruleSetVersionId}
           </Link>
           {enabled !== undefined && ` · ${enabled} ${enabled === 1 ? "rule" : "rules"} enabled`}
         </span>
@@ -88,8 +88,8 @@ export default function SessionBar({ visible, version, locked, onLeave }: Sessio
               >
                 {list.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
-                    Version {candidate.id} ({candidate.rule_count}{" "}
-                    {candidate.rule_count === 1 ? "rule" : "rules"})
+                    Version {candidate.id} ({candidate.ruleCount}{" "}
+                    {candidate.ruleCount === 1 ? "rule" : "rules"})
                   </option>
                 ))}
               </select>
