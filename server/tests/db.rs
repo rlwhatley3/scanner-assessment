@@ -31,6 +31,7 @@ async fn migrations_create_the_storage_tables() {
             "findings",
             "rule_set_version_rules",
             "rule_set_versions",
+            "rule_sets",
             "rules",
             "scan_sessions",
             "scans"
@@ -372,4 +373,66 @@ async fn reopening_a_file_database_keeps_data_and_skips_applied_migrations() {
         let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
     }
     assert_eq!(sessions, 1);
+}
+
+#[tokio::test]
+async fn versions_saved_before_rule_sets_existed_join_one_named_set() {
+    let path = std::env::temp_dir().join(format!(
+        "secrets-scanner-rule-set-migration-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    {
+        // A database as it was before the rule sets migration, with two versions in it.
+        let connection = rusqlite::Connection::open(&path).expect("database should open");
+        connection
+            .execute_batch(include_str!("../src/db/migrations/0001_initial.sql"))
+            .expect("first migration should run");
+        connection
+            .execute_batch(
+                "PRAGMA user_version = 1;
+                 INSERT INTO rule_set_versions DEFAULT VALUES;
+                 INSERT INTO rule_set_versions (parent_id) VALUES (1);",
+            )
+            .expect("old versions should insert");
+    }
+
+    let db = Db::open(&path).expect("database should open and migrate");
+    let (sets, versions_in_set) = db
+        .call(|connection| {
+            let sets: Vec<String> = connection
+                .prepare("SELECT name FROM rule_sets")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            let versions_in_set: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM rule_set_versions WHERE rule_set_id = 1",
+                [],
+                |row| row.get(0),
+            )?;
+            Ok((sets, versions_in_set))
+        })
+        .await
+        .expect("migrated rows should be readable");
+    drop(db);
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+    }
+
+    assert_eq!(sets, ["Built-in rules"]);
+    assert_eq!(versions_in_set, 2);
+}
+
+#[tokio::test]
+async fn rule_set_names_are_unique_ignoring_case_and_space() {
+    let db = Db::open_in_memory().expect("in-memory database should open");
+    let duplicate = db
+        .call(|connection| {
+            connection.execute("INSERT INTO rule_sets (name) VALUES ('Payments')", [])?;
+            Ok(connection
+                .execute("INSERT INTO rule_sets (name) VALUES (' payments ')", [])
+                .is_ok())
+        })
+        .await
+        .expect("insert should run");
+    assert!(!duplicate);
 }

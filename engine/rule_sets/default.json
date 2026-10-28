@@ -157,6 +157,20 @@
         "remediation": "Move any funds to a new wallet whose key has never been exposed. A leaked private key can't be revoked.",
         "enabled": true
       }
+    },
+    {
+      "id": 12,
+      "definition": {
+        "name": "Password-shaped value",
+        "detectionType": "likely_credential",
+        "severity": "low",
+        "pattern": "(?P<key>[A-Za-z_][A-Za-z0-9_.-]*)[\"']?\\s*[:=]\\s*[\"'](?P<value>[^\\s\"'`]{6,64})[\"']",
+        "passwordShape": {
+          "minScore": 2
+        },
+        "remediation": "If this is a real password, change it, since it has been stored in plain text, and load the new one from a secret manager or environment variable. If it isn't a secret, this low-severity finding can be ignored.",
+        "enabled": true
+      }
     }
   ]
 }

@@ -149,9 +149,10 @@ export function Whiteboard() {
         isPasteAtCursorMode: true,
         isSnapMode: true,
       });
-      const currentPage = editor.getCurrentPage();
-      if (currentPage.name !== "Whiteboard") {
-        editor.renamePage(currentPage, "Whiteboard");
+      // Only the first page is "Whiteboard"; later pages, like the flow board, keep their names.
+      const [firstPage] = editor.getPages();
+      if (firstPage && firstPage.name !== "Whiteboard") {
+        editor.renamePage(firstPage, "Whiteboard");
       }
 
       if (isNewBoard) {

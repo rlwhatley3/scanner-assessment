@@ -28,7 +28,7 @@ fn the_built_in_rules_are_valid_and_raise_no_warnings() {
 fn the_built_in_rule_set_file_is_in_the_scan_contract_shape() {
     let rule_set = default_rule_set();
     let ids: Vec<i64> = rule_set.rules.iter().map(|rule| rule.id).collect();
-    assert_eq!(ids, (1..=11).collect::<Vec<i64>>());
+    assert_eq!(ids, (1..=12).collect::<Vec<i64>>());
     let types: Vec<DetectionType> = rule_set
         .rules
         .iter()

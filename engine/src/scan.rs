@@ -1,5 +1,6 @@
 use crate::format::{self, Format, Structure};
 use crate::location::{LineIndex, Location};
+use crate::password_shape;
 use crate::rules::{
     CompiledRule, DetectionType, Rule, RuleError, RuleSet, Severity, check_and_compile,
     duplicate_name_errors,
@@ -114,6 +115,8 @@ struct Candidate<'r> {
     end: usize,
     entropy: Option<f64>,
     checksum_valid: Option<bool>,
+    /// How password-like the value is, for rules with a password shape setting.
+    shape: Option<password_shape::Assessment>,
     placeholder_hit: bool,
     in_comment: bool,
 }
@@ -185,6 +188,18 @@ pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, 
     candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.rule.id));
     // A value found both by a rule's pattern and by parsing is one finding.
     candidates.dedup_by(|a, b| (a.rule.id, a.start, a.end) == (b.rule.id, b.start, b.end));
+    // Shape-only rules are a fallback, so they don't repeat a value another rule reported.
+    let reported: Vec<(usize, usize)> = candidates
+        .iter()
+        .filter(|candidate| !candidate.rule.is_shape_fallback())
+        .map(|candidate| (candidate.start, candidate.end))
+        .collect();
+    candidates.retain(|candidate| {
+        !candidate.rule.is_shape_fallback()
+            || !reported
+                .iter()
+                .any(|&(start, end)| start < candidate.end && candidate.start < end)
+    });
     for candidate in &mut candidates {
         candidate.placeholder_hit = placeholder_ranges
             .iter()
@@ -289,17 +304,23 @@ fn find_candidates<'r>(
     }
 
     // Parsed key/value pairs catch values the pattern can't, such as quoted values containing
-    // `$` or `;`, and keys and values split across lines in JSON.
-    if rule.detection_type == DetectionType::LikelyCredential && !rule.key_names.is_empty() {
+    // `$` or `;`, and keys and values split across lines in JSON. A password shape rule checks
+    // every pair, since a password can sit under any name; its shape check does the filtering.
+    let shape_only = rule.password_shape.is_some() && rule.key_names.is_empty();
+    if rule.detection_type == DetectionType::LikelyCredential
+        && (!rule.key_names.is_empty() || shape_only)
+    {
+        let min_length = if rule.password_shape.is_some() { 6 } else { 8 };
         for pair in &structure.pairs {
             let key = text[pair.key.0..pair.key.1].to_lowercase();
             let value = &text[pair.value.0..pair.value.1];
-            let suspicious = rule
-                .key_names
-                .iter()
-                .any(|name| key.contains(name.as_str()));
+            let suspicious = shape_only
+                || rule
+                    .key_names
+                    .iter()
+                    .any(|name| key.contains(name.as_str()));
             let reference = value.starts_with(['$', '{', '(']);
-            if suspicious && !reference && value.chars().count() >= 8 {
+            if suspicious && !reference && value.chars().count() >= min_length {
                 candidates.extend(candidate(rule, text, pair.value.0, pair.value.1));
             }
         }
@@ -307,7 +328,8 @@ fn find_candidates<'r>(
     candidates
 }
 
-/// A candidate for the value at `start..end`, unless it falls short of the rule's entropy.
+/// A candidate for the value at `start..end`, unless it falls short of the rule's entropy or
+/// password shape.
 fn candidate<'r>(
     rule: &'r CompiledRule,
     text: &str,
@@ -322,12 +344,23 @@ fn candidate<'r>(
     {
         return None;
     }
+    let shape = match rule.password_shape {
+        Some(setting) => {
+            let assessment = password_shape::assess(value)?;
+            if assessment.score < setting.min_score {
+                return None;
+            }
+            Some(assessment)
+        }
+        None => None,
+    };
     Some(Candidate {
         rule,
         start,
         end,
         entropy,
         checksum_valid: rule.checksum.map(|checksum| checksum.is_valid(value)),
+        shape,
         // Both set once every rule has run and the text has been parsed.
         placeholder_hit: false,
         in_comment: false,
@@ -409,6 +442,22 @@ fn match_details(
             }
             (confidence, why)
         }
+        (DetectionType::LikelyCredential, _) if candidate.shape.is_some() => {
+            let shape = candidate.shape.as_ref().expect("checked above");
+            // A shape alone is weaker evidence than a known format, so it tops out lower.
+            let confidence = (35 + u16::from(shape.score) * 8).min(80) as u8;
+            let mut why = format!(
+                "Looks like a password a person made up: it {}",
+                shape.signals.join(", ")
+            );
+            if rule.key_names.is_empty() {
+                why.push_str(". Its name doesn't suggest a secret, so this is a weaker signal");
+            } else {
+                why.push_str(", and it's assigned to a name that suggests a secret");
+            }
+            why.push('.');
+            (confidence, why)
+        }
         (DetectionType::LikelyCredential, Some(entropy)) => {
             let minimum = rule.min_entropy.unwrap_or(0.0);
             let confidence = (50.0 + (entropy - minimum).max(0.0) * 15.0).min(90.0) as u8;
@@ -468,7 +517,7 @@ fn match_details(
 }
 
 /// Shannon entropy in bits per character.
-fn shannon_entropy(value: &str) -> f64 {
+pub(crate) fn shannon_entropy(value: &str) -> f64 {
     let mut counts = std::collections::HashMap::<char, f64>::new();
     let mut total = 0.0_f64;
     for character in value.chars() {

@@ -136,19 +136,23 @@ async fn initializes_and_lists_every_tool() {
         [
             "check_rules",
             "create_rule",
+            "create_rule_set",
             "create_rule_set_version",
             "create_scan_session",
             "delete_rule",
             "get_rule",
+            "get_rule_set",
             "get_rule_set_version",
             "get_scan",
             "get_scan_session",
             "list_rule_set_versions",
+            "list_rule_sets",
             "list_rules",
             "list_scan_sessions",
             "run_scan",
             "set_rule_set_version_archived",
             "update_rule",
+            "update_rule_set",
         ]
     );
 }
@@ -233,6 +237,24 @@ async fn rules_in_a_version_cannot_be_deleted() {
 }
 
 #[tokio::test]
+async fn a_rule_in_a_version_must_stay_valid_when_updated() {
+    let (app, _) = app().await;
+    let before = ok(&app, "get_rule", json!({"ruleId": 1})).await;
+
+    let error = err(
+        &app,
+        "update_rule",
+        json!({"ruleId": 1, "definition": {"name": "Broken", "pattern": "(unclosed"}}),
+    )
+    .await;
+    assert!(error.contains("nothing was saved"), "{error}");
+    assert!(error.contains("invalid_regex"), "{error}");
+
+    let after = ok(&app, "get_rule", json!({"ruleId": 1})).await;
+    assert_eq!(after["definition"], before["definition"]);
+}
+
+#[tokio::test]
 async fn an_invalid_rule_set_saves_no_version() {
     let (app, db) = app().await;
     let draft = ok(
@@ -246,10 +268,10 @@ async fn an_invalid_rule_set_saves_no_version() {
     let error = err(
         &app,
         "create_rule_set_version",
-        json!({"parentId": 1, "ruleIds": [1, id]}),
+        json!({"ruleSetId": 1, "parentId": 1, "ruleIds": [1, id]}),
     )
     .await;
-    assert!(error.contains("no version was saved"), "{error}");
+    assert!(error.contains("nothing was saved"), "{error}");
     assert!(error.contains(&format!("\"ruleId\": {id}")), "{error}");
 
     let versions: i64 = db
@@ -273,7 +295,7 @@ async fn duplicate_names_block_a_version() {
     let error = err(
         &app,
         "create_rule_set_version",
-        json!({"ruleIds": [first["id"], second["id"]]}),
+        json!({"ruleSetId": 1, "ruleIds": [first["id"], second["id"]]}),
     )
     .await;
     assert!(error.contains("duplicate_name"), "{error}");
@@ -293,7 +315,7 @@ async fn a_version_snapshots_rules_and_later_edits_do_not_change_it() {
     let created = ok(
         &app,
         "create_rule_set_version",
-        json!({"parentId": 1, "ruleIds": [id]}),
+        json!({"ruleSetId": 1, "parentId": 1, "ruleIds": [id]}),
     )
     .await;
     let version = &created["version"];
@@ -400,4 +422,34 @@ async fn scan_errors_come_back_as_tool_errors() {
 
     let error = err(&app, "get_scan", json!({"scanId": 42})).await;
     assert_eq!(error, "Scan 42 not found.");
+}
+
+#[tokio::test]
+async fn rule_sets_are_named_and_can_start_from_a_copy() {
+    let (app, _) = app().await;
+    let rule_sets = ok(&app, "list_rule_sets", json!({})).await;
+    assert_eq!(rule_sets["ruleSets"][0]["name"], "Built-in rules");
+
+    let copy = ok(
+        &app,
+        "create_rule_set",
+        json!({"name": "Strict", "description": "Tighter rules", "fromVersionId": 1}),
+    )
+    .await;
+    assert_eq!(copy["versions"][0]["number"], 1);
+    assert_eq!(copy["versions"][0]["parentId"], 1);
+
+    let taken = err(&app, "create_rule_set", json!({"name": "strict"})).await;
+    assert!(taken.contains("already exists"), "{taken}");
+
+    let id = copy["id"].as_i64().unwrap();
+    let renamed = ok(
+        &app,
+        "update_rule_set",
+        json!({"ruleSetId": id, "name": "Strict v2"}),
+    )
+    .await;
+    assert_eq!(renamed["name"], "Strict v2");
+    let versions = ok(&app, "list_rule_set_versions", json!({"ruleSetId": id})).await;
+    assert_eq!(versions["versions"][0]["ruleSetName"], "Strict v2");
 }

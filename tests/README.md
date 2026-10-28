@@ -3,7 +3,7 @@
 Sample inputs for exercising the scanner. Paste a file into the Playground, or
 feed it to the engine directly.
 
-**Every credential here is fake.** Values were randomly generated to match each
+**Every credential here is fake.** The made-up passwords in `made-up-passwords.*` are invented for these samples. Values were randomly generated to match each
 provider's format; none of them are live. Placeholder and documented example values
 (`AKIAIOSFODNN7EXAMPLE`, `YOUR_API_KEY_HERE`, `ghp_xxxx…`) are used on purpose to
 test placeholder classification. The card numbers in `orders-export.csv` are the card
@@ -35,4 +35,8 @@ known value.
 | `unicode-offsets.md` | Markdown | Multi-byte text (accents, CJK, emoji, ZWJ, combining marks, RTL) before matches, Cyrillic lookalike prefix, full-width colon |
 | `mixed-line-endings.ini` | INI | CRLF, LF and a lone CR in one file, trailing whitespace after a value |
 | `bundle.min.js` | Minified JS | One ~90 KB line; the same key four times, once inside a URL and a bearer header (overlap), two tokens joined with no separator |
+| `made-up-passwords.yaml` | YAML | Passwords a person made up under names that don't suggest a secret (`safe_bet`, `vault_door`), quoted and unquoted, next to ordinary settings; one under `db_password` that the assignment rule reports instead |
+| `made-up-passwords.json` | JSON | The same kind of passwords in JSON, including a key and value split across lines |
+| `made-up-passwords.env` | dotenv | The same kind of passwords in `.env` form, unquoted and quoted |
+| `password-lookalikes.yaml` | YAML | **Expected clean.** Values with password-like traits that are ordinary settings: names in regular styles that contain "Password" or "LOGIN", versions, image tags, IDs, hashes, paths, a time zone, a hex color, references, and short plain words |
 | `orders-export.csv` | CSV (read as text) | Visa, Mastercard (5- and 2-series), Amex and Discover numbers, plain and in space- or dash-separated groups; one in a comment line, one that fails Luhn, one in a quoted note and one in escaped JSON; masked numbers and 16-digit order IDs that should not match; 13- and 19-digit cards, Diners, UnionPay, JCB and a number split across lines, which the card rule doesn't cover |
