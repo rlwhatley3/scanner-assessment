@@ -8,9 +8,9 @@ const AWS_KEY: &str = "AKIAZ7Q3LMN4XWY2PRT6";
 const GITHUB_TOKEN: &str = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
 const RANDOM_PASSWORD: &str = "q8Z!fP2xL7mR";
 
-/// Scans with the built-in rule set: ids 1–11 are the AWS key, GitHub token, private key,
+/// Scans with the built-in rule set: ids 1–12 are the AWS key, GitHub token, private key,
 /// assignment, logging, known placeholder values, npm token, GitLab token, legacy GitLab
-/// token, payment card number, and Bitcoin private key rules.
+/// token, payment card number, Bitcoin private key, and password-shaped value rules.
 fn run(text: &str) -> ScanResult {
     scan(42, text, &default_rule_set()).expect("scan should run")
 }
@@ -115,8 +115,75 @@ fn a_likely_credential_needs_a_secret_sounding_name_and_enough_randomness() {
     assert!(found[0].why_flagged.contains("bits per character"));
     assert!(found[0].confidence >= 50);
 
-    assert!(matches(&run(&format!("description: {RANDOM_PASSWORD}"))).is_empty());
+    // Without a secret-sounding name the assignment rule skips it; only the password shape
+    // fallback reports it, at low severity.
+    let result = run(&format!("description: {RANDOM_PASSWORD}"));
+    let rule_ids: Vec<i64> = result
+        .findings
+        .iter()
+        .map(|finding| finding.rule_id)
+        .collect();
+    assert_eq!(rule_ids, [12]);
+    assert_eq!(matches(&result)[0].severity.to_string(), "low");
     assert!(matches(&run("password: aaaaaaaaaaaa")).is_empty());
+}
+
+#[test]
+fn a_made_up_password_under_any_name_is_a_low_severity_finding() {
+    for text in [
+        "safe_bet: \"myUnencryptedPWHERE\"",
+        "safe_bet: myUnencryptedPWHERE",
+        "{\"safe_bet\": \"myUnencryptedPWHERE\"}",
+    ] {
+        let result = run(text);
+        let found = matches(&result);
+        assert_eq!(found.len(), 1, "{text}");
+        assert_eq!(result.findings[0].rule_id, 12, "{text}");
+        assert_eq!(found[0].rule_name, "Password-shaped value");
+        assert_eq!(found[0].severity.to_string(), "low");
+        assert!(
+            found[0]
+                .why_flagged
+                .contains("contains a word common in passwords")
+        );
+        assert!(
+            found[0]
+                .why_flagged
+                .contains("name doesn't suggest a secret")
+        );
+        assert!(!found[0].why_flagged.contains("PWHERE"));
+        let location = found[0].location;
+        assert_eq!(
+            &text[location.start_byte..location.end_byte],
+            "myUnencryptedPWHERE"
+        );
+    }
+}
+
+#[test]
+fn the_password_shape_rule_does_not_repeat_what_another_rule_found() {
+    let result = run("password: \"Summer2024!\"");
+    let rule_ids: Vec<i64> = result
+        .findings
+        .iter()
+        .map(|finding| finding.rule_id)
+        .collect();
+    assert_eq!(rule_ids, [4]);
+}
+
+#[test]
+fn ordinary_config_values_are_not_password_shaped() {
+    let text = "name: catalog-service\nregion: us-east-1\nimage: ghcr.io/acme/catalog:1.24.3\n\
+                handler: myUnencryptedFileHandler\nurl: \"https://example.com/a/b\"\n\
+                level: \"LOG_LEVEL_DEBUG\"\nid: \"1f3a7c2e-8b4d-4e6f-9a1b-2c3d4e5f6a7b\"\n";
+    assert!(matches(&run(text)).is_empty());
+}
+
+#[test]
+fn the_expected_clean_sample_has_no_password_shaped_findings() {
+    let text = include_str!("../../tests/clean-lookalikes.yaml");
+    let result = run(text);
+    assert!(result.findings.iter().all(|finding| finding.rule_id != 12));
 }
 
 #[test]

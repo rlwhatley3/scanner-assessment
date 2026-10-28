@@ -72,6 +72,9 @@ export default function RulesView() {
                   {rule.drafting && <span className="badge">Draft</span>}
                   {rule.definition.enabled === false && <span className="badge">Disabled</span>}
                   {rule.definition.checksum && <span className="badge subtle">Checksum</span>}
+                  {rule.definition.passwordShape && (
+                    <span className="badge subtle">Password shape</span>
+                  )}
                   {rule.versionIds.length > 0 && (
                     <span className="badge subtle">
                       {rule.versionIds.length === 1

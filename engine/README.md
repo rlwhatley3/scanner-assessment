@@ -26,6 +26,7 @@ The API hands the engine one rule set version as JSON in this shape, and the eng
         "keyNames": [],
         "minEntropy": null,
         "checksum": null,
+        "passwordShape": null,
         "remediation": "Deactivate this key in AWS IAM..."
       }
     }
@@ -77,12 +78,13 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 | GitLab personal access token (legacy format) | Direct credential | High | `glpat-` followed by exactly 20 characters, the format before routable tokens; it has no checksum | Same as above |
 | Payment card number | Direct credential | High | 15- and 16-digit Visa, Mastercard, Amex, and Discover numbers, plain or in space- or dash-separated groups, checked with Luhn | 13- and 19-digit cards; other networks; numbers split across lines |
 | Bitcoin private key (WIF) | Direct credential | High | Wallet Import Format keys (51 or 52 Base58 characters starting with `5`, `K`, or `L`), checked with Base58Check | Raw hex private keys; other coins' formats |
+| Password-shaped value | Likely credential | Low | A quoted assigned value, or any parsed key/value pair, that looks like a password a person made up (password shape, minimum score 2), under any name, e.g. `safe_bet: "myUnencryptedPWHERE"`. A fallback: it skips values another rule already reported | Made-up passwords in a regular naming style (`myFirstPassword` reads as camelCase), all-lowercase ones (`summer2024`), and plain words; see [Password shape](#password-shape) |
 
 ## Scores
 
 - **Confidence (0–100):** how sure the engine is that this is a secret of the rule's kind.
   - Direct credentials: 95, or 99 when the checksum passes and 50 when it fails.
-  - Likely credentials: 50–90, rising with entropy above the rule's threshold.
+  - Likely credentials: 50–90, rising with entropy above the rule's threshold. With a password shape setting, 35–80, rising with the shape score.
   - Unsafe handling: 70, or 30 when it's commented out.
 - **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
 
@@ -127,6 +129,31 @@ A `crc32` token is read as `prefix + covered part + checksum`:
 A failed checksum lowers confidence and raises the placeholder score; it never drops the finding. GitHub, npm, and GitLab haven't published test tokens, so those setups follow their descriptions and existing open-source validators. If a setup were ever subtly wrong, real tokens would still be reported, just at lower confidence. The same holds for a mistaken custom setup.
 
 **Not seeded:** Microsoft/Azure identifiable keys carry a checksum, but its algorithm couldn't be confirmed. Ethereum addresses (EIP-55) and IBANs (mod-97) have checksums, but they're public identifiers, not secrets, so flagging them would only add noise.
+
+## Password shape
+
+Key names catch `password = …`, but a password can sit under any name. A rule's `passwordShape` setting (`{ "minScore": 2 }`) judges the value alone, and keeps it only when it looks like a password a person made up:
+
+| Signal | Points |
+|---|---|
+| Mixes symbols (`!@#$%^&*?~+=`) into letters | 2 |
+| Swaps letters for look-alike digits or symbols (`p4ss`, `s3cret`, `p@ss`) | 2 |
+| Contains a word common in passwords (`pw`, `pass`, `admin`, `qwerty`, `1234`, ...) | 2 |
+| Ends in a short number (`Summer2024`) | 1 |
+| Uses irregular capitals (a run of 3+ capitals at the end, or alternating case) | 1 |
+| Mixes upper- and lowercase letters with digits | 1 |
+
+A value equal to one of about 60 very common passwords that include a digit or symbol (`password1`, `p@ssw0rd`, `hunter2`) scores the maximum, 10. Plain words such as `password` or `admin` are left out of that list: as config values they are usually names (a role, a key, a resource kind), not passwords.
+
+Values never count when they are clearly something else:
+- **Lengths:** under 8 characters (6 for the common list), over 64, or containing whitespace.
+- **Not secrets:** URLs, paths, emails, numbers, dates, versions, IP addresses, UUIDs, hex strings, and template references (`${…}`, `{{…}}`).
+- **Regular names:** `snake_case`, `kebab-case`, `dotted.names`, `ALL_CAPS`, `camelCase`, and `PascalCase`.
+- **Machine-made tokens:** 20+ characters with at least 4 bits of entropy per character. Format and key-name rules are for those.
+
+A likely-credential rule with a password shape also checks every parsed key/value pair, whatever its key, unless its `keyNames` narrows it. With no key names it is a fallback: it doesn't report a value that overlaps another rule's finding, so a password under `password:` is reported once, by the assignment rule.
+
+Its "why flagged" note lists the signals that fired and never quotes the value. The trade-off is reach versus noise: the exclusions keep ordinary config values out (the `tests/` samples produce no password-shape findings, including the expected-clean file), but a made-up password that happens to look like a regular name, or is all lowercase, is missed.
 
 ## File format parsing
 
