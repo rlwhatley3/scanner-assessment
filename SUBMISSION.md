@@ -137,12 +137,14 @@ Never stored: the inspection text, matched values, or a hash of the input. A has
 - A **built-in default rule set** is seeded as the first rule set version, with at least one rule for each detection type (direct credentials, likely credentials, unsafe handling). The defaults are just seeded config: every rule can be edited, disabled, or removed, and users can add their own. Re-using the first version restores the defaults, unless it has been archived.
 - Rules are edited through **forms**, never raw text, and always saved as canonical **JSON**.
 - Rule ids are assigned by the system, unique, and stable across rule set versions, like a database primary key. A rule keeps its id when renamed or edited; a deleted rule's id is never reused. Users never see or edit ids.
+- A rule gets its real id as soon as it is added in the form, with `draft` set to true. Drafts live inside the rule set's single editable working copy, so they survive a reload. Drafts get no validation. Applying the working copy as a new rule set version clears the flag and validates them; saved versions never contain drafts. Errors point at the rule's real id, so a new rule needs no temporary key.
 - Severity is fixed per rule by the rule author.
 
 | Field | Purpose |
 |---|---|
 | `id` | Assigned by the system |
 | `name` | Shown in findings |
+| `draft` | True while the rule is only in the working copy; cleared when applied into a rule set version |
 | `enabled` | Disable without deleting |
 | `detectionType` | Direct credential, likely credential, or unsafe handling |
 | `severity` | High, medium, or low |
@@ -157,12 +159,16 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 **Configuration errors**
 
 - **Validated in three places:**
-  - inline in the form, field by field, as the user types;
+  - inline in the form, field by field, as the user types, except on draft rules, which are not validated until they are applied;
   - on save: an invalid rule set version cannot be saved, so every saved version is valid;
   - in the engine at scan time, as a safety net for config from other sources (such as the CLI pulling from a hosted API). Errors are reported per rule and the scan returns a Partial outcome.
 - **Errors:** a missing required field (name, detection type, severity, pattern); an invalid regex; a pattern too large to compile (the `regex` crate's size limit); a threshold out of range (entropy outside 0–8 bits/char, scores outside 0–100); two rules in the same version with the same name.
 - **Warning, not an error:** a pattern that can match an empty string, which would flood results.
 - **No rules enabled:** the scan is blocked. The Scan button is disabled with "No rules enabled in this rule set version," because "clean" would be misleading.
+- **How a compile error reaches the user:**
+  - *While editing:* validate and save both run the engine's compile step. The error comes back keyed by rule id and field and is shown under the pattern input, with the bad spot underlined when the engine knows it. Save stays disabled, so an uncompilable rule cannot get into a saved version from the form.
+  - *At scan time:* a saved rule can still fail later (an engine update tightens a limit, or the CLI pulls a rule set the UI never validated). The engine skips that rule, runs the rest, and adds a rule error (rule id, field, code, message, and the byte span when known) to the scan result. The API returns these as `ruleErrors` with the findings and saves every one of those fields with the inspection, so a reopened session can still point at the exact field. The UI shows the Partial outcome with a warning naming each broken rule and its error, on the live inspection and when reopening the session. The CLI (later) prints the rule errors and exits with a distinct code, so CI cannot treat the scan as clean.
+  - *Acting on it:* the Partial warning links straight to that rule in the rule set version control UI, with the form open on the error. Fixing it saves a new rule set version; the user then starts a new inspection to rescan.
 - Rust's `regex` crate runs in linear time, so catastrophic backtracking cannot happen. Size limits still apply to patterns and inputs.
 
 **Scan results**
@@ -193,3 +199,4 @@ A list of known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) is set onc
 4. **File or repository scanning:** this becomes the most likely MVP point to tackle next.
 5. **WASM in the browser:** it has use cases, like building a local pre-check model, but it is large and specialized. I think the better solution is a real local application anyway, and I really dislike this whole concept being in a browser.
 6. **Auth and multiple users:** these go with the hosted API.
+7. **Compiled-rule caching:** rule set versions never change once saved, so the compiled rules could be cached per version instead of recompiled on every scan. That's an optimization, not a requirement for the POC, but likely needed for a production app.
