@@ -9,7 +9,9 @@ async fn a_new_rule_is_stored_as_a_draft_with_an_empty_definition() {
 
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(rule["drafting"], true);
-    assert_eq!(rule["definition"], json!({}));
+    // Stored in the engine's canonical shape: every field present, unset ones null.
+    assert_eq!(rule["definition"]["name"], json!(null));
+    assert_eq!(rule["definition"]["pattern"], json!(null));
     assert_eq!(rule["versionIds"], json!([]));
 
     let (_, rules) = send(&app, "GET", "/api/rules", None).await;
@@ -83,7 +85,7 @@ async fn check_reports_errors_and_warnings_without_saving() {
     assert_eq!(check["warnings"][0]["code"], "matches_empty");
 
     let (_, rule) = send(&app, "GET", &format!("/api/rules/{id}"), None).await;
-    assert_eq!(rule["definition"], json!({}));
+    assert_eq!(rule["definition"]["pattern"], json!(null));
 }
 
 #[tokio::test]
@@ -104,7 +106,7 @@ async fn only_a_rule_in_no_version_can_be_deleted() {
 }
 
 #[tokio::test]
-async fn a_definition_must_be_an_object() {
+async fn a_definition_must_fit_the_rule_shape() {
     let app = app();
     let (status, _) = send(
         &app,
@@ -113,5 +115,15 @@ async fn a_definition_must_be_an_object() {
         Some(json!({ "definition": [] })),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/rules",
+        Some(json!({ "definition": { "nmae": "Typo" } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body["error"].as_str().unwrap().contains("nmae"));
 }

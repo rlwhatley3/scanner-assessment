@@ -47,11 +47,8 @@ pub async fn send(
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("body should read");
-    let body = if bytes.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&bytes).expect("body should be JSON")
-    };
+    // Axum's own rejections (e.g. a malformed body) are plain text, so read those as null.
+    let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, body)
 }
 

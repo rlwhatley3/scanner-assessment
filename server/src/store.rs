@@ -28,19 +28,20 @@ impl From<rusqlite::Error> for StoreError {
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
-#[derive(Serialize, schemars::JsonSchema)]
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RuleRecord {
     pub id: i64,
     /// True until the rule is added into a rule set version. Drafts are not validated.
     pub drafting: bool,
     /// The rule's current definition. Saved versions keep their own snapshots.
+    #[schema(value_type = Object)]
     pub definition: Value,
     pub created_at: String,
     pub updated_at: String,
 }
 
-#[derive(Serialize, schemars::JsonSchema)]
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RuleSetVersionSummary {
     pub id: i64,
@@ -49,11 +50,13 @@ pub struct RuleSetVersionSummary {
     /// Archived versions are hidden from the timeline and can't start new scan sessions.
     pub archived: bool,
     pub rule_count: i64,
+    /// Scan sessions started on this version.
+    pub scan_session_count: i64,
     pub created_at: String,
     pub updated_at: String,
 }
 
-#[derive(Serialize, schemars::JsonSchema)]
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RuleSetVersionRecord {
     #[serde(flatten)]
@@ -61,15 +64,16 @@ pub struct RuleSetVersionRecord {
     pub rules: Vec<VersionRule>,
 }
 
-#[derive(Serialize, schemars::JsonSchema)]
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct VersionRule {
     pub rule_id: i64,
     /// The rule's definition as it was when added to this version. This is what scans use.
+    #[schema(value_type = Object)]
     pub definition: Value,
 }
 
-#[derive(Serialize, schemars::JsonSchema)]
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanSessionSummary {
     pub id: i64,
@@ -81,7 +85,7 @@ pub struct ScanSessionSummary {
     pub updated_at: String,
 }
 
-#[derive(Serialize, schemars::JsonSchema)]
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanSessionRecord {
     #[serde(flatten)]
@@ -89,7 +93,7 @@ pub struct ScanSessionRecord {
     pub scans: Vec<ScanSummary>,
 }
 
-#[derive(Serialize, schemars::JsonSchema)]
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanSummary {
     pub id: i64,
@@ -246,7 +250,8 @@ pub fn check_rules(connection: &Connection, rule_ids: &[i64]) -> StoreResult<Rul
 // Rule set versions
 
 const VERSION_COLUMNS: &str = "v.id, v.parent_id, v.archived, v.created_at, v.updated_at,
-    (SELECT COUNT(*) FROM rule_set_version_rules r WHERE r.rule_set_version_id = v.id)";
+    (SELECT COUNT(*) FROM rule_set_version_rules r WHERE r.rule_set_version_id = v.id),
+    (SELECT COUNT(*) FROM scan_sessions s WHERE s.rule_set_version_id = v.id)";
 
 fn version_summary(row: &Row) -> rusqlite::Result<RuleSetVersionSummary> {
     Ok(RuleSetVersionSummary {
@@ -256,6 +261,7 @@ fn version_summary(row: &Row) -> rusqlite::Result<RuleSetVersionSummary> {
         created_at: row.get(3)?,
         updated_at: row.get(4)?,
         rule_count: row.get(5)?,
+        scan_session_count: row.get(6)?,
     })
 }
 

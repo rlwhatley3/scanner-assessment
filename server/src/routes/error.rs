@@ -1,22 +1,23 @@
-use crate::validation::RuleError;
+use crate::store::StoreError;
 use axum::{
     Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use secrets_scanner_engine::RuleError;
 
 /// The JSON body of every error response.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct ErrorBody {
     pub error: String,
-    /// Per-rule problems, when the request failed validation.
+    /// Per-rule problems from the engine's checks, when the request failed them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[schema(value_type = Vec<Object>)]
     pub errors: Vec<RuleError>,
 }
 
 #[derive(Debug)]
 pub enum ApiError {
-    BadRequest(String),
     NotFound(String),
     Conflict(String),
     Invalid {
@@ -43,10 +44,26 @@ impl From<rusqlite::Error> for ApiError {
     }
 }
 
+/// The default mapping. Routes override it where the HTTP meaning differs, e.g. an id named in
+/// the request body that doesn't exist is a 422, not a 404.
+impl From<StoreError> for ApiError {
+    fn from(error: StoreError) -> Self {
+        match error {
+            StoreError::NotFound(message) => Self::NotFound(message),
+            StoreError::Invalid(message) => Self::invalid(message),
+            StoreError::RulesInvalid(check) => Self::Invalid {
+                message: "Some rules have errors. Fix them, then save the version again."
+                    .to_owned(),
+                errors: check.errors,
+            },
+            StoreError::Database(error) => error.into(),
+        }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message, errors) = match self {
-            Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message, Vec::new()),
             Self::NotFound(message) => (StatusCode::NOT_FOUND, message, Vec::new()),
             Self::Conflict(message) => (StatusCode::CONFLICT, message, Vec::new()),
             Self::Invalid { message, errors } => {
@@ -67,19 +84,4 @@ impl IntoResponse for ApiError {
         )
             .into_response()
     }
-}
-
-/// Reads a JSON text column, failing the row if it does not parse.
-pub fn json_column<T: serde::de::DeserializeOwned>(
-    row: &rusqlite::Row,
-    index: usize,
-) -> rusqlite::Result<T> {
-    let text: String = row.get(index)?;
-    serde_json::from_str(&text).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(
-            index,
-            rusqlite::types::Type::Text,
-            Box::new(error),
-        )
-    })
 }

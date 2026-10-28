@@ -32,7 +32,7 @@ pub struct ScanResponse {
     truncated: bool,
     /// True when at least one rule could not run.
     partial: bool,
-    findings: Vec<FindingResponse>,
+    pub findings: Vec<FindingResponse>,
 }
 
 #[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]

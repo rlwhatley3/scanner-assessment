@@ -6,7 +6,7 @@ use serde_json::json;
 async fn saving_a_version_snapshots_rules_and_clears_drafting() {
     let app = app();
     let id = create_rule(&app, valid_definition("AWS key")).await;
-    let version = create_version(&app, &[id, id]).await;
+    let version = create_version(&app, &[id]).await;
 
     let (_, rule) = send(&app, "GET", &format!("/api/rules/{id}"), None).await;
     assert_eq!(rule["drafting"], false);
@@ -77,6 +77,21 @@ async fn two_rules_in_a_version_cannot_share_a_name() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["errors"][0]["code"], "duplicate_name");
     assert_eq!(body["errors"][0]["ruleId"], second);
+}
+
+#[tokio::test]
+async fn a_version_rejects_a_rule_listed_twice() {
+    let app = app();
+    let id = create_rule(&app, valid_definition("AWS key")).await;
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/rule-set-versions",
+        Some(json!({ "ruleIds": [id, id] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body["error"].as_str().unwrap().contains("more than once"));
 }
 
 #[tokio::test]

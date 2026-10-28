@@ -146,6 +146,10 @@ export interface ScanSession {
 export interface StoredScan {
   id: number;
   truncated: boolean;
+  /** True when at least one rule could not run. */
+  partial: boolean;
+  /** Matches only; rule errors are counted by `partial`. */
+  matchCount: number;
   createdAt: string;
   findings: SavedFinding[];
 }
@@ -248,7 +252,7 @@ export const listSessions = () => request<ScanSession[]>("GET", "/api/scan-sessi
 export const getSession = (id: number) =>
   request<ScanSessionDetail>("GET", `/api/scan-sessions/${id}`);
 export const createSession = (ruleSetVersionId: number) =>
-  request<ScanSessionDetail>("POST", "/api/scan-sessions", {
+  request<ScanSession>("POST", "/api/scan-sessions", {
     ruleSetVersionId,
   });
 

@@ -3,7 +3,6 @@ pub mod mcp;
 pub mod routes;
 pub mod seed;
 pub mod store;
-pub mod validation;
 
 use routes::{health, rule_set_versions, rules, scan_sessions, scans};
 
