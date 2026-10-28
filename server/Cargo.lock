@@ -603,10 +603,13 @@ name = "secrets-scanner-api"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "http-body-util",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "utoipa",
  "utoipa-swagger-ui",
 ]
