@@ -48,13 +48,299 @@
         "name": "Whiteboard",
         "typeName": "page"
       },
-      "shape:1Qn6VWBrbJF_wl9gdfLsh": {
-        "id": "shape:1Qn6VWBrbJF_wl9gdfLsh",
-        "index": "a2",
+      "shape:0QGxe7zpwQTt_Y2hWgs3J": {
+        "id": "shape:0QGxe7zpwQTt_Y2hWgs3J",
+        "index": "a6",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": 84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "text + rules",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 461,
+        "y": 106
+      },
+      "shape:1LGFSJEkf3UarYG9trAyX": {
+        "id": "shape:1LGFSJEkf3UarYG9trAyX",
+        "index": "aA",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
         "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the API does",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Same path as use case 1",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Saves the outcome so a past session can be reopened",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• A reopened session shows the list, not the text",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 262,
+        "y": 194
+      },
+      "shape:26kHn40mE13Uc01eWj8qJ": {
+        "id": "shape:26kHn40mE13Uc01eWj8qJ",
+        "index": "a6",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": 84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "check",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 461,
+        "y": 106
+      },
+      "shape:3GHvkDjONO0BPPelg7aud": {
+        "id": "shape:3GHvkDjONO0BPPelg7aud",
+        "index": "aB",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the engine does",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Tries to compile each pattern",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Checks required fields and allowed ranges",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Reports each problem against the exact rule and field",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 508,
+        "y": 194
+      },
+      "shape:4ll5Vf7IiX3Z32BpzoSVA": {
+        "id": "shape:4ll5Vf7IiX3Z32BpzoSVA",
+        "index": "a8",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": -84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "scores",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 299,
+        "y": 154
+      },
+      "shape:5X43_VRmXAkrIz3dk0clb": {
+        "id": "shape:5X43_VRmXAkrIz3dk0clb",
+        "index": "a2",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
         "props": {
           "align": "middle",
           "color": "black",
@@ -91,33 +377,37 @@
         "type": "geo",
         "typeName": "shape",
         "x": 59,
-        "y": 90
+        "y": 84
       },
-      "shape:1_-Cm9edpndNMQlPnQ2zO": {
-        "id": "shape:1_-Cm9edpndNMQlPnQ2zO",
-        "index": "a4",
+      "shape:6bvEXgMy_ppvBosZTKzaT": {
+        "id": "shape:6bvEXgMy_ppvBosZTKzaT",
+        "index": "a8",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
         "props": {
-          "align": "middle",
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
           "color": "black",
           "dash": "draw",
-          "fill": "solid",
-          "flipX": false,
-          "flipY": false,
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": -84,
+            "y": 0
+          },
+          "fill": "none",
           "font": "sans",
-          "geo": "rectangle",
-          "growY": 0,
-          "h": 90,
+          "kind": "arc",
           "labelColor": "black",
+          "labelPosition": 0.5,
           "richText": {
             "content": [
               {
                 "content": [
                   {
-                    "text": "Engine",
+                    "text": "result",
                     "type": "text"
                   }
                 ],
@@ -128,18 +418,88 @@
           },
           "scale": 1,
           "size": "s",
-          "url": "",
-          "verticalAlign": "middle",
-          "w": 150
+          "start": {
+            "x": 0,
+            "y": 0
+          }
         },
         "rotation": 0,
-        "type": "geo",
+        "type": "arrow",
         "typeName": "shape",
-        "x": 551,
-        "y": 90
+        "x": 299,
+        "y": 154
       },
-      "shape:1rTEnZRRvq5wgLlp3WTXP": {
-        "id": "shape:1rTEnZRRvq5wgLlp3WTXP",
+      "shape:7LYoIHkRN9QqHRIhQ2Ox5": {
+        "id": "shape:7LYoIHkRN9QqHRIhQ2Ox5",
+        "index": "a5",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": 84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "edits",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 215,
+        "y": 106
+      },
+      "shape:82djAWLEKpcGOB3tG1KcM": {
+        "id": "shape:82djAWLEKpcGOB3tG1KcM",
+        "index": "a7DNn",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "page:page",
+        "props": {
+          "color": "violet",
+          "h": 622,
+          "name": "USE CASE 3  -  Configure a detection rule",
+          "w": 760
+        },
+        "rotation": 0,
+        "type": "frame",
+        "typeName": "shape",
+        "x": 221.40625,
+        "y": 880
+      },
+      "shape:A52CdH69Jfax6OuGOAx7d": {
+        "id": "shape:A52CdH69Jfax6OuGOAx7d",
         "index": "a7",
         "isLocked": false,
         "meta": {},
@@ -186,65 +546,15 @@
         "type": "arrow",
         "typeName": "shape",
         "x": 545,
-        "y": 160
+        "y": 154
       },
-      "shape:1uz-8SEvaCxB2aEPzU6mM": {
-        "id": "shape:1uz-8SEvaCxB2aEPzU6mM",
-        "index": "a6",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": 84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "text + rules",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 461,
-        "y": 112
-      },
-      "shape:2h4TMLQxydl4WKjHXKZEz": {
-        "id": "shape:2h4TMLQxydl4WKjHXKZEz",
+      "shape:AhwTGqTezCwB_y8l_yabl": {
+        "id": "shape:AhwTGqTezCwB_y8l_yabl",
         "index": "a5",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
         "props": {
           "arrowheadEnd": "arrow",
           "arrowheadStart": "none",
@@ -286,11 +596,11 @@
         "type": "arrow",
         "typeName": "shape",
         "x": 215,
-        "y": 112
+        "y": 106
       },
-      "shape:3jiUbGAMUGMk1JH6FdkYm": {
-        "id": "shape:3jiUbGAMUGMk1JH6FdkYm",
-        "index": "aB",
+      "shape:BuZ6Hq8C9GvzxknmBkdkS": {
+        "id": "shape:BuZ6Hq8C9GvzxknmBkdkS",
+        "index": "a9",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
@@ -304,7 +614,12 @@
               {
                 "content": [
                   {
-                    "text": "• Checks match against rule set placeholder list (YOUR_KEY_HERE, changeme…)",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the engineer sees",
                     "type": "text"
                   }
                 ],
@@ -313,7 +628,7 @@
               {
                 "content": [
                   {
-                    "text": "• Signals: entropy, key name, placeholder hit",
+                    "text": "• Every finding shows a 0–100 score: looks like an example, or looks real",
                     "type": "text"
                   }
                 ],
@@ -322,7 +637,7 @@
               {
                 "content": [
                   {
-                    "text": "• Placeholder vs. real score, 0–100",
+                    "text": "• A plain reason, e.g. \"matches a known placeholder\" or \"very random\"",
                     "type": "text"
                   }
                 ],
@@ -331,7 +646,7 @@
               {
                 "content": [
                   {
-                    "text": "• Why-flagged note from signals only",
+                    "text": "• Examples are still listed, never silently hidden",
                     "type": "text"
                   }
                 ],
@@ -348,11 +663,160 @@
         "rotation": 0,
         "type": "text",
         "typeName": "shape",
-        "x": 508,
-        "y": 200
+        "x": 16,
+        "y": 194
       },
-      "shape:43I38jCXQBTxHUp4AZMTs": {
-        "id": "shape:43I38jCXQBTxHUp4AZMTs",
+      "shape:CT6pz1MCXZ-at6-gkEoiQ": {
+        "id": "shape:CT6pz1MCXZ-at6-gkEoiQ",
+        "index": "a1",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "The ask:",
+                    "type": "text"
+                  },
+                  {
+                    "text": " an engineer edits detection rules, then enters a malformed rule. Show how they recover without losing their input.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 728
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 16
+      },
+      "shape:DE1L8Pc7P5YSQmi5kI4zo": {
+        "id": "shape:DE1L8Pc7P5YSQmi5kI4zo",
+        "index": "aC",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "Why this answers it:",
+                    "type": "text"
+                  },
+                  {
+                    "text": " zero results is a confident, explained \"clean\"; many or overlapping results stay readable, and each one says where it is, what it is, and what to do next.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Open: does the engine or the UI group overlapping ranges?",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 728
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 602
+      },
+      "shape:DZlSnbFq4KlFKS97uobW7": {
+        "id": "shape:DZlSnbFq4KlFKS97uobW7",
+        "index": "a7",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": -84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "findings",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 545,
+        "y": 154
+      },
+      "shape:FcZLRrEye_9kAS_wAh19f": {
+        "id": "shape:FcZLRrEye_9kAS_wAh19f",
         "index": "a4",
         "isLocked": false,
         "meta": {},
@@ -394,184 +858,15 @@
         "type": "geo",
         "typeName": "shape",
         "x": 551,
-        "y": 90
+        "y": 84
       },
-      "shape:4zlkhksjIoAk-ZoEr5K3k": {
-        "id": "shape:4zlkhksjIoAk-ZoEr5K3k",
-        "index": "a6",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": 84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "text + rules",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 461,
-        "y": 112
-      },
-      "shape:6jCj_wxkDFguIINjfAbDP": {
-        "id": "shape:6jCj_wxkDFguIINjfAbDP",
-        "index": "a5",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": 84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "text + rule set",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 215,
-        "y": 112
-      },
-      "shape:71EYWtHeT8-Xs4OBOdRd3": {
-        "id": "shape:71EYWtHeT8-Xs4OBOdRd3",
-        "index": "a5",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": 84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "rule draft",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 215,
-        "y": 112
-      },
-      "shape:82djAWLEKpcGOB3tG1KcM": {
-        "id": "shape:82djAWLEKpcGOB3tG1KcM",
-        "index": "a7DNn",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "page:page",
-        "props": {
-          "color": "violet",
-          "h": 540,
-          "name": "USE CASE 3  -  Configure a detection rule",
-          "w": 760
-        },
-        "rotation": 0,
-        "type": "frame",
-        "typeName": "shape",
-        "x": 221.40625,
-        "y": 760
-      },
-      "shape:9BkAcYmNZnKps1a3v-tiX": {
-        "id": "shape:9BkAcYmNZnKps1a3v-tiX",
+      "shape:FkdwPY82pojCvI7sTX7N3": {
+        "id": "shape:FkdwPY82pojCvI7sTX7N3",
         "index": "a1",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
         "props": {
           "autoSize": false,
           "color": "black",
@@ -581,7 +876,16 @@
               {
                 "content": [
                   {
-                    "text": "An engineer edits detection rules, then enters a malformed rule. How they recover without losing their input:",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "The ask:",
+                    "type": "text"
+                  },
+                  {
+                    "text": " a credential-looking value appears in documentation or a test fixture. How should the product help distinguish an example from a real secret?",
                     "type": "text"
                   }
                 ],
@@ -601,31 +905,32 @@
         "x": 16,
         "y": 16
       },
-      "shape:9GPYyf9VWMnJ1m4zFjvDK": {
-        "id": "shape:9GPYyf9VWMnJ1m4zFjvDK",
-        "index": "a3",
+      "shape:IaATRjJ4pToEoKKzGB6oO": {
+        "id": "shape:IaATRjJ4pToEoKKzGB6oO",
+        "index": "aC",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
         "props": {
-          "align": "middle",
+          "autoSize": false,
           "color": "black",
-          "dash": "draw",
-          "fill": "solid",
-          "flipX": false,
-          "flipY": false,
           "font": "sans",
-          "geo": "rectangle",
-          "growY": 0,
-          "h": 90,
-          "labelColor": "black",
           "richText": {
             "content": [
               {
                 "content": [
                   {
-                    "text": "API",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "Why this answers it:",
+                    "type": "text"
+                  },
+                  {
+                    "text": " a malformed rule is pointed out at the field that's wrong, the engineer's edits are never lost (even on reload), and a broken rule can never be saved.",
                     "type": "text"
                   }
                 ],
@@ -636,23 +941,22 @@
           },
           "scale": 1,
           "size": "s",
-          "url": "",
-          "verticalAlign": "middle",
-          "w": 150
+          "textAlign": "start",
+          "w": 728
         },
         "rotation": 0,
-        "type": "geo",
+        "type": "text",
         "typeName": "shape",
-        "x": 305,
-        "y": 90
+        "x": 16,
+        "y": 530
       },
-      "shape:A9YFoRnk3REmT8IJz7Sbi": {
-        "id": "shape:A9YFoRnk3REmT8IJz7Sbi",
-        "index": "aB",
+      "shape:K7A-Zkb_lgDRD0IctN-yc": {
+        "id": "shape:K7A-Zkb_lgDRD0IctN-yc",
+        "index": "aA",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
         "props": {
           "autoSize": false,
           "color": "black",
@@ -662,7 +966,12 @@
               {
                 "content": [
                   {
-                    "text": "• One finding per occurrence",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the API does",
                     "type": "text"
                   }
                 ],
@@ -671,7 +980,7 @@
               {
                 "content": [
                   {
-                    "text": "• Byte offsets + line/col per finding",
+                    "text": "• Same path as use case 1",
                     "type": "text"
                   }
                 ],
@@ -680,7 +989,7 @@
               {
                 "content": [
                   {
-                    "text": "• Returns every overlapping match",
+                    "text": "• Saves the score and the reason with the results",
                     "type": "text"
                   }
                 ],
@@ -689,7 +998,7 @@
               {
                 "content": [
                   {
-                    "text": "• Caps at 1,000; flags truncated",
+                    "text": "• Never saves the value itself",
                     "type": "text"
                   }
                 ],
@@ -706,16 +1015,16 @@
         "rotation": 0,
         "type": "text",
         "typeName": "shape",
-        "x": 508,
-        "y": 200
+        "x": 262,
+        "y": 194
       },
-      "shape:AzjuJfrW6LL-llDzAIqHY": {
-        "id": "shape:AzjuJfrW6LL-llDzAIqHY",
-        "index": "a8",
+      "shape:KVNFb0nQ6hrLUeQktcDgb": {
+        "id": "shape:KVNFb0nQ6hrLUeQktcDgb",
+        "index": "a7",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
         "props": {
           "arrowheadEnd": "arrow",
           "arrowheadStart": "none",
@@ -737,7 +1046,7 @@
               {
                 "content": [
                   {
-                    "text": "errors / vN",
+                    "text": "findings",
                     "type": "text"
                   }
                 ],
@@ -756,16 +1065,16 @@
         "rotation": 0,
         "type": "arrow",
         "typeName": "shape",
-        "x": 299,
-        "y": 160
+        "x": 545,
+        "y": 154
       },
-      "shape:BvM0GlqBYj9qcYre5ezNe": {
-        "id": "shape:BvM0GlqBYj9qcYre5ezNe",
-        "index": "aC",
+      "shape:KmWsLsutpB79EKrzgHwZk": {
+        "id": "shape:KmWsLsutpB79EKrzgHwZk",
+        "index": "aA",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
         "props": {
           "autoSize": false,
           "color": "black",
@@ -775,43 +1084,12 @@
               {
                 "content": [
                   {
-                    "text": "No dismiss or suppress in POC: the score informs, the user decides.",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 728
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 424
-      },
-      "shape:CkoHo2tivNIuYvHWtPTDD": {
-        "id": "shape:CkoHo2tivNIuYvHWtPTDD",
-        "index": "a9",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Zero: \"Nothing relevant found\" + rule set version used",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the API does",
                     "type": "text"
                   }
                 ],
@@ -820,7 +1098,7 @@
               {
                 "content": [
                   {
-                    "text": "• No rules enabled: scan blocked, never \"clean\"",
+                    "text": "• Checks the input: not empty, under 1 MB",
                     "type": "text"
                   }
                 ],
@@ -829,7 +1107,7 @@
               {
                 "content": [
                   {
-                    "text": "• Partial: findings + broken rules named",
+                    "text": "• Never writes the pasted text to logs or disk",
                     "type": "text"
                   }
                 ],
@@ -838,7 +1116,7 @@
               {
                 "content": [
                   {
-                    "text": "• Overlap: one purple highlight; click shows all",
+                    "text": "• Hands the text to the engine",
                     "type": "text"
                   }
                 ],
@@ -847,16 +1125,7 @@
               {
                 "content": [
                   {
-                    "text": "• List by position; sort by severity",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Over 1,000: truncated notice",
+                    "text": "• Saves only the results: which rules matched, and where",
                     "type": "text"
                   }
                 ],
@@ -873,16 +1142,16 @@
         "rotation": 0,
         "type": "text",
         "typeName": "shape",
-        "x": 16,
-        "y": 200
+        "x": 262,
+        "y": 194
       },
-      "shape:E15yzjCMD6bjBtgXQ2Rap": {
-        "id": "shape:E15yzjCMD6bjBtgXQ2Rap",
-        "index": "a3",
+      "shape:LBKTOmuXq03mvD5buo0mh": {
+        "id": "shape:LBKTOmuXq03mvD5buo0mh",
+        "index": "a2",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
         "props": {
           "align": "middle",
           "color": "black",
@@ -900,7 +1169,7 @@
               {
                 "content": [
                   {
-                    "text": "API",
+                    "text": "UI",
                     "type": "text"
                   }
                 ],
@@ -918,11 +1187,183 @@
         "rotation": 0,
         "type": "geo",
         "typeName": "shape",
-        "x": 305,
-        "y": 90
+        "x": 59,
+        "y": 84
       },
-      "shape:HX3P6OOZ5An2IL5ne6W0a": {
-        "id": "shape:HX3P6OOZ5An2IL5ne6W0a",
+      "shape:MJpkWZDJNR7G3Xx36mD7n": {
+        "id": "shape:MJpkWZDJNR7G3Xx36mD7n",
+        "index": "a9",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the engineer does",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Starts a new inspection and pastes the file",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Clicks Scan (can cancel within 5 s)",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Sees each finding highlighted in the text, colored by severity",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Clicks a highlight to see what was found and how to fix it",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• If anything fails, the pasted text stays put",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 194
+      },
+      "shape:MPtxeY90jqyMQEhUQAQh8": {
+        "id": "shape:MPtxeY90jqyMQEhUQAQh8",
+        "index": "a9",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the engineer sees",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• No findings: a clear \"Nothing relevant found\" and which rule set was used",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• No rules turned on: Scan is blocked, so \"clean\" is never misleading",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Overlapping matches: one purple highlight; click to see each one",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Findings listed top to bottom; can sort by severity",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Each finding says where, what, why, and how to fix it",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 194
+      },
+      "shape:NFk_qkPwnlKUl0MmQpvMT": {
+        "id": "shape:NFk_qkPwnlKUl0MmQpvMT",
         "index": "a7",
         "isLocked": false,
         "meta": {},
@@ -969,768 +1410,10 @@
         "type": "arrow",
         "typeName": "shape",
         "x": 545,
-        "y": 160
+        "y": 154
       },
-      "shape:IoCykFLUb8uvsHdppT5sR": {
-        "id": "shape:IoCykFLUb8uvsHdppT5sR",
-        "index": "a5",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": 84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "text + rule set",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 215,
-        "y": 112
-      },
-      "shape:LEZi70B43BwkvAgnV0Njl": {
-        "id": "shape:LEZi70B43BwkvAgnV0Njl",
-        "index": "a2",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
-        "props": {
-          "align": "middle",
-          "color": "black",
-          "dash": "draw",
-          "fill": "solid",
-          "flipX": false,
-          "flipY": false,
-          "font": "sans",
-          "geo": "rectangle",
-          "growY": 0,
-          "h": 90,
-          "labelColor": "black",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "UI",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "url": "",
-          "verticalAlign": "middle",
-          "w": 150
-        },
-        "rotation": 0,
-        "type": "geo",
-        "typeName": "shape",
-        "x": 59,
-        "y": 90
-      },
-      "shape:M_92qelovv6OeXx51EkXf": {
-        "id": "shape:M_92qelovv6OeXx51EkXf",
-        "index": "aA",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Rejects empty or > 1 MB",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• New log id per scan",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Never logs request text",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Calls engine in-process",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Saves inspection: rules, locations, scores; no text",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 262,
-        "y": 200
-      },
-      "shape:Ml2YXoGC0wIg4rkFNklQ3": {
-        "id": "shape:Ml2YXoGC0wIg4rkFNklQ3",
-        "index": "aB",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Compiles pattern (regex crate, size limit)",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Checks required fields and ranges (entropy 0–8)",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Checks duplicate names in the version",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Returns errors keyed by rule id + field",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 508,
-        "y": 200
-      },
-      "shape:N2CmgaoRxDCs41KIAH4_7": {
-        "id": "shape:N2CmgaoRxDCs41KIAH4_7",
-        "index": "aC",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "Each finding: location, rule, severity icon, scores, why flagged, remediation hint (next step).",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "Open: does the engine or the UI group overlapping ranges?",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 728
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 464
-      },
-      "shape:N45xEl3NVvwadUYkNMr2C": {
-        "id": "shape:N45xEl3NVvwadUYkNMr2C",
-        "index": "a9",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Form per rule: name, type, severity, pattern, prefix, key names, entropy, remediation",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Inline errors as you type (not on drafts)",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Save disabled while errors exist",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Input never cleared on error",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Warning (empty-match pattern) shown; save allowed",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 200
-      },
-      "shape:P2O2eh_vFttrlkBYwmCMG": {
-        "id": "shape:P2O2eh_vFttrlkBYwmCMG",
-        "index": "a3",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
-        "props": {
-          "align": "middle",
-          "color": "black",
-          "dash": "draw",
-          "fill": "solid",
-          "flipX": false,
-          "flipY": false,
-          "font": "sans",
-          "geo": "rectangle",
-          "growY": 0,
-          "h": 90,
-          "labelColor": "black",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "API",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "url": "",
-          "verticalAlign": "middle",
-          "w": 150
-        },
-        "rotation": 0,
-        "type": "geo",
-        "typeName": "shape",
-        "x": 305,
-        "y": 90
-      },
-      "shape:Qu_ukC4-lJamxSlVFEVYH": {
-        "id": "shape:Qu_ukC4-lJamxSlVFEVYH",
-        "index": "a2",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
-        "props": {
-          "align": "middle",
-          "color": "black",
-          "dash": "draw",
-          "fill": "solid",
-          "flipX": false,
-          "flipY": false,
-          "font": "sans",
-          "geo": "rectangle",
-          "growY": 0,
-          "h": 90,
-          "labelColor": "black",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "UI",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "url": "",
-          "verticalAlign": "middle",
-          "w": 150
-        },
-        "rotation": 0,
-        "type": "geo",
-        "typeName": "shape",
-        "x": 59,
-        "y": 90
-      },
-      "shape:R5XTrJ5COP7oBqpid1aZW": {
-        "id": "shape:R5XTrJ5COP7oBqpid1aZW",
-        "index": "aC",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "Saved versions are always valid; scan-time compile is a safety net (Partial).",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "Drafts (draft = true) live in the rule set working copy and survive reload.",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 728
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 464
-      },
-      "shape:T-6ozqw_GReT5LgZY6q0H": {
-        "id": "shape:T-6ozqw_GReT5LgZY6q0H",
-        "index": "a4",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
-        "props": {
-          "align": "middle",
-          "color": "black",
-          "dash": "draw",
-          "fill": "solid",
-          "flipX": false,
-          "flipY": false,
-          "font": "sans",
-          "geo": "rectangle",
-          "growY": 0,
-          "h": 90,
-          "labelColor": "black",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "Engine",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "url": "",
-          "verticalAlign": "middle",
-          "w": 150
-        },
-        "rotation": 0,
-        "type": "geo",
-        "typeName": "shape",
-        "x": 551,
-        "y": 90
-      },
-      "shape:Xc0ykavvgFF1SVwuQCnXx": {
-        "id": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "index": "a5Wl6",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "page:page",
-        "props": {
-          "color": "blue",
-          "h": 500,
-          "name": "USE CASE 1  -  Scan a source file",
-          "w": 760
-        },
-        "rotation": 0,
-        "type": "frame",
-        "typeName": "shape",
-        "x": 262.7421875,
-        "y": 198
-      },
-      "shape:Zz62UhMS125IFe43LrQRa": {
-        "id": "shape:Zz62UhMS125IFe43LrQRa",
-        "index": "aC",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "Outcomes: Findings · Clean · Partial · Cancelled · Error",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "Never stored: text, matched values, input hash. Loopback only.",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 728
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 424
-      },
-      "shape:cTDMmHYaHvZhljjY4fp7C": {
-        "id": "shape:cTDMmHYaHvZhljjY4fp7C",
-        "index": "aA",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Same scan path as use case 1",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Saves inspection: outcome, truncated flag, findings",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Past session: findings list only, no text",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 262,
-        "y": 200
-      },
-      "shape:eDifOjc5_1SbRVXsxJKSJ": {
-        "id": "shape:eDifOjc5_1SbRVXsxJKSJ",
-        "index": "a6",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": 84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "text + rules",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 461,
-        "y": 112
-      },
-      "shape:eXedIQ3U6D_7mpICtT3LM": {
-        "id": "shape:eXedIQ3U6D_7mpICtT3LM",
-        "index": "aB",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Compiles rules; bad rule → rule error (Partial)",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Matches: byte offsets + line/col",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Scores confidence + placeholder",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Log events: prefix preview only",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 508,
-        "y": 200
-      },
-      "shape:f2C8WTMnG9zZCPvPxwWMq": {
-        "id": "shape:f2C8WTMnG9zZCPvPxwWMq",
+      "shape:No2Z-PFLWEz-_iIsBonkd": {
+        "id": "shape:No2Z-PFLWEz-_iIsBonkd",
         "index": "a8",
         "isLocked": false,
         "meta": {},
@@ -1777,7 +1460,636 @@
         "type": "arrow",
         "typeName": "shape",
         "x": 299,
-        "y": 160
+        "y": 154
+      },
+      "shape:OlwGKfszlkDKPJWJGbjvK": {
+        "id": "shape:OlwGKfszlkDKPJWJGbjvK",
+        "index": "a3",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "API",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 305,
+        "y": 84
+      },
+      "shape:P_rsTYaheANTYU8EONeVB": {
+        "id": "shape:P_rsTYaheANTYU8EONeVB",
+        "index": "a4",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Engine",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 551,
+        "y": 84
+      },
+      "shape:ScO2XxdzHjbNmBPOxM6eF": {
+        "id": "shape:ScO2XxdzHjbNmBPOxM6eF",
+        "index": "a9",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the engineer does",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Edits rules in a form, one field at a time",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• New rules start as drafts and aren't checked until applied",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Other rules show mistakes next to the exact field as they type",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Nothing they typed is ever cleared by an error",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Save stays off until every problem is fixed",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 194
+      },
+      "shape:UI9B2uOXU8Rxq2t9rXydH": {
+        "id": "shape:UI9B2uOXU8Rxq2t9rXydH",
+        "index": "aC",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "Why this answers it:",
+                    "type": "text"
+                  },
+                  {
+                    "text": " the engineer can tell at a glance which matches are probably harmless examples and why, so their attention goes to the real ones. Nothing is auto-dismissed in the POC.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 728
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 434
+      },
+      "shape:Xc0ykavvgFF1SVwuQCnXx": {
+        "id": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "index": "a5Wl6",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "page:page",
+        "props": {
+          "color": "blue",
+          "h": 622,
+          "name": "USE CASE 1  -  Scan a source file",
+          "w": 760
+        },
+        "rotation": 0,
+        "type": "frame",
+        "typeName": "shape",
+        "x": 262.7421875,
+        "y": 198
+      },
+      "shape:Y6c6jEFqPrFicMIZ6DbJW": {
+        "id": "shape:Y6c6jEFqPrFicMIZ6DbJW",
+        "index": "aC",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "Why this answers it:",
+                    "type": "text"
+                  },
+                  {
+                    "text": " the engineer goes from paste, to a highlighted finding, to a fix hint on one screen, and the credential is never saved or sent off the machine.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 728
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 530
+      },
+      "shape:ZIbuja_HKDdJ23YRabIxX": {
+        "id": "shape:ZIbuja_HKDdJ23YRabIxX",
+        "index": "aB",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the engine does",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Reports every match, overlaps included",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Gives each one an exact line and column",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Stops at 1,000 and says the list was cut short",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Lists any rules that failed to run",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 508,
+        "y": 194
+      },
+      "shape:_C9w-brthpa4BP0NvD2r6": {
+        "id": "shape:_C9w-brthpa4BP0NvD2r6",
+        "index": "a1",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "The ask:",
+                    "type": "text"
+                  },
+                  {
+                    "text": " a scan has no findings or returns overlapping matches. Design how users understand locations, context, and next steps.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 728
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 16,
+        "y": 16
+      },
+      "shape:aqQd1c2CkjpM42UsKCxBu": {
+        "id": "shape:aqQd1c2CkjpM42UsKCxBu",
+        "index": "a6",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": 84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "text + rules",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 461,
+        "y": 106
+      },
+      "shape:ctr-Y5STEqpiB2Eol1YkU": {
+        "id": "shape:ctr-Y5STEqpiB2Eol1YkU",
+        "index": "a8",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": -84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "outcome",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 299,
+        "y": 154
+      },
+      "shape:dA7uXpKOSeDufZZvE_i_y": {
+        "id": "shape:dA7uXpKOSeDufZZvE_i_y",
+        "index": "a3",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "API",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 305,
+        "y": 84
+      },
+      "shape:dXc5Kf4XMbDkdyQbB3fg4": {
+        "id": "shape:dXc5Kf4XMbDkdyQbB3fg4",
+        "index": "aB",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the engine does",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Runs every rule against the text",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Records the exact line and column of each match",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Scores how likely each match is real",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Skips and reports a broken rule instead of failing the scan",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 508,
+        "y": 194
       },
       "shape:fARVp82yGkvwK4s6WQFKe": {
         "id": "shape:fARVp82yGkvwK4s6WQFKe",
@@ -1944,13 +2256,158 @@
         "x": 320,
         "y": -400
       },
-      "shape:gjhD987mbAm1_DlRJXBg0": {
-        "id": "shape:gjhD987mbAm1_DlRJXBg0",
-        "index": "a1",
+      "shape:fKnB_S-2eqlroeL9DDzGv": {
+        "id": "shape:fKnB_S-2eqlroeL9DDzGv",
+        "index": "a5",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": 84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "text + rule set",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 215,
+        "y": 106
+      },
+      "shape:hOh7d-_qCGSZ2A_nbHlwG": {
+        "id": "shape:hOh7d-_qCGSZ2A_nbHlwG",
+        "index": "a2",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "UI",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 59,
+        "y": 84
+      },
+      "shape:m9Gzxnf764krj0H-U1o_S": {
+        "id": "shape:m9Gzxnf764krj0H-U1o_S",
+        "index": "a6",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
         "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "props": {
+          "arrowheadEnd": "arrow",
+          "arrowheadStart": "none",
+          "bend": 0,
+          "color": "black",
+          "dash": "draw",
+          "elbowMidPoint": 0.5,
+          "end": {
+            "x": 84,
+            "y": 0
+          },
+          "fill": "none",
+          "font": "sans",
+          "kind": "arc",
+          "labelColor": "black",
+          "labelPosition": 0.5,
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "text + rules",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "start": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "rotation": 0,
+        "type": "arrow",
+        "typeName": "shape",
+        "x": 461,
+        "y": 106
+      },
+      "shape:ndMF6WfEqnl5ecfpNvTwS": {
+        "id": "shape:ndMF6WfEqnl5ecfpNvTwS",
+        "index": "a1",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
         "props": {
           "autoSize": false,
           "color": "black",
@@ -1960,7 +2417,16 @@
               {
                 "content": [
                   {
-                    "text": "A credential-looking value appears in documentation or a test fixture. How the product helps distinguish an example from a real secret:",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "The ask:",
+                    "type": "text"
+                  },
+                  {
+                    "text": " an engineer pastes a configuration file that may contain a live credential. Map the path from input to reviewing a finding.",
                     "type": "text"
                   }
                 ],
@@ -1980,8 +2446,298 @@
         "x": 16,
         "y": 16
       },
-      "shape:h2Bt9ycRnMJONCO8wT5Zy": {
-        "id": "shape:h2Bt9ycRnMJONCO8wT5Zy",
+      "shape:nkMu0AXSJWXBL8_yz9hPM": {
+        "id": "shape:nkMu0AXSJWXBL8_yz9hPM",
+        "index": "a3",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "API",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 305,
+        "y": 84
+      },
+      "shape:o_N1lunXfKXLfOpjheZ7O": {
+        "id": "shape:o_N1lunXfKXLfOpjheZ7O",
+        "index": "a2",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "UI",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 59,
+        "y": 84
+      },
+      "shape:ohojdEFeacKNU76xzaHKS": {
+        "id": "shape:ohojdEFeacKNU76xzaHKS",
+        "index": "a8Gs2",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "page:page",
+        "props": {
+          "color": "green",
+          "h": 718,
+          "name": "USE CASE 4  -  Review zero or many results",
+          "w": 760
+        },
+        "rotation": 0,
+        "type": "frame",
+        "typeName": "shape",
+        "x": 1058,
+        "y": 796
+      },
+      "shape:tE8hYSRScrVif9eEq9tjP": {
+        "id": "shape:tE8hYSRScrVif9eEq9tjP",
+        "index": "aB",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the engine does",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Checks the match against known placeholders (YOUR_KEY_HERE, changeme…)",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Measures how random the value looks",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Turns those signals into the score and the reason",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 508,
+        "y": 194
+      },
+      "shape:tljo84FoQhVP1jBTrdc2X": {
+        "id": "shape:tljo84FoQhVP1jBTrdc2X",
+        "index": "aA",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "props": {
+          "autoSize": false,
+          "color": "black",
+          "font": "sans",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "text": "What the API does",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Asks the engine to check rules without saving",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• On Apply, checks again; only a valid rule set becomes a new version",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "• Keeps drafts, so they survive a reload",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "textAlign": "start",
+          "w": 236
+        },
+        "rotation": 0,
+        "type": "text",
+        "typeName": "shape",
+        "x": 262,
+        "y": 194
+      },
+      "shape:w01WBzGMwAnvrN2cCQk9D": {
+        "id": "shape:w01WBzGMwAnvrN2cCQk9D",
+        "index": "a4",
+        "isLocked": false,
+        "meta": {},
+        "opacity": 1,
+        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
+        "props": {
+          "align": "middle",
+          "color": "black",
+          "dash": "draw",
+          "fill": "solid",
+          "flipX": false,
+          "flipY": false,
+          "font": "sans",
+          "geo": "rectangle",
+          "growY": 0,
+          "h": 90,
+          "labelColor": "black",
+          "richText": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Engine",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc"
+          },
+          "scale": 1,
+          "size": "s",
+          "url": "",
+          "verticalAlign": "middle",
+          "w": 150
+        },
+        "rotation": 0,
+        "type": "geo",
+        "typeName": "shape",
+        "x": 551,
+        "y": 84
+      },
+      "shape:wb8HZD3ISZse5Go-9WoH_": {
+        "id": "shape:wb8HZD3ISZse5Go-9WoH_",
         "index": "a3",
         "isLocked": false,
         "meta": {},
@@ -2023,115 +2779,15 @@
         "type": "geo",
         "typeName": "shape",
         "x": 305,
-        "y": 90
+        "y": 84
       },
-      "shape:hTV91hUgjd2tz7OAs6WoD": {
-        "id": "shape:hTV91hUgjd2tz7OAs6WoD",
-        "index": "a8",
+      "shape:xqBqKCZDS1fDfHEKa5jts": {
+        "id": "shape:xqBqKCZDS1fDfHEKa5jts",
+        "index": "a5",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
         "parentId": "shape:ohojdEFeacKNU76xzaHKS",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": -84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "outcome",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 299,
-        "y": 160
-      },
-      "shape:hqO_TkmSzziMcU_OkatkK": {
-        "id": "shape:hqO_TkmSzziMcU_OkatkK",
-        "index": "a7",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": -84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "findings",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 545,
-        "y": 160
-      },
-      "shape:jkoeHtKwzzU2mmQmAq_2s": {
-        "id": "shape:jkoeHtKwzzU2mmQmAq_2s",
-        "index": "a6",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
         "props": {
           "arrowheadEnd": "arrow",
           "arrowheadStart": "none",
@@ -2153,7 +2809,7 @@
               {
                 "content": [
                   {
-                    "text": "compile",
+                    "text": "text + rule set",
                     "type": "text"
                   }
                 ],
@@ -2172,161 +2828,35 @@
         "rotation": 0,
         "type": "arrow",
         "typeName": "shape",
-        "x": 461,
-        "y": 112
+        "x": 215,
+        "y": 106
       },
-      "shape:lENHL1gZOcVXW5L7YpbpP": {
-        "id": "shape:lENHL1gZOcVXW5L7YpbpP",
-        "index": "a2",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "align": "middle",
-          "color": "black",
-          "dash": "draw",
-          "fill": "solid",
-          "flipX": false,
-          "flipY": false,
-          "font": "sans",
-          "geo": "rectangle",
-          "growY": 0,
-          "h": 90,
-          "labelColor": "black",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "UI",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "url": "",
-          "verticalAlign": "middle",
-          "w": 150
-        },
-        "rotation": 0,
-        "type": "geo",
-        "typeName": "shape",
-        "x": 59,
-        "y": 90
-      },
-      "shape:mi51IY37IfkJSlQH7g8iA": {
-        "id": "shape:mi51IY37IfkJSlQH7g8iA",
-        "index": "a9",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• New inspection, paste text",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Scan; Cancel armed 5 s",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Do-not-refresh warning",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Highlights by severity + icon",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Highlight ↔ list linking",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Error: text kept, retry",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 200
-      },
-      "shape:ohojdEFeacKNU76xzaHKS": {
-        "id": "shape:ohojdEFeacKNU76xzaHKS",
-        "index": "a8Gs2",
+      "shape:zbbCNeEEBW47gJhzHo0Og": {
+        "id": "shape:zbbCNeEEBW47gJhzHo0Og",
+        "index": "a6gln",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
         "parentId": "page:page",
         "props": {
-          "color": "green",
-          "h": 540,
-          "name": "USE CASE 4  -  Review zero or many results",
+          "color": "yellow",
+          "h": 526,
+          "name": "USE CASE 2  -  Triage an example",
           "w": 760
         },
         "rotation": 0,
         "type": "frame",
         "typeName": "shape",
         "x": 1058,
-        "y": 760
+        "y": 210
       },
-      "shape:p7Hyckn3e8wm1uEucT6BH": {
-        "id": "shape:p7Hyckn3e8wm1uEucT6BH",
+      "shape:znpL2YLVTmYFoUXfYkvTJ": {
+        "id": "shape:znpL2YLVTmYFoUXfYkvTJ",
         "index": "a4",
         "isLocked": false,
         "meta": {},
         "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
+        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
         "props": {
           "align": "middle",
           "color": "black",
@@ -2363,378 +2893,7 @@
         "type": "geo",
         "typeName": "shape",
         "x": 551,
-        "y": 90
-      },
-      "shape:pXfndE6kXRI2MbD9o2InB": {
-        "id": "shape:pXfndE6kXRI2MbD9o2InB",
-        "index": "a8",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": -84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "scores",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 299,
-        "y": 160
-      },
-      "shape:r53Sn5_cmjUtiSFVQg-Ya": {
-        "id": "shape:r53Sn5_cmjUtiSFVQg-Ya",
-        "index": "a7",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "arrowheadEnd": "arrow",
-          "arrowheadStart": "none",
-          "bend": 0,
-          "color": "black",
-          "dash": "draw",
-          "elbowMidPoint": 0.5,
-          "end": {
-            "x": -84,
-            "y": 0
-          },
-          "fill": "none",
-          "font": "sans",
-          "kind": "arc",
-          "labelColor": "black",
-          "labelPosition": 0.5,
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "findings",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "start": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        "rotation": 0,
-        "type": "arrow",
-        "typeName": "shape",
-        "x": 545,
-        "y": 160
-      },
-      "shape:rLFdNyR2TsoozdHmS8nUE": {
-        "id": "shape:rLFdNyR2TsoozdHmS8nUE",
-        "index": "a1",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:ohojdEFeacKNU76xzaHKS",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "A scan has no findings or returns overlapping matches. How users understand locations, context, and next steps:",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 728
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 16
-      },
-      "shape:s3vYdFpx05iZOyl12yRE6": {
-        "id": "shape:s3vYdFpx05iZOyl12yRE6",
-        "index": "aA",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Same scan path as use case 1",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Saves scores + why-flagged with the inspection",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Never stores the value",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 262,
-        "y": 200
-      },
-      "shape:uO0cKjE_-upLSZNCc-X2t": {
-        "id": "shape:uO0cKjE_-upLSZNCc-X2t",
-        "index": "aA",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:82djAWLEKpcGOB3tG1KcM",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Validate: calls engine, saves nothing",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Apply: validates drafts too; valid → new rule set version (JSON), draft = false",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Assigns a real rule id on add (draft = true)",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Invalid → per-field errors, nothing saved",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 262,
-        "y": 200
-      },
-      "shape:vyjD5BMSiLiJsagPfMqZ6": {
-        "id": "shape:vyjD5BMSiLiJsagPfMqZ6",
-        "index": "a1",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:Xc0ykavvgFF1SVwuQCnXx",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "An engineer pastes a configuration file that may contain a live credential. Path from input to reviewing a finding:",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 728
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 16
-      },
-      "shape:zbbCNeEEBW47gJhzHo0Og": {
-        "id": "shape:zbbCNeEEBW47gJhzHo0Og",
-        "index": "a6gln",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "page:page",
-        "props": {
-          "color": "yellow",
-          "h": 500,
-          "name": "USE CASE 2  -  Triage an example",
-          "w": 760
-        },
-        "rotation": 0,
-        "type": "frame",
-        "typeName": "shape",
-        "x": 1058,
-        "y": 210
-      },
-      "shape:zrbvVGyKyRreBwL5BTKPu": {
-        "id": "shape:zrbvVGyKyRreBwL5BTKPu",
-        "index": "a9",
-        "isLocked": false,
-        "meta": {},
-        "opacity": 1,
-        "parentId": "shape:zbbCNeEEBW47gJhzHo0Og",
-        "props": {
-          "autoSize": false,
-          "color": "black",
-          "font": "sans",
-          "richText": {
-            "content": [
-              {
-                "content": [
-                  {
-                    "text": "• Same inspection flow as use case 1",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Shows placeholder vs. real score (0–100)",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Shows why-flagged note",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              },
-              {
-                "content": [
-                  {
-                    "text": "• Example still reported, not hidden",
-                    "type": "text"
-                  }
-                ],
-                "type": "paragraph"
-              }
-            ],
-            "type": "doc"
-          },
-          "scale": 1,
-          "size": "s",
-          "textAlign": "start",
-          "w": 236
-        },
-        "rotation": 0,
-        "type": "text",
-        "typeName": "shape",
-        "x": 16,
-        "y": 200
+        "y": 84
       },
       "user:0VUxdO2sxW0q2EtDX8cS8": {
         "color": "#11B3A3",
