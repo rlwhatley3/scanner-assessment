@@ -266,6 +266,25 @@ The tools follow the same rules as the rest of the API, through a shared storage
 - **Local only:** like the API, the server listens on loopback. It accepts only loopback `Host` headers, which protects against DNS rebinding, and it rejects any request that has an `Origin` header, so a web page can't drive the write tools through the user's browser.
 - **Stateless:** each tool call is one request and one JSON response, with no MCP session to keep.
 
+### Models: what the value classifier was trained and evaluated on
+
+The value classifier (`engine/models/value-classifier.onnx`) runs locally on the CPU as a rule's `valueClassifier` setting. For each value a rule matches, it says whether it's a credential, a non-secret string (a hash, ID, or encoded data), or a placeholder, from the value's own line. Details are in [ml/README.md](ml/README.md).
+
+It was trained on two sources, each evaluated on held-out data of its own:
+
+- **Synthetic samples** (`ml/data.py`, 40,000): one config or code line setting a name to a value. Credentials in known formats and generic keys and passwords; non-secret hashes, digests, UUIDs, IDs, encoded data, URLs, and paths, sometimes under secret-sounding names; and placeholder and documentation values. Real-shaped values are random at generation time.
+- **CredData** ([Samsung/CredData](https://github.com/Samsung/CredData) at commit `fc9b64b`), the same checkout the secret detector uses: single-line rows that mark their value, with `T` as credential, `F` as non-secret, and `X` as placeholder. Split by a hash of the repository ID into 241 training, 28 validation, and 63 test repositories. Each training repository contributes at most 400 values per class (18,806 in all). No CredData file is committed; each keeps its source project's license (by a count of license files: MIT 186 repositories, Apache-2.0 95, BSD 20, LGPL 10, GPL or AGPL 7, ISC 5, CC0 or Creative Commons 3, EPL 1, other 3, no license file 7).
+
+**Results**, kept separate by source:
+
+| Held-out data | Synthetic-only model | Shipped model (synthetic + CredData) |
+|---|---|---|
+| CredData, 63 test repositories | accuracy 0.491; 39% of credentials would get lower confidence | accuracy 0.854; 9% |
+| CredData, the 62 test repositories other than the one with the most credentials | accuracy 0.541; 35% | accuracy 0.840; 11% |
+| Synthetic | accuracy 0.986 | accuracy 0.974 |
+
+The synthetic-only model's near-perfect synthetic score and poor CredData score show why the real data mattered: it had learned the generator, not real code.
+
 ### Known gaps
 
 - **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.

@@ -350,7 +350,18 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
             />
           </Field>
         </div>
-      ) : (
+      ) : null}
+
+      {form.detectionType === "model_detection" && (
+        <ValueClassifierFields
+          value={form.valueClassifier}
+          onChange={(valueClassifier) => update("valueClassifier", valueClassifier)}
+          errors={fieldErrors("value_classifier")}
+          models={models.data}
+        />
+      )}
+
+      {isModel ? null : (
         <>
           <Field
             label="Pattern"
