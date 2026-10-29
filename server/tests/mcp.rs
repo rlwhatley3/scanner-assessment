@@ -752,7 +752,7 @@ async fn generates_test_data_and_runs_it_with_documents_of_your_own() {
     };
     assert_eq!(outcome("r1-positive"), Some(json!("caught")));
     assert_eq!(outcome("readme-key"), Some(json!("caught")));
-    assert_eq!(report["summary"]["missed"], 0);
+    assert_eq!(report["summary"]["secrets"]["missed"], 0);
 
     // Each document was saved as a scan in the session, and get_scan reads it back.
     let scan_id = report["documents"][0]["scanId"].clone();
