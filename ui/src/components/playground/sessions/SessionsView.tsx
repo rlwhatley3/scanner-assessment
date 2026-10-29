@@ -58,7 +58,9 @@ export default function SessionsView() {
                   {entry.ruleSetName} v{entry.versionNumber} · {entry.scanCount}{" "}
                   {entry.scanCount === 1 ? "scan" : "scans"} ·{" "}
                   {entry.activeSuppressionCount > 0 &&
-                    `${entry.activeSuppressionCount} suppressed · `}
+                    `${entry.activeSuppressionCount} active ${
+                      entry.activeSuppressionCount === 1 ? "suppression" : "suppressions"
+                    } · `}
                   {entry.lastRan ? `last ran ${formatDate(entry.lastRan)}` : "not run yet"}
                 </span>
               </NavLink>
