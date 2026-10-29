@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, NavLink, useNavigate, useParams } from "react-router-dom";
 import { getVersion, listRuleSets } from "../api.ts";
+import { HelpLink } from "../guide/GuideView.tsx";
 import { useLoad } from "../useLoad.ts";
 import NewRuleSetForm from "./NewRuleSetForm.tsx";
 import RuleSetPanel, { versionPath } from "./RuleSetPanel.tsx";
@@ -33,7 +34,9 @@ export default function RuleSetsView() {
     <div className="playground-section master-detail">
       <section className="panel master" aria-label="Rule sets">
         <div className="master-header">
-          <h2>Rule sets</h2>
+          <h2>
+            Rule sets <HelpLink section="rule-sets" label="How rule sets work" />
+          </h2>
           <button
             type="button"
             className="button primary"

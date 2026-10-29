@@ -1,4 +1,5 @@
-import { Navigate, NavLink, Route, Routes, useMatch } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useMatch } from "react-router-dom";
+import GuideView, { PlaygroundHome } from "./guide/GuideView.tsx";
 import RuleSetsView, { VersionRedirect } from "./rule-sets/RuleSetsView.tsx";
 import RulesView from "./rules/RulesView.tsx";
 import ScanView from "./scan/ScanView.tsx";
@@ -8,6 +9,7 @@ import { useApiHealth } from "./useApiHealth.ts";
 import "./style.css";
 
 const SECTIONS = [
+  { to: "/playground/guide", label: "Guide" },
   { to: "/playground/scan", label: "Scan" },
   { to: "/playground/rules", label: "Rules" },
   { to: "/playground/rule-sets", label: "Rule sets" },
@@ -25,8 +27,9 @@ export default function PlaygroundView() {
           <div>
             <h1>Secrets Scanner Playground</h1>
             <p className="intro">
-              Write rules, save them as a rule set version, then scan text with it. Scan text is
-              never saved; only results are.
+              Paste text and scan it for secrets. Change what counts as a secret in Rules, and group
+              rules into Rule sets to scan with.{" "}
+              <Link to="/playground/guide">How does this work?</Link>
             </p>
           </div>
           <span className={`api-status ${health}`} role="status">
@@ -50,7 +53,8 @@ export default function PlaygroundView() {
         {/* Always mounted, so pasted text and a running scan survive visits to other sections. */}
         <ScanView visible={onScan} />
         <Routes>
-          <Route index element={<Navigate to="scan" replace />} />
+          <Route index element={<PlaygroundHome />} />
+          <Route path="guide" element={<GuideView />} />
           <Route path="scan" element={null} />
           <Route path="rules/:ruleId?" element={<RulesView />} />
           {/* One route, so picking a version doesn't remount the page and lose its state. */}
