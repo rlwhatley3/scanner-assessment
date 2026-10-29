@@ -14,11 +14,8 @@ import {
 } from "../api.ts";
 import { DETECTION_LABELS, SEVERITY_LABELS } from "../severity.tsx";
 import { useLoad } from "../useLoad.ts";
-import ChecksumFields, {
-  type ChecksumForm,
-  checksumFormFrom,
-  checksumFrom,
-} from "./ChecksumFields.tsx";
+import ChecksumFields from "./ChecksumFields.tsx";
+import { type ChecksumForm, checksumFormFrom, checksumFrom } from "./checksumForm.ts";
 import PasswordShapeFields, {
   type PasswordShapeForm,
   passwordShapeFormFrom,

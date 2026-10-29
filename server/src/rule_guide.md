@@ -151,6 +151,8 @@ Some formats carry a checksum, so a match can be checked offline: a real value p
 | `algorithm` | Other fields | Built-in users |
 |---|---|---|
 | `crc32` | `encoding`, `prefixLength`, `length` | GitHub and npm tokens (`base62`, prefix 4, length 6); GitLab routable tokens (`base36`, prefix 0, length 7) |
+| `check_digit` | `alphabet`, `weights`, `modulus`, `check`, `prefixLength`, `length` | None built in; for in-house formats with a weighted-sum check |
+| `hash` | `hash`, `bytes`, `encoding`, `prefixLength`, `length` | None built in; for in-house formats that end in part of a SHA-256, SHA-1, or MD5 hash |
 | `luhn` | none | Payment card numbers. Spaces, dashes, and line breaks between digit groups are ignored |
 | `base58check` | none | Bitcoin private keys (WIF) |
 | `bech32` | none | None built in; for age secret keys (`AGE-SECRET-KEY-1`) and Nostr private keys (`nsec1`) |
@@ -161,7 +163,14 @@ Some formats carry a checksum, so a match can be checked offline: a real value p
 | `mod11` | none | None built in; for ISBN-10 and UK NHS numbers. Spaces and dashes are ignored |
 | `mod97` | none | None built in; for IBANs. Spaces are ignored |
 
-A `crc32` value is read as `prefix + covered part + checksum`. The checksum is the CRC32 of the covered part, written in `encoding` (`base62` is `0-9A-Za-z`; `base36` and `hex` match either case) and zero-padded to `length` characters. `prefixLength` is how many characters at the start are not covered. For example, `acme_` followed by the covered part and an 8-digit hex CRC32 is `{"algorithm": "crc32", "encoding": "hex", "prefixLength": 5, "length": 8}`. `length` must be at least 6 for base62, 7 for base36, or 8 for hex (enough to hold a full CRC32), and at most 16.
+A `crc32` value is read as `prefix + covered part + checksum`. The checksum is the CRC32 of the covered part, written in `encoding` (`base62` is `0-9A-Za-z`; `base36` and `hex` match either case; `digits` is `0-9`) and zero-padded to `length` characters. `prefixLength` is how many characters at the start are not covered. For example, `acme_` followed by the covered part and an 8-digit hex CRC32 is `{"algorithm": "crc32", "encoding": "hex", "prefixLength": 5, "length": 8}`. `length` must be at least 6 for base62, 7 for base36, or 8 for hex (enough to hold a full CRC32), and at most 16.
+
+**In-house formats.** When a team's own tokens carry a checksum and the author knows how it is built, `check_digit` and `hash` describe it with the same `prefix + covered part + checksum` layout as `crc32`:
+
+- `check_digit`: each covered character is worth its position in `alphabet`, times a weight from `weights` (applied from the right of the covered part, repeating), summed mod `modulus`. With `check` set to `complement` (the default) the check is what brings the sum to a multiple of the modulus; with `remainder` it is the remainder. The check is written in the same alphabet, zero-padded to `length` characters. ISBN-10 is `{"algorithm": "check_digit", "alphabet": "0123456789X", "weights": [2, 3, 4, 5, 6, 7, 8, 9, 10], "modulus": 11, "prefixLength": 0, "length": 1}`.
+- `hash`: the first `bytes` bytes (1 to 8) of the SHA-256, SHA-1, or MD5 of the covered part, read as one big-endian number and written in `encoding`, zero-padded to `length`. "The first 8 hex characters of the SHA-256" is `{"algorithm": "hash", "hash": "sha256", "bytes": 4, "encoding": "hex", "prefixLength": 5, "length": 8}`.
+
+Settings that can't work are errors on the `checksum` field: an alphabet with fewer than 2 or repeated characters, no weights, a modulus under 2, or a `length` too short to hold every value. Why only these two: between them and `crc32` they cover the checksums people build by hand, and every setup computes the checksum, so test data generation and broken-checksum cases work for it. Not covered: checksums made with a secret key (an HMAC, a signed token), which no one without the key can check, and so are signatures, not checksums. Rules for those formats still find them by pattern.
 
 The others need no setup beyond `marvin32`'s seed:
 

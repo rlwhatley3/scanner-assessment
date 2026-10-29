@@ -1,7 +1,8 @@
 use secrets_scanner_engine::{
-    CaseKind, Checksum, ChecksumEncoding, Crc32Checksum, DetectionType, Expectation, FindingKind,
-    Marvin32Checksum, MatchDetails, Rule, RuleDefinition, RuleSet, Severity, TestSuite, Violation,
-    default_rule_set, generate_test_data, pattern_matches_value, scan,
+    CaseKind, CheckDigitChecksum, CheckRule, Checksum, ChecksumEncoding, Crc32Checksum,
+    DetectionType, Expectation, FindingKind, HashChecksum, HashFunction, Marvin32Checksum,
+    MatchDetails, Rule, RuleDefinition, RuleSet, Severity, TestSuite, Violation, default_rule_set,
+    generate_test_data, pattern_matches_value, scan,
 };
 
 fn rule(id: i64, name: &str, pattern: &str) -> Rule {
@@ -219,12 +220,33 @@ fn generated_values_pass_each_kind_of_checksum_and_broken_copies_fail_it() {
             rule(13, "IBAN", r"\bGB\d{2}[A-Z]{4}\d{14}\b"),
             Checksum::Mod97,
         ),
+        (
+            rule(14, "In-house check digit", r"\bacc_\d{12}\b"),
+            Checksum::CheckDigit(CheckDigitChecksum {
+                alphabet: "0123456789".into(),
+                weights: vec![3, 1],
+                modulus: 97,
+                check: CheckRule::Complement,
+                prefix_length: 4,
+                length: 2,
+            }),
+        ),
+        (
+            rule(15, "In-house hash", r"\bhh_[A-Za-z0-9]{30}\b"),
+            Checksum::Hash(HashChecksum {
+                hash: HashFunction::Sha1,
+                bytes: 4,
+                encoding: ChecksumEncoding::Base62,
+                prefix_length: 3,
+                length: 6,
+            }),
+        ),
     ];
     let mut rules: Vec<Rule> = checksums
         .iter()
         .map(|(rule, checksum)| {
             let mut rule = rule.clone();
-            rule.definition.checksum = Some(*checksum);
+            rule.definition.checksum = Some(checksum.clone());
             rule
         })
         .collect();

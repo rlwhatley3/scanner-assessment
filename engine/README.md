@@ -195,6 +195,8 @@ A rule picks a checksum `algorithm` in its `checksum` field:
 | `algorithm` | Other fields | Used for |
 |---|---|---|
 | `crc32` | `encoding`, `prefixLength`, `length` (below) | Tokens that end in a CRC32 of the rest: GitHub, npm, GitLab, and in-house formats |
+| `check_digit` | `alphabet`, `weights`, `modulus`, `check` (`complement` or `remainder`), `prefixLength`, `length` | In-house tokens that end in a weighted-sum check, written in `alphabet` |
+| `hash` | `hash` (`sha256`, `sha1`, `md5`), `bytes` (1–8), `encoding`, `prefixLength`, `length` | In-house tokens that end in the first bytes of a hash of the rest |
 | `luhn` | none | The mod-10 check digit on payment card numbers. Whitespace (including a line break) and dashes between digit groups are ignored |
 | `base58check` | none | Base58 with a 4-byte double-SHA-256 checksum, as in Bitcoin private keys (WIF) |
 | `bech32` | none | `hrp` + `1` + data + a 6-character checksum (BIP-173), as in age secret keys and Nostr private keys. All upper or all lower case |
@@ -213,9 +215,9 @@ A `crc32` token is read as `prefix + covered part + checksum`:
 
 | Field | Values | Meaning |
 |---|---|---|
-| `encoding` | `base62` (digits `0-9A-Za-z`), `base36` (`0-9a-z`, either case), `hex` (either case) | How the value is written |
+| `encoding` | `base62` (digits `0-9A-Za-z`), `base36` (`0-9a-z`, either case), `hex` (either case), `digits` (`0-9`) | How the value is written |
 | `prefixLength` | 0 or more | Characters at the start the checksum doesn't cover, such as `ghp_` |
-| `length` | 6–16 for base62, 7–16 for base36, 8–16 for hex | Characters at the end holding the checksum, zero-padded |
+| `length` | 6–16 for base62, 7–16 for base36, 8–16 for hex, 10–16 for digits | Characters at the end holding the checksum, zero-padded |
 
 **Seeded setups:** the built-in rules carry the common ones, so a rule author can copy them:
 
@@ -230,6 +232,13 @@ A `crc32` token is read as `prefix + covered part + checksum`:
 The algorithms without a built-in rule are checked against their published test vectors: BIP-173 and BIP-350 for Bech32 and Bech32m, the BIP-39 reference phrases, and Microsoft's [security-utilities](https://github.com/microsoft/security-utilities) Marvin32 vectors; the BIP-39 word list is the official English list (SHA-256 `2f5eed53…dbda`).
 
 **Custom setups:** a rule for an in-house token format describes its own, e.g. `acme_` followed by the covered part and an 8-digit hex CRC32 is `{ "algorithm": "crc32", "encoding": "hex", "prefixLength": 5, "length": 8 }`. A length too short to hold the full value, or longer than 16, is a rule error on the `checksum` field.
+
+Two more setups use the same layout for checksums people build by hand:
+
+- **`check_digit`:** each covered character counts as its position in `alphabet`, times a weight (from the right of the covered part; `weights` repeat), summed mod `modulus`. The check is what makes the sum a multiple of the modulus (`complement`, the default) or the remainder itself (`remainder`), written in the alphabet and zero-padded to `length`. ISBN-10 is `{ "algorithm": "check_digit", "alphabet": "0123456789X", "weights": [2, 3, 4, 5, 6, 7, 8, 9, 10], "modulus": 11, "prefixLength": 0, "length": 1 }`. The alphabet needs 2 to 64 characters with none repeated, 1 to 64 weights, a modulus of 2 to 1,000,000, and a length that can hold every check up to the modulus.
+- **`hash`:** the first `bytes` bytes (1 to 8) of the `sha256`, `sha1`, or `md5` of the covered part, read as one big-endian number and written in `encoding`, zero-padded to `length` (at least what those bytes need in the encoding, at most 20). With `hex`, 4 bytes and length 8 is the first 8 hex characters of the hash.
+
+Checksums made with a secret key (HMAC, signed tokens) are out of reach: without the key no one can check them offline. The API's `POST /api/checksums/try` checks one example value against any setup without saving it, and says which characters are the prefix, the covered part, and the checksum; the Playground uses it so an author can confirm a setup with a real token.
 
 A failed checksum lowers confidence and raises the placeholder score; it never drops the finding. GitHub, npm, and GitLab haven't published test tokens, so those setups follow their descriptions and existing open-source validators. If a setup were ever subtly wrong, real tokens would still be reported, just at lower confidence. The same holds for a mistaken custom setup.
 

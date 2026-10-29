@@ -209,6 +209,40 @@ fn an_unknown_checksum_is_rejected_by_the_contract() {
 }
 
 #[test]
+fn in_house_checksum_settings_that_cant_run_are_errors_on_the_checksum_field() {
+    for (checksum, code) in [
+        (
+            r#"{"algorithm": "check_digit", "alphabet": "0012", "weights": [1], "modulus": 3, "prefixLength": 0, "length": 1}"#,
+            ErrorCode::InvalidFormat,
+        ),
+        (
+            r#"{"algorithm": "check_digit", "alphabet": "0123456789", "weights": [1], "modulus": 97, "prefixLength": 0, "length": 1}"#,
+            ErrorCode::OutOfRange,
+        ),
+        (
+            r#"{"algorithm": "hash", "hash": "md5", "bytes": 8, "encoding": "hex", "prefixLength": 0, "length": 8}"#,
+            ErrorCode::OutOfRange,
+        ),
+    ] {
+        let definition: RuleDefinition = serde_json::from_str(&format!(
+            r#"{{"name": "x", "detectionType": "direct_credential", "severity": "high",
+                "pattern": "x", "checksum": {checksum}}}"#
+        ))
+        .expect("definition should parse");
+        let check = check_rule(&rule(1, definition));
+        assert_eq!(
+            check
+                .errors
+                .iter()
+                .map(|error| (error.field, error.code))
+                .collect::<Vec<_>>(),
+            [(RuleField::Checksum, code)],
+            "{checksum}"
+        );
+    }
+}
+
+#[test]
 fn a_checksum_too_short_or_too_long_for_its_value_is_out_of_range() {
     for length in [5, 17] {
         let definition: RuleDefinition = serde_json::from_str(&format!(
@@ -238,6 +272,8 @@ fn setups_without_options_need_no_other_fields() {
         r#"{"algorithm": "mod11"}"#,
         r#"{"algorithm": "mod97"}"#,
         r#"{"algorithm": "marvin32", "seed": "Default0"}"#,
+        r#"{"algorithm": "check_digit", "alphabet": "0123456789X", "weights": [2, 3], "modulus": 11, "prefixLength": 0, "length": 1}"#,
+        r#"{"algorithm": "hash", "hash": "sha256", "bytes": 4, "encoding": "digits", "prefixLength": 5, "length": 10}"#,
     ] {
         let json =
             format!(r#"{{"rules": [{{"id": 1, "definition": {{"checksum": {checksum}}}}}]}}"#);

@@ -126,7 +126,7 @@ export interface ScanResponse {
   suppressedCount: number;
 }
 
-export type ChecksumEncoding = "base62" | "base36" | "hex";
+export type ChecksumEncoding = "base62" | "base36" | "hex" | "digits";
 
 /** A token read as prefix + covered part + checksum, where the checksum is a CRC32. */
 export interface Crc32Checksum {
@@ -150,9 +150,40 @@ export interface Marvin32Checksum {
   seed: string;
 }
 
+/** How a check digit's weighted sum becomes the check. */
+export type CheckRule = "complement" | "remainder";
+
+/**
+ * An in-house check at the end of a token: the covered part's characters, each worth its
+ * position in `alphabet`, times `weights` from the right, summed mod `modulus`.
+ */
+export interface CheckDigitChecksum {
+  algorithm: "check_digit";
+  alphabet: string;
+  weights: number[];
+  modulus: number;
+  check: CheckRule;
+  prefixLength: number;
+  length: number;
+}
+
+export type HashFunction = "sha256" | "sha1" | "md5";
+
+/** An in-house check at the end of a token: the first `bytes` bytes of a hash of the covered part. */
+export interface HashChecksum {
+  algorithm: "hash";
+  hash: HashFunction;
+  bytes: number;
+  encoding: ChecksumEncoding;
+  prefixLength: number;
+  length: number;
+}
+
 /** How a token format's built-in check works, so the engine can test each match offline. */
 export type Checksum =
   | Crc32Checksum
+  | CheckDigitChecksum
+  | HashChecksum
   | Marvin32Checksum
   | {
       algorithm:
@@ -377,6 +408,16 @@ export interface TryRuleResponse {
   truncated: boolean;
   findings: Finding[];
 }
+
+/** Whether one example value passes a checksum, and where its parts start. */
+export interface TryChecksumResponse {
+  valid: boolean;
+  layout: { coveredStart: number; checksumStart: number } | null;
+}
+
+/** Checks one example value against a checksum setup. Nothing is stored. */
+export const tryChecksum = (checksum: Checksum, value: string, signal?: AbortSignal) =>
+  request<TryChecksumResponse>("POST", "/api/checksums/try", { checksum, value }, signal);
 
 /** Runs a rule definition, saved or not, on sample text. The text goes in the body only. */
 export const tryRule = (

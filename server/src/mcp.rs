@@ -64,7 +64,11 @@ checked against keyNames); prefix (the public prefix shown as the redacted previ
 (string array); minEntropy (0 to 8 bits per character); checksum ({\"algorithm\": one of \
 luhn, base58check, bech32, bech32m, bip39, verhoeff, mod11, or mod97}, {\"algorithm\": \
 \"marvin32\", \"seed\": 8 ASCII characters such as \"Default0\"}, or {\"algorithm\": \
-\"crc32\", \"encoding\": \"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); \
+\"crc32\", \"encoding\": \"base62\"|\"base36\"|\"hex\"|\"digits\", \"prefixLength\": n, \
+\"length\": n}, or an in-house setup: {\"algorithm\": \"check_digit\", \"alphabet\": string, \
+\"weights\": [n], \"modulus\": n, \"check\": \"complement\"|\"remainder\", \"prefixLength\": n, \
+\"length\": n} or {\"algorithm\": \"hash\", \"hash\": \"sha256\"|\"sha1\"|\"md5\", \"bytes\": 1 to \
+8, \"encoding\": as for crc32, \"prefixLength\": n, \"length\": n}); \
 passwordShape \
 ({\"minScore\": 1 to 10}, built for likely_credential); remediation (string); model ({\"id\": string, \
 \"sha256\": 64 hex characters}) and threshold (0 to 100), for model_assessment and model_detection \

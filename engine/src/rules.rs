@@ -1,4 +1,4 @@
-use crate::checksum::{Checksum, Crc32Checksum};
+use crate::checksum::Checksum;
 use crate::password_shape::PasswordShape;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
@@ -355,20 +355,10 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
             None,
         ));
     }
-    if let Some(Checksum::Crc32(checksum)) = definition.checksum
-        && !(checksum.min_length()..=Crc32Checksum::MAX_LENGTH).contains(&checksum.length)
-    {
-        let message = format!(
-            "This checksum needs {} to {} characters to hold its full value.",
-            checksum.min_length(),
-            Crc32Checksum::MAX_LENGTH
-        );
-        check.errors.push(error(
-            RuleField::Checksum,
-            ErrorCode::OutOfRange,
-            &message,
-            None,
-        ));
+    if let Some((code, message)) = definition.checksum.as_ref().and_then(Checksum::setup_error) {
+        check
+            .errors
+            .push(error(RuleField::Checksum, code, &message, None));
     }
     if let Some(shape) = definition.password_shape
         && !(1..=PasswordShape::MAX_SCORE).contains(&shape.min_score)
@@ -466,7 +456,7 @@ pub(crate) fn check_and_compile(rule: &Rule) -> (Option<CompiledRule>, RuleCheck
                 .filter(|key| !key.is_empty())
                 .collect(),
             min_entropy: definition.min_entropy,
-            checksum: definition.checksum,
+            checksum: definition.checksum.clone(),
             password_shape: definition.password_shape,
             value_classifier,
             remediation: definition.remediation.clone().unwrap_or_default(),

@@ -624,6 +624,55 @@ a.button {
     align-self: flex-start;
     padding-top: 0;
   }
+
+  .checksum-question,
+  .checksum-example {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 0.0625rem solid var(--line);
+  }
+
+  .checksum-result {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .checksum-pass {
+    color: var(--success);
+    font-weight: 600;
+  }
+
+  .checksum-fail {
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  .checksum-parts {
+    overflow-wrap: anywhere;
+  }
+
+  .part-prefix,
+  .part-covered,
+  .part-checksum {
+    padding: 0 0.125rem;
+    border-radius: 0.125rem;
+  }
+
+  .part-prefix {
+    color: var(--muted);
+  }
+
+  .part-covered {
+    background: var(--tone-low-bg);
+  }
+
+  .part-checksum {
+    background: var(--tone-medium-bg);
+  }
 }
 
 .form-actions {

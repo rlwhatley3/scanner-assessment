@@ -6,8 +6,8 @@ pub mod seed;
 pub mod store;
 
 use routes::{
-    health, models, rule_set_versions, rule_sets, rules, scan_sessions, scans, suppressions,
-    testing,
+    checksums, health, models, rule_set_versions, rule_sets, rules, scan_sessions, scans,
+    suppressions, testing,
 };
 
 #[derive(utoipa::OpenApi)]
@@ -23,6 +23,7 @@ use routes::{
         rules::check,
         rules::check_set,
         scans::try_rule,
+        checksums::try_checksum,
         rule_sets::list,
         rule_sets::create,
         rule_sets::fetch,
@@ -50,6 +51,9 @@ use routes::{
         scans::CreateScanRequest,
         scans::TryRuleRequest,
         scans::TryRuleResponse,
+        checksums::TryChecksumRequest,
+        checksums::TryChecksumResponse,
+        checksums::ChecksumLayout,
         scans::ScanResponse,
         scans::FindingResponse,
         scans::ErrorResponse,

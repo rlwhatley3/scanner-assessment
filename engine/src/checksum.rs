@@ -1,17 +1,27 @@
 use std::sync::LazyLock;
 
+use md5::Md5;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sha1::Sha1;
 use sha2::{Digest, Sha256};
+
+use crate::rules::ErrorCode;
 
 /// How a format's checksum is built, so a match can be checked offline: a real value passes,
 /// and a made-up one (an example, a test value, random text) almost always fails. The built-in
 /// rules seed the common setups; a rule author can describe their own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "algorithm", rename_all = "snake_case")]
 pub enum Checksum {
     /// A CRC32 written at the end of a token. Used by GitHub, npm, and GitLab tokens, and by
     /// in-house formats a rule author describes.
     Crc32(Crc32Checksum),
+    /// An in-house check written at the end of a token: a weighted sum of the covered part's
+    /// characters, mod a number.
+    CheckDigit(CheckDigitChecksum),
+    /// An in-house check written at the end of a token: the start of a SHA-256, SHA-1, or MD5
+    /// hash of the covered part.
+    Hash(HashChecksum),
     /// The mod-10 check digit on payment card numbers. Whitespace (including a line break) and
     /// dashes between digit groups are ignored.
     Luhn,
@@ -42,9 +52,11 @@ pub enum Checksum {
 
 impl Checksum {
     /// Whether `value` passes this checksum. A value that isn't even the right shape fails.
-    pub fn is_valid(self, value: &str) -> bool {
+    pub fn is_valid(&self, value: &str) -> bool {
         match self {
             Checksum::Crc32(checksum) => checksum.is_valid(value),
+            Checksum::CheckDigit(checksum) => checksum.is_valid(value),
+            Checksum::Hash(checksum) => checksum.is_valid(value),
             Checksum::Luhn => luhn_is_valid(value),
             Checksum::Base58check => base58check_is_valid(value),
             Checksum::Bech32 => bech32_is_valid(value, BECH32_CONST),
@@ -61,17 +73,22 @@ impl Checksum {
     /// when the value can't hold one (too short, or not in the checksum's alphabet). Base58Check
     /// re-encodes the whole value, so its length can change by a character; BIP-39 swaps any
     /// word not in its list for one that is.
-    pub(crate) fn repair(self, value: &str) -> Option<String> {
+    pub(crate) fn repair(&self, value: &str) -> Option<String> {
         match self {
             Checksum::Crc32(checksum) => {
-                if !value.is_ascii() || value.len() <= checksum.prefix_length + checksum.length {
-                    return None;
-                }
-                let rest = &value[..value.len() - checksum.length];
-                Some(format!(
-                    "{rest}{}",
-                    checksum.compute(&rest[checksum.prefix_length..])
-                ))
+                repair_layout(value, checksum.prefix_length, checksum.length, |covered| {
+                    Some(checksum.compute(covered))
+                })
+            }
+            Checksum::CheckDigit(checksum) => {
+                repair_layout(value, checksum.prefix_length, checksum.length, |covered| {
+                    checksum.compute(covered)
+                })
+            }
+            Checksum::Hash(checksum) => {
+                repair_layout(value, checksum.prefix_length, checksum.length, |covered| {
+                    Some(checksum.compute(covered))
+                })
             }
             Checksum::Luhn => luhn_repair(value),
             Checksum::Base58check => {
@@ -96,12 +113,12 @@ impl Checksum {
 
     /// The byte range of `value` the checksum covers and a one-character change breaks: the
     /// covered part of a CRC32 token, a check digit, a Bech32 data part, or a whole body.
-    pub(crate) fn covered(self, value: &str) -> Option<(usize, usize)> {
+    pub(crate) fn covered(&self, value: &str) -> Option<(usize, usize)> {
         let range = match self {
-            Checksum::Crc32(checksum) => (
-                checksum.prefix_length,
-                value.len().checked_sub(checksum.length)?,
-            ),
+            Checksum::Crc32(_) | Checksum::CheckDigit(_) | Checksum::Hash(_) => {
+                let (prefix_length, length) = self.layout()?;
+                (prefix_length, value.len().checked_sub(length)?)
+            }
             Checksum::Luhn | Checksum::Verhoeff => {
                 let last = value.rfind(|character: char| character.is_ascii_digit())?;
                 (last, last + 1)
@@ -122,9 +139,11 @@ impl Checksum {
 
     /// How many characters at the end of `value` hold the checksum itself, so test data can
     /// leave them alone; 0 when the checksum is spread through the value.
-    pub(crate) fn tail(self, value: &str) -> usize {
+    pub(crate) fn tail(&self, value: &str) -> usize {
         match self {
-            Checksum::Crc32(checksum) => checksum.length,
+            Checksum::Crc32(_) | Checksum::CheckDigit(_) | Checksum::Hash(_) => {
+                self.layout().map_or(0, |(_, length)| length)
+            }
             Checksum::Luhn | Checksum::Verhoeff | Checksum::Mod11 => 1,
             Checksum::Bech32 | Checksum::Bech32m => 6,
             Checksum::Marvin32(_) => {
@@ -133,6 +152,65 @@ impl Checksum {
             Checksum::Base58check | Checksum::Bip39 | Checksum::Mod97 => 0,
         }
     }
+
+    /// For a setup read as `prefix + covered part + checksum`, how many characters the prefix
+    /// and the checksum take.
+    pub fn layout(&self) -> Option<(usize, usize)> {
+        match self {
+            Checksum::Crc32(checksum) => Some((checksum.prefix_length, checksum.length)),
+            Checksum::CheckDigit(checksum) => Some((checksum.prefix_length, checksum.length)),
+            Checksum::Hash(checksum) => Some((checksum.prefix_length, checksum.length)),
+            _ => None,
+        }
+    }
+
+    /// What's wrong with this setup's settings, in words for the rule author; `None` when it
+    /// can run.
+    pub fn problem(&self) -> Option<String> {
+        self.setup_error().map(|(_, message)| message)
+    }
+
+    pub(crate) fn setup_error(&self) -> Option<(ErrorCode, String)> {
+        match self {
+            Checksum::Crc32(checksum) => (!(checksum.min_length()..=Crc32Checksum::MAX_LENGTH)
+                .contains(&checksum.length))
+            .then(|| {
+                (
+                    ErrorCode::OutOfRange,
+                    format!(
+                        "This checksum needs {} to {} characters to hold its full value.",
+                        checksum.min_length(),
+                        Crc32Checksum::MAX_LENGTH
+                    ),
+                )
+            }),
+            Checksum::CheckDigit(checksum) => checksum.setup_error(),
+            Checksum::Hash(checksum) => checksum.setup_error(),
+            _ => None,
+        }
+    }
+}
+
+/// Splits `token` into its covered part and checksum, or `None` when it is too short to hold a
+/// prefix, a covered part, and a checksum.
+fn split_layout(token: &str, prefix_length: usize, length: usize) -> Option<(&str, &str)> {
+    if !token.is_ascii() || token.len() <= prefix_length + length {
+        return None;
+    }
+    let (rest, checksum) = token.split_at(token.len() - length);
+    Some((&rest[prefix_length..], checksum))
+}
+
+/// `token` with its last `length` characters rewritten to `compute` of the covered part.
+fn repair_layout(
+    token: &str,
+    prefix_length: usize,
+    length: usize,
+    compute: impl FnOnce(&str) -> Option<String>,
+) -> Option<String> {
+    let (covered, _) = split_layout(token, prefix_length, length)?;
+    let rest = &token[..token.len() - length];
+    Some(format!("{rest}{}", compute(covered)?))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,6 +222,56 @@ pub enum ChecksumEncoding {
     Base36,
     /// Digits `0-9a-f`; either case matches.
     Hex,
+    /// Digits `0-9`.
+    Digits,
+}
+
+impl ChecksumEncoding {
+    fn alphabet(self) -> &'static [u8] {
+        match self {
+            ChecksumEncoding::Base62 => BASE62,
+            ChecksumEncoding::Base36 => BASE36,
+            ChecksumEncoding::Hex => HEX,
+            ChecksumEncoding::Digits => b"0123456789",
+        }
+    }
+
+    /// `value` in this encoding, zero-padded to `length` characters (keeping the low digits if
+    /// it needs more).
+    fn write(self, value: u64, length: usize) -> String {
+        write_in(self.alphabet(), value, length)
+    }
+
+    /// The fewest characters that can hold any value of `bits` bits.
+    pub fn min_length(self, bits: u32) -> usize {
+        let base = self.alphabet().len() as u128;
+        let mut room = 1u128;
+        let mut length = 0;
+        while room < 1u128 << bits {
+            room *= base;
+            length += 1;
+        }
+        length
+    }
+
+    fn matches(self, found: &str, expected: &str) -> bool {
+        match self {
+            ChecksumEncoding::Base62 => found == expected,
+            _ => found.eq_ignore_ascii_case(expected),
+        }
+    }
+}
+
+/// `value` written with `digits` (most significant first), padded with the first digit to
+/// `length` characters.
+fn write_in(digits: &[u8], mut value: u64, length: usize) -> String {
+    let base = digits.len() as u64;
+    let mut encoded = vec![digits[0]; length];
+    for digit in encoded.iter_mut().rev() {
+        *digit = digits[(value % base) as usize];
+        value /= base;
+    }
+    String::from_utf8(encoded).expect("checksum digits are ASCII")
 }
 
 /// A token read as `prefix + covered part + checksum`, where the checksum is the CRC32 of the
@@ -186,44 +314,201 @@ impl Crc32Checksum {
     /// The fewest characters that can hold a full CRC32 in this encoding. A shorter checksum
     /// would drop part of the value and never match.
     pub fn min_length(self) -> usize {
-        match self.encoding {
-            ChecksumEncoding::Base62 => 6,
-            ChecksumEncoding::Base36 => 7,
-            ChecksumEncoding::Hex => 8,
-        }
+        self.encoding.min_length(32)
     }
 
     /// The checksum for the covered part of a token, as it appears at the token's end.
     pub fn compute(self, covered: &str) -> String {
-        let digits = match self.encoding {
-            ChecksumEncoding::Base62 => BASE62,
-            ChecksumEncoding::Base36 => BASE36,
-            ChecksumEncoding::Hex => HEX,
-        };
-        let base = digits.len() as u64;
-        let mut value = u64::from(crc32fast::hash(covered.as_bytes()));
-        let mut encoded = vec![b'0'; self.length];
-        for digit in encoded.iter_mut().rev() {
-            *digit = digits[(value % base) as usize];
-            value /= base;
-        }
-        String::from_utf8(encoded).expect("checksum digits are ASCII")
+        self.encoding
+            .write(u64::from(crc32fast::hash(covered.as_bytes())), self.length)
     }
 
     /// Whether `token` passes. A token too short to hold a prefix, a covered part, and a
     /// checksum fails.
     pub fn is_valid(self, token: &str) -> bool {
-        if !token.is_ascii() || token.len() <= self.prefix_length + self.length {
-            return false;
+        split_layout(token, self.prefix_length, self.length).is_some_and(|(covered, checksum)| {
+            self.encoding.matches(checksum, &self.compute(covered))
+        })
+    }
+}
+
+/// A token read as `prefix + covered part + check`, where the check is a weighted sum of the
+/// covered part's characters mod `modulus`, written in the same alphabet. With alphabet
+/// `0123456789X`, weights 2 to 10, and modulus 11, it is the ISBN-10 check digit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CheckDigitChecksum {
+    /// The characters values are written in, in order: each one counts as its position.
+    pub alphabet: String,
+    /// Multipliers for the covered part's characters, from its right end; they repeat when they
+    /// run out.
+    pub weights: Vec<u32>,
+    pub modulus: u32,
+    /// How the weighted sum's remainder becomes the check.
+    #[serde(default)]
+    pub check: CheckRule,
+    /// Characters at the start that the check doesn't cover.
+    pub prefix_length: usize,
+    /// Characters at the end that hold the check.
+    pub length: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckRule {
+    /// The check brings the sum to a multiple of the modulus: `(modulus - sum % modulus) %
+    /// modulus`, as in ISBN-10 and Luhn-style digits.
+    #[default]
+    Complement,
+    /// The check is the remainder itself: `sum % modulus`.
+    Remainder,
+}
+
+impl CheckDigitChecksum {
+    pub const MAX_ALPHABET: usize = 64;
+    pub const MAX_WEIGHTS: usize = 64;
+    pub const MAX_MODULUS: u32 = 1_000_000;
+
+    /// The check for the covered part, or `None` when it holds a character outside the
+    /// alphabet.
+    pub fn compute(&self, covered: &str) -> Option<String> {
+        let alphabet = self.alphabet.as_bytes();
+        let modulus = u64::from(self.modulus.max(1));
+        let mut sum = 0u64;
+        for (index, character) in covered.bytes().rev().enumerate() {
+            let value = alphabet.iter().position(|&digit| digit == character)? as u64;
+            let weight = u64::from(*self.weights.get(index % self.weights.len().max(1))?);
+            sum = (sum + value * weight % modulus) % modulus;
         }
-        let (rest, checksum) = token.split_at(token.len() - self.length);
-        let expected = self.compute(&rest[self.prefix_length..]);
-        match self.encoding {
-            ChecksumEncoding::Base62 => checksum == expected,
-            ChecksumEncoding::Base36 | ChecksumEncoding::Hex => {
-                checksum.eq_ignore_ascii_case(&expected)
-            }
+        let check = match self.check {
+            CheckRule::Complement => (modulus - sum) % modulus,
+            CheckRule::Remainder => sum,
+        };
+        Some(write_in(alphabet, check, self.length))
+    }
+
+    pub fn is_valid(&self, token: &str) -> bool {
+        self.setup_error().is_none()
+            && split_layout(token, self.prefix_length, self.length).is_some_and(
+                |(covered, checksum)| self.compute(covered).is_some_and(|check| check == checksum),
+            )
+    }
+
+    fn setup_error(&self) -> Option<(ErrorCode, String)> {
+        let alphabet = self.alphabet.as_bytes();
+        let distinct = alphabet
+            .iter()
+            .enumerate()
+            .all(|(index, digit)| !alphabet[..index].contains(digit));
+        if !self.alphabet.is_ascii()
+            || !(2..=Self::MAX_ALPHABET).contains(&alphabet.len())
+            || !distinct
+        {
+            return Some((
+                ErrorCode::InvalidFormat,
+                format!(
+                    "The alphabet needs 2 to {} different characters (letters, digits, or                      symbols), with none repeated.",
+                    Self::MAX_ALPHABET
+                ),
+            ));
         }
+        if !(1..=Self::MAX_WEIGHTS).contains(&self.weights.len()) {
+            return Some((
+                ErrorCode::OutOfRange,
+                format!("Give 1 to {} weights.", Self::MAX_WEIGHTS),
+            ));
+        }
+        if !(2..=Self::MAX_MODULUS).contains(&self.modulus) {
+            return Some((
+                ErrorCode::OutOfRange,
+                format!("The modulus must be 2 to {}.", Self::MAX_MODULUS),
+            ));
+        }
+        let needed = write_in(
+            alphabet,
+            u64::from(self.modulus - 1),
+            Crc32Checksum::MAX_LENGTH,
+        )
+        .trim_start_matches(char::from(alphabet[0]))
+        .len()
+        .max(1);
+        (!(needed..=Crc32Checksum::MAX_LENGTH).contains(&self.length)).then(|| {
+            (
+                ErrorCode::OutOfRange,
+                format!(
+                    "This check needs {needed} to {} characters to hold every value up to {}.",
+                    Crc32Checksum::MAX_LENGTH,
+                    self.modulus - 1
+                ),
+            )
+        })
+    }
+}
+
+/// A token read as `prefix + covered part + checksum`, where the checksum is the first `bytes`
+/// bytes of a hash of the covered part, read as one big-endian number and written in the
+/// encoding. With hex, 4 bytes and length 8 is the first 8 hex characters of the hash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HashChecksum {
+    pub hash: HashFunction,
+    /// How many bytes from the start of the hash make up the checksum, 1 to 8.
+    pub bytes: u32,
+    pub encoding: ChecksumEncoding,
+    /// Characters at the start that the checksum doesn't cover.
+    pub prefix_length: usize,
+    /// Characters at the end that hold the checksum.
+    pub length: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HashFunction {
+    Sha256,
+    Sha1,
+    Md5,
+}
+
+impl HashChecksum {
+    /// The longest checksum a hash setup may describe: 8 bytes in decimal digits.
+    pub const MAX_LENGTH: usize = 20;
+
+    pub fn compute(self, covered: &str) -> String {
+        let digest = match self.hash {
+            HashFunction::Sha256 => Sha256::digest(covered).to_vec(),
+            HashFunction::Sha1 => Sha1::digest(covered).to_vec(),
+            HashFunction::Md5 => Md5::digest(covered).to_vec(),
+        };
+        let value = digest[..(self.bytes as usize).clamp(1, 8)]
+            .iter()
+            .fold(0u64, |value, &byte| value << 8 | u64::from(byte));
+        self.encoding.write(value, self.length)
+    }
+
+    pub fn is_valid(self, token: &str) -> bool {
+        split_layout(token, self.prefix_length, self.length).is_some_and(|(covered, checksum)| {
+            self.encoding.matches(checksum, &self.compute(covered))
+        })
+    }
+
+    fn setup_error(self) -> Option<(ErrorCode, String)> {
+        if !(1..=8).contains(&self.bytes) {
+            return Some((
+                ErrorCode::OutOfRange,
+                "Keep 1 to 8 bytes of the hash.".to_string(),
+            ));
+        }
+        let needed = self.encoding.min_length(self.bytes * 8);
+        (!(needed..=Self::MAX_LENGTH).contains(&self.length)).then(|| {
+            (
+                ErrorCode::OutOfRange,
+                format!(
+                    "{} bytes need {needed} to {} characters in this encoding.",
+                    self.bytes,
+                    Self::MAX_LENGTH
+                ),
+            )
+        })
     }
 }
 
@@ -1151,5 +1436,107 @@ mod tests {
         );
         assert!(Checksum::Bip39.repair("only three words").is_none());
         assert!(Checksum::Bech32.repair("abc1b").is_none());
+    }
+    fn isbn_as_check_digit() -> CheckDigitChecksum {
+        CheckDigitChecksum {
+            alphabet: "0123456789X".into(),
+            weights: (2..=10).collect(),
+            modulus: 11,
+            check: CheckRule::Complement,
+            prefix_length: 0,
+            length: 1,
+        }
+    }
+
+    #[test]
+    fn a_check_digit_setup_can_describe_isbn_10() {
+        let isbn = Checksum::CheckDigit(isbn_as_check_digit());
+        assert!(isbn.is_valid("0306406152"));
+        assert!(isbn.is_valid("080442957X"));
+        assert!(!isbn.is_valid("0306406153"));
+        assert!(!isbn.is_valid("03064A6152"));
+        assert_eq!(isbn.repair("0306406150").as_deref(), Some("0306406152"));
+    }
+
+    #[test]
+    fn a_check_digit_can_be_the_remainder_or_span_several_characters() {
+        let digits = |check, modulus, length| CheckDigitChecksum {
+            alphabet: "0123456789".into(),
+            weights: vec![1],
+            modulus,
+            check,
+            prefix_length: 4,
+            length,
+        };
+        // 1 + 2 + 3 + 4 + 5 = 15.
+        assert!(digits(CheckRule::Remainder, 10, 1).is_valid("acc_123455"));
+        assert!(digits(CheckRule::Complement, 10, 1).is_valid("acc_123455"));
+        assert!(!digits(CheckRule::Remainder, 10, 1).is_valid("acc_123456"));
+        // 97 - 15 = 82, written in two digits.
+        assert!(digits(CheckRule::Complement, 97, 2).is_valid("acc_1234582"));
+        assert!(digits(CheckRule::Remainder, 97, 2).is_valid("acc_1234515"));
+    }
+
+    #[test]
+    fn a_hash_setup_keeps_the_start_of_the_hash_in_its_encoding() {
+        let hash = |hash, bytes, encoding, length| HashChecksum {
+            hash,
+            bytes,
+            encoding,
+            prefix_length: 5,
+            length,
+        };
+        // SHA-256("abc") starts ba7816bf, SHA-1("abc") a9993e, MD5("abc") 9001 (36865).
+        let sha256 = hash(HashFunction::Sha256, 4, ChecksumEncoding::Hex, 8);
+        assert!(sha256.is_valid("acme_abcba7816bf"));
+        assert!(sha256.is_valid("acme_abcBA7816BF"));
+        assert!(!sha256.is_valid("acme_abdba7816bf"));
+        assert!(hash(HashFunction::Sha1, 3, ChecksumEncoding::Hex, 6).is_valid("acme_abca9993e"));
+        assert!(hash(HashFunction::Md5, 2, ChecksumEncoding::Digits, 5).is_valid("acme_abc36865"));
+        let base62 = Checksum::Hash(hash(HashFunction::Sha256, 4, ChecksumEncoding::Base62, 6));
+        let repaired = base62.repair("acme_abc000000").unwrap();
+        assert!(base62.is_valid(&repaired));
+        assert_eq!(repaired.len(), 14);
+    }
+
+    #[test]
+    fn settings_that_cant_run_are_explained() {
+        let with = |change: fn(&mut CheckDigitChecksum)| {
+            let mut setup = isbn_as_check_digit();
+            change(&mut setup);
+            Checksum::CheckDigit(setup).setup_error()
+        };
+        assert_eq!(with(|_| {}), None);
+        assert_eq!(
+            with(|setup| setup.alphabet = "00".into()).unwrap().0,
+            ErrorCode::InvalidFormat
+        );
+        assert!(with(|setup| setup.weights.clear()).is_some());
+        assert!(with(|setup| setup.modulus = 1).is_some());
+        assert!(
+            with(|setup| {
+                setup.modulus = 97;
+                setup.length = 1;
+            })
+            .unwrap()
+            .1
+            .contains("needs 2")
+        );
+
+        let hash = |bytes, length| {
+            Checksum::Hash(HashChecksum {
+                hash: HashFunction::Sha256,
+                bytes,
+                encoding: ChecksumEncoding::Base62,
+                prefix_length: 0,
+                length,
+            })
+            .problem()
+        };
+        assert_eq!(hash(4, 6), None);
+        assert!(hash(4, 5).is_some());
+        assert!(hash(9, 20).is_some());
+        assert_eq!(ChecksumEncoding::Digits.min_length(32), 10);
+        assert_eq!(ChecksumEncoding::Digits.min_length(64), 20);
     }
 }
