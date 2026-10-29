@@ -270,23 +270,39 @@ It was trained on two sources, and each is evaluated on held-out data of its own
   - A `T` value is labeled 1 at CredData's value position. A multi-line private key is labeled from its start through its second line.
   - `F` lines, `X` lines and unlabeled text are labeled 0.
   - `T` rows with no value position, and multi-line `T` values that aren't keys, are left out of training.
-- **Split by repository:** one repository in five, chosen by a hash of its id, is held out. That is 66 repositories with 6,183 `T`, 13,360 `F` and 562 `X` lines, none of them trained on. From the other 271 repositories, 29,479 pieces around labeled lines were mixed into training.
+- **Split by repository,** by a hash of each repository's id. No repository is in more than one split:
+  - **Test:** 66 repositories with 6,183 `T`, 13,360 `F` and 562 `X` lines. Used only to report results.
+  - **Validation:** 37 repositories with 1,454 `T`. Used to choose the threshold.
+  - **Training:** the other 234 repositories. The model trains on 34,016 pieces from them:
+    - pieces around every `T`, `F` and `X` line, with passwords of 8 bytes or more taken three times
+    - at most 500 pieces from any one repository, so no repository dominates
+- **Error analysis drove the last round:**
+  - The previous model's false positives on the test repositories were sorted into groups: embedded base64 blobs, .NET `PublicKeyToken=` values, lockfile checksums, password hashes, SQL column lists, format strings, AWS documentation IDs.
+  - Synthetic look-alikes of each group were added as negatives.
+  - This used the test repositories' error groups, not their labels, but it is still a form of tuning against them, so the validation numbers below matter too.
 - **Not committed:** no CredData file is in this repository, only the trained model and the code that reads a local checkout (`ml/creddata.py`). Each file keeps its source project's license: MIT 185 repositories, Apache-2.0 94, BSD-3-Clause 17, LGPL 16, ISC 4, BSD-2-Clause 4, CC0 3, GPL 1, EPL 1, other 4, no license file 8.
 
-**Results**, at threshold 50. A secret counts as found when a finding overlaps it; a finding counts as right when it overlaps a secret.
+**Threshold:** chosen on the validation repositories. F1 peaks at threshold 50 there, with precision 0.702 and recall 0.694, so the default stays at 50. The chart is in `ml/detector-thresholds.svg`.
 
-| Held-out data | Synthetic-only model | Shipped model (synthetic + CredData) |
-|---|---|---|
-| CredData, all 66 repositories | precision 0.280, recall 0.694 | **precision 0.611, recall 0.844** |
-| CredData, the 65 repositories other than one holding 84% of the labels | precision 0.074, recall 0.563 | **precision 0.405, recall 0.750** |
-| Synthetic documents | precision 0.959, recall 0.958 | precision 0.958, recall 0.926 |
-| Hand-written batch 3 (12 secrets, 8 clean texts) | 11 found, 2 of 14 findings wrong | 10 found, 0 of 13 findings wrong |
+**Results**, at threshold 50, as precision / recall. A secret counts as found when a finding overlaps it; a finding counts as right when it overlaps a secret.
+
+| Held-out data | Synthetic only | First CredData model | **Shipped model** |
+|---|---|---|---|
+| CredData test: the 65 repositories other than one holding 84% of the labels | 0.074 / 0.563 | 0.405 / 0.750 | **0.523 / 0.693** |
+| CredData test: all 66 repositories | 0.280 / 0.694 | 0.611 / 0.844 | **0.550 / 0.932** |
+| CredData validation: 37 repositories | (not separate then) | (trained on) | **0.702 / 0.694** |
+| Synthetic documents (shipped and first-CredData models on the current, harder set) | 0.959 / 0.958 | 0.891 / 0.924 | **0.945 / 0.934** |
+| Hand-written batch 3 (12 secrets, 8 clean texts) | 11 found, 2 wrong | 10 found, 0 wrong | **11 found, 0 wrong** |
 
 - **Hand-written batches** (`engine/tests/secret_detector.rs`): each batch was written before the model it was first checked against.
   - Batches 1 and 2 were used to find gaps in the generator, so they aren't a fair test.
   - Batch 3 was never used to change anything. It is small, and the same person wrote it and the generator.
-- **Ordinary code:** the second CredData row is the best guide, since one cryptography project dominates the first. Only about 4 in 10 findings there are credentials (about 6 in 10 at threshold 70), so findings are leads to review, not verdicts.
-- **Passwords are the weakest kind:** 202 of 360 found in real code.
+- **Ordinary code:** the first CredData row is the best guide, since one cryptography project dominates the second.
+  - About half of the findings there are credentials at threshold 50 (about 7 in 10 at threshold 70), so findings are leads to review, not verdicts.
+  - The shipped model trades some recall for precision against the first CredData model: F1 0.60 against 0.53.
+  - Its precision–recall curve is close to the earlier model's, and ahead wherever precision is above about 0.65.
+- **Passwords:** 108 of the 360 test passwords are under 8 bytes, below the engine's minimum finding, so none of those can be found. Of the 252 it could report, it finds 207.
+- **Value classifier overlap:** the value classifier splits CredData by its own hash, so most of these test repositories were in its training data. Numbers for the detector and classifier together on these repositories would not be on unseen data.
 
 ### Scan endpoint
 

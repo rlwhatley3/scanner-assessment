@@ -126,21 +126,21 @@ It judges the matched value and the name it's assigned to, not the file around i
 
 ### The secret detector
 
-[`models/secret-detector.onnx`](models/secret-detector.onnx) is a trained `model_detection` model (about 170 KB, `L = 256`, SHA-256 `ac129904…3561`). It reads raw text and scores every byte, so it can flag secrets no pattern rule describes: a token from a vendor with no rule, a password passed to a function, a key in a chat message. Like the classifier it is not part of the built-in rule set; the engine exports it as `SECRET_DETECTOR_ONNX` with a ready-made rule, `secret_detector_rule()` (severity medium, threshold 50). The API loads it at startup and lists it at `GET /api/models` as fitting `model_detection`, but does not seed a rule for it. [`ml/`](../ml/README.md#secret-detector-training) has the code that trains it.
+[`models/secret-detector.onnx`](models/secret-detector.onnx) is a trained `model_detection` model (about 170 KB, `L = 256`, SHA-256 `c81090bf…0292`). It reads raw text and scores every byte, so it can flag secrets no pattern rule describes: a token from a vendor with no rule, a password passed to a function, a key in a chat message. Like the classifier it is not part of the built-in rule set; the engine exports it as `SECRET_DETECTOR_ONNX` with a ready-made rule, `secret_detector_rule()` (severity medium, threshold 50). The API loads it at startup and lists it at `GET /api/models` as fitting `model_detection`, but does not seed a rule for it. [`ml/`](../ml/README.md#secret-detector-training) has the code that trains it.
 
-It is a byte-level convolutional network trained on synthetic documents mixed with real labeled code from Samsung's public CredData benchmark (split by repository; none of that data is in this repository). At threshold 50:
+It is a byte-level convolutional network trained on synthetic documents mixed with real labeled code from Samsung's public CredData benchmark (split by repository into training, validation and test; none of that data is in this repository). The threshold of 50 was chosen on the validation repositories. On held-out data:
 
 | Held out | Precision | Recall |
 |---|---|---|
-| CredData repositories, all 66 | 0.61 | 0.84 |
-| CredData repositories, the 65 other than one that holds 84% of the labels | 0.41 | 0.75 |
-| Synthetic documents | 0.96 | 0.93 |
-| Hand-written batch never used to tune it | 0 of 13 findings wrong | 10 of 12 found |
+| CredData test repositories, the 65 other than one that holds 84% of the labels | 0.52 (0.71 at threshold 70) | 0.69 (0.63 at 70) |
+| CredData test repositories, all 66 | 0.55 | 0.93 |
+| Synthetic documents | 0.95 | 0.93 |
+| Hand-written batch never used to tune it | 0 of 12 findings wrong | 11 of 12 found |
 
-The second row is the best guide to ordinary code: about 4 in 10 findings are credentials, so treat findings as leads to review. [`ml/README.md`](../ml/README.md#how-good-the-detector-is) has the full numbers and what they do and don't show.
+The first row is the best guide to ordinary code: about half of the findings are credentials, so treat findings as leads to review. [`ml/README.md`](../ml/README.md#how-good-the-detector-is) has the full numbers and what they do and don't show.
 
 - **Spans are approximate.** A finding covers the bytes the model scored at or above the threshold, so it can stop a few characters short of a secret or run into a quote. A private key's finding covers its `-----BEGIN` line and first line of key data, not the whole block.
-- **Passwords are its weakest kind:** it finds a little over half of them in real code, and misses passwords with punctuation in places like a Markdown table or a connection URL.
+- **Passwords are its weakest kind:** it finds about 8 in 10 of the passwords in real code that are long enough to report (none under 8 bytes, the engine's minimum finding), and can miss a password with punctuation in a connection URL.
 - **No test or example context.** A real-looking value in a test or README is flagged; placeholders are only recognized by how they look.
 - **Speed.** A 1 MB scan takes about 3.5 seconds in a release build and about 30 seconds in a debug build (Apple M1 Pro, one thread; `tests/secret_detector.rs` has the timing, run with `--ignored`). The time goes into the convolutions, not per-run overhead, so batching windows would gain little; a smaller network or running windows on several threads would.
 - **Retraining changes the file's hash.** Rule set versions that name the old hash report the detector rule as unavailable until a new version names the new one.

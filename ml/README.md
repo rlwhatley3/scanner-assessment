@@ -75,6 +75,7 @@ Training takes about 25 minutes on a laptop CPU (4 threads), then evaluates on t
 - Without `--creddata` it trains on synthetic documents only.
 - `--evaluate MODEL.onnx` evaluates a written model without training (add `--creddata` to include the held-out repositories).
 - `--docs`, `--epochs` and `--out` are for quick experiments; `--untrained --out PATH` writes the untrained network, for timing.
+- `analyze_detector.py MODEL.onnx --creddata PATH [--split validation]` sweeps thresholds from 30 to 90 and sorts a model's false positives and misses into groups, showing values by shape only.
 
 | Detector file | What it does |
 |---|---|
@@ -82,9 +83,11 @@ Training takes about 25 minutes on a laptop CPU (4 threads), then evaluates on t
 | [`creddata.py`](creddata.py) | Reads a CredData checkout into documents with a label for every byte, split by repository |
 | [`test_creddata.py`](test_creddata.py) | Checks that CredData's labels land on the right bytes, with a tiny made-up checkout |
 | [`train_detector.py`](train_detector.py) | Trains the network, reports held-out precision and recall the way the engine scores, and writes the ONNX file |
+| [`analyze_detector.py`](analyze_detector.py) | Threshold sweeps and error analysis on held-out CredData repositories |
 | [`encoding.py`](encoding.py) | `encode_window` matches the engine's detector input |
 
 ## Synthetic documents
+
 Every document is synthetic, and real-shaped values are random at generation time, so no secret-looking string is committed. A document is one of about twenty kinds of file (env, YAML, JSON, TOML, INI, properties, Python, JavaScript, Go, Java, Ruby, PHP, C#, shell, Dockerfile, XML, Terraform, logs, prose and chat, HTML, credential files such as `.netrc`, `.npmrc`, `.pgpass`, service-account JSON and Kubernetes secrets, and Markdown with code blocks). A third of documents have no secret at all; about a tenth have their newlines squashed, the way minified JSON or a pasted log arrives.
 
 | Labeled 1 | Labeled 0 |
@@ -95,6 +98,7 @@ Every document is synthetic, and real-shaped values are random at generation tim
 | Passwords: words with digits, leetspeak, passphrases, random strings with every symbol | URLs with tracking parameters, minified code |
 | JWTs, private keys (from `-----BEGIN` to the end of the first line of key data), base64-encoded credentials | Placeholders (`your_api_key_here`, `AKIAIOSFODNN7EXAMPLE`, `xxxx…`, `********`), references (`${DB_PASSWORD}`, `os.environ[…]`, `{{ secrets.X }}`, vault paths) |
 | The password in a connection string or URL, a token after `Bearer` or in `--user`, a signature in a query string, a webhook URL's secret path | Settings named after secrets that hold no secret (`password_min_length: 12`, `token_type: bearer`) |
+| | Look-alikes the detector got wrong in real code: long base64 blobs inside strings, .NET `PublicKeyToken=` values, lockfile checksums, password hashes (`pbkdf2_sha256$…`, `$2b$…`), SQL column lists, format strings and regular expressions, percent-encoded paths, IDs from AWS documentation |
 
 Secrets sit under names in every case style, under bland names when their format gives them away, passed straight to a function (`Client("…")`, `connect(host, user, "…")`, `ConvertTo-SecureString "…"`), and in running text, commands and log lines.
 
@@ -129,8 +133,11 @@ How [`creddata.py`](creddata.py) uses it:
   - A private key spanning several lines is labeled from its start to the end of its second line, the same rule as the synthetic keys, and the rest of it is left out of training.
   - Other `T` values that span several lines (two keys and the code between them), and `T` rows with no value position (1,003 of them), are left out of training.
   - `F` lines, `X` lines and all unlabeled text are labeled 0.
-- **Split by repository:** one repository in five, chosen by a hash of its id, is held out for evaluation. That is 66 repositories (6,183 `T`, 13,360 `F`, 562 `X`); no file from them is trained on.
-- **Training pieces:** from the other 271 repositories, about 770 bytes around every `T` and `X` line and two in five `F` lines, plus a random piece of one file in four: 29,479 pieces. They are mixed with the 32,000 synthetic documents.
+- **Split by repository,** by a hash of each repository's id:
+  - **Test:** one repository in five, 66 repositories (6,183 `T`, 13,360 `F`, 562 `X`). Only used to report results.
+  - **Validation:** one in eight of the rest, 37 repositories (1,454 `T`, 2,593 `F`, 460 `X`). Used to choose the threshold.
+  - **Training:** the other 234 repositories.
+- **Training pieces:** about 770 bytes around every labeled line (`T`, `F` and `X`), at a random offset. Each password of 8 bytes or more gets two more pieces (shorter ones are below the engine's minimum finding). One random piece of one file in four shows the model unlabeled code. No repository gives more than 500 pieces; credentials are kept first, then `X` and `F` lines, then random pieces. That makes 34,016 pieces, mixed with the 32,000 synthetic documents.
 - **Evaluation:** whole files, or for a file over 1 MB (the engine's limit for one scan), the text within 8 KB of its labels.
 
 ## The detector model
@@ -139,37 +146,79 @@ Byte embeddings, a 1×1 convolution, six residual dilated convolutions (kernel 3
 
 ## How good the detector is
 
-Measured at the engine's default threshold of 50, the way the engine scores: windows every 128 bytes, each byte keeps its highest score, runs under 8 bytes dropped. A secret counts as found when a finding overlaps it; a finding counts as right when it overlaps a secret. Each source is reported on its own.
+Measured the way the engine scores: windows every 128 bytes, each byte keeps its highest score, runs under 8 bytes dropped. A secret counts as found when a finding overlaps it; a finding counts as right when it overlaps a secret. Each source is reported on its own.
 
-**Held-out CredData repositories**, comparing the shipped model with the previous one, trained on synthetic documents only:
+### Choosing the threshold
 
-| Held out | Synthetic only: precision / recall | With CredData: precision / recall |
+The threshold was chosen on the 37 validation repositories, not the test set: F1 (the balance of precision and recall) is highest at 50 (precision 0.702, recall 0.694), with 55 and 60 close behind. The engine's default of 50 stays.
+
+![Precision and recall by threshold, on validation and test repositories](detector-thresholds.svg)
+
+| Threshold | Validation precision / recall | Test (65 repositories) precision / recall |
 |---|---|---|
-| All 66 repositories (6,183 credentials) | 0.280 / 0.694 | **0.611 / 0.844** |
-| The 65 other than `2ba83c6a` (1,018 credentials) | 0.074 / 0.563 | **0.405 / 0.750** |
+| 30 | 0.475 / 0.765 | 0.307 / 0.755 |
+| 40 | 0.613 / 0.735 | 0.425 / 0.723 |
+| **50** | **0.702 / 0.694** | **0.523 / 0.693** |
+| 60 | 0.738 / 0.651 | 0.628 / 0.665 |
+| 70 | 0.782 / 0.598 | 0.711 / 0.628 |
+| 80 | 0.807 / 0.512 | 0.759 / 0.553 |
+| 90 | 0.826 / 0.343 | 0.850 / 0.392 |
 
-- **One repository dominates.** `2ba83c6a` holds 84% of the held-out credentials (mostly keys and private keys, by the look of it test material in a cryptography project), so the second row is the better guide to ordinary code.
-- **At threshold 70**, precision and recall are 0.770 / 0.645 on all 66 repositories and 0.563 / 0.698 on the other 65.
-- **Recall by kind** on the other 65 repositories: tokens 186 of 190, private keys 30 of 31, UUID-shaped secrets 118 of 138, secrets 69 of 75, keys 50 of 59, passwords 202 of 360, URL credentials 5 of 19.
-- **Most false positives are in unlabeled text** (965 of 1,205 on the other 65 repositories); 230 are on lines CredData labeled `F` and 10 on `X` lines. CredData only labels lines some scanner flagged, so some unlabeled findings may be real secrets nobody labeled, but most are random-looking strings in code.
-- **Real values were obfuscated,** in training and evaluation alike. If the obfuscated values look different from real ones (CredData's replacement passwords are mostly lowercase letters and digits), these numbers can be better than on real code.
+Validation scores higher than test, so expect test-like numbers on new code. A rule that should only fire when fairly sure can use 70.
 
-**Held-out synthetic documents** (2,000, a different seed from training): precision 0.958, recall 0.926 (0.988 / 0.884 at threshold 70). The synthetic-only model scored 0.959 / 0.958; adding real data cost some recall on the generator's own documents.
+### Held-out CredData repositories
+
+Three versions, at threshold 50: synthetic only; the first CredData mix (`v4`); and the shipped model (`v5`), which adds the validation split, the per-repository cap, every `F` and `X` line, extra password pieces, and the look-alike negatives.
+
+| Held out | Synthetic only | v4 | **Shipped (v5)** |
+|---|---|---|---|
+| The 65 test repositories other than `2ba83c6a` (1,018 credentials) | 0.074 / 0.563 | 0.405 / 0.750 | **0.523 / 0.693** |
+| All 66 test repositories (6,183 credentials) | 0.280 / 0.694 | 0.611 / 0.844 | **0.550 / 0.932** |
+
+Each cell is precision / recall.
+
+- **One repository dominates the test set.** `2ba83c6a` holds 84% of the held-out credentials (mostly keys and private keys, by the look of it test material in a cryptography project), so the first row is the better guide to ordinary code.
+- **v5 trades recall for precision on ordinary code.** Its F1 there is 0.60 against v4's 0.53. Across thresholds the two curves are close: v4 at threshold 70 (0.563 / 0.698) is about where v5 is at 50, and v5 is ahead wherever precision is above about 0.65.
+- **At threshold 70**, v5 scores 0.711 / 0.628 on the 65 repositories and 0.779 / 0.903 on all 66.
+- **Recall by kind** on the 65 repositories: private keys 30 of 31, JSON web tokens 15 of 15, secrets 68 of 75, keys 50 of 59, tokens 157 of 190, UUID-shaped secrets 88 of 138, passwords 207 of 360, URL credentials 5 of 19. v4 found more tokens (186) and UUID-shaped secrets (118).
+- **Passwords under 8 bytes can't be found:** 108 of the 360 held-out passwords are shorter than the engine's 8-byte minimum finding, and they are 108 of v5's 153 missed passwords. Of the passwords it could report, v5 finds 207 of 252.
+- **Obfuscated values:** CredData replaced real values with random ones, in training and evaluation alike. If those look unlike real secrets (its replacement passwords are mostly lowercase letters and digits), real code can score lower.
+
+### What it gets wrong on real code
+
+From `analyze_detector.py` on the 65 test repositories at threshold 50. The groups are rough, by the shape of the flagged text.
+
+| False positives | v4 | v5 |
+|---|---|---|
+| Inside identifiers and long encoded strings (certificates or JWTs embedded in code) | 369 | 249 |
+| Other: SQL column lists, regular expressions, format strings, password hashes | 234 | 195 |
+| Hashes and digests (`PublicKeyToken=`, lockfile checksums, SRI) | 226 | 63 |
+| Example or placeholder values (AWS documentation IDs) | 144 | 63 |
+| Base64 or encoded data | 108 | 70 |
+| URLs and paths | 77 | 22 |
+| UUIDs and IDs | 47 | 22 |
+| **All**, of which on lines CredData labeled `F` / `X` / unlabeled | **1,205** (230 / 10 / 965) | **684** (85 / 6 / 593) |
+
+CredData only labels lines some scanner flagged, so some unlabeled findings may be real secrets nobody labeled. v4's false positives are what the look-alike negatives target. They came from the test repositories' error groups, not their labels or values, but that is still a light form of tuning against the test set; the validation numbers above are free of it.
+
+### Synthetic documents and hand-written text
+
+**Held-out synthetic documents** (2,000, a different seed from training, now including the look-alike negatives): v5 precision 0.945, recall 0.934 (0.983 / 0.892 at threshold 70); v4 on the same documents 0.891 / 0.924.
 
 **Hand-written text**, in [`engine/tests/secret_detector.rs`](../engine/tests/secret_detector.rs), in three batches, each written before the model it was first checked against:
 
-| Batch | How it was used | Secrets found | Wrong findings | Texts with no secret |
-|---|---|---|---|---|
-| 1 | Written before any training; the first model's misses (5 of 24) led to changes in the generator | 22 of 24 | 0 of 25 | 18, none flagged |
-| 2 | Written before the second model was checked; its misses (4 of 13, plus 2 false positives) led to the last changes to the generator | 13 of 13 | 1 of 14 | 10, 1 flagged |
-| 3 | Written before the third model was trained, and never used to change anything, including the move to CredData | **10 of 12** | **0 of 13** | **8, none flagged** |
+| Batch | How it was used | v4 | **v5** |
+|---|---|---|---|
+| 1 (24 secrets, 18 clean texts) | Written before any training; the first model's misses led to changes in the generator | 22 found, 0 wrong | **22 found, 0 wrong** |
+| 2 (13 secrets, 10 clean texts) | Written before the second model was checked; its misses led to the last changes to the generator | 13 found, 1 wrong | **12 found, 0 wrong** |
+| 3 (12 secrets, 8 clean texts) | Written before the third model was trained, and never used to change anything | 10 found, 0 wrong | **11 found, 0 wrong** |
 
-On batch 3 the synthetic-only model found 11 of 12 with 2 of 14 findings wrong. The batches are small, and the person who wrote them also wrote the generator. What the shipped model still misses there: passwords with punctuation in a Markdown table and in a connection URL, an EC key indented inside a YAML block, a three-word password in an email; it flags a `0x` transaction hash.
+The batches are small, and the person who wrote them also wrote the generator. v5 still misses a hex key with a `-us6` suffix after `anystring:`, a three-word password in an email, a short `hex:hex` credential under a bland name, and a password with punctuation in a connection URL.
 
 ## Detector limits
 
-- **Precision on ordinary code is modest.** On held-out real repositories other than the dominant one, about 4 in 10 findings at threshold 50 are credentials (about 6 in 10 at 70). Treat findings as leads to review, not verdicts.
-- **Passwords are the weakest kind**, at a little over half found on real code.
+- **Precision on ordinary code is modest.** On held-out real repositories other than the dominant one, about half of the findings at threshold 50 are credentials (about 7 in 10 at 70). Treat findings as leads to review, not verdicts.
+- **Passwords are the weakest kind.** It finds about 8 in 10 of the passwords long enough to report, and none under 8 bytes.
 - **Its real data is one benchmark,** with obfuscated values, labels only on lines other scanners flagged, and one repository that dominates the held-out labels.
 - **Each byte sees about 64 bytes either side** and a summary of its 256-byte window. A name further away than that doesn't help, and the middle of a long private key looks like a certificate, which is why only a key's first lines are labeled.
 - **No test or example context.** A real-looking value in a unit test or a README is flagged like any other; placeholders are only recognized by their look.
