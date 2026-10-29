@@ -394,7 +394,7 @@ Each report below says what was built, what the design guarantees, what it doesn
 
 #### Findings that move or disappear
 
-- **Built:** locations are byte offsets plus line and column, counting `\n`, `\r\n`, and a lone `\r` as line breaks. The UI converts byte offsets to string positions, so multi-byte text before a match doesn't shift the highlight. The text is locked while scanning and read-only after; changing it means a new scan.
+- **Built:** locations are byte offsets plus line and column, counting `\n`, `\r\n`, and a lone `\r` as line breaks. The UI converts byte offsets to string positions, so multi-byte text before a match doesn't shift the highlight. Long lines wrap in the results view instead of scrolling sideways. The text is locked while scanning and read-only after; changing it means a new scan.
 - **Guarantee:** a finding always points into the exact text that was scanned.
 - **Gaps:** past scans don't keep the text, so an old finding's location can't be checked against anything. Columns count code points, so an emoji made of several counts as more than one column. No file scanning, so files changing mid-scan isn't handled yet.
 - **Next:** with file scanning, store a hash of each file's content with its findings and mark a finding stale when the file no longer matches.
@@ -421,6 +421,7 @@ Each report below says what was built, what the design guarantees, what it doesn
 - **Next:**
   - Give scans a status (running, completed, failed). Only completed scans count as clean, and a scan left running is shown as interrupted.
   - **Repository scanning:** don't follow symlinks outside the selected folder, and track visited directories so loops end. Skip binary files (a NUL byte), files over the size limit, and unreadable files, and list each one as **not scanned** with the reason. Hash each file's content when it's read, so a file edited mid-scan is detected and reported.
+  - **Paths:** keep paths as raw bytes, never pass them through a shell, and escape them for each output: JSON strings, URI-encoded in SARIF, and control characters shown as escapes in readable output, so a file name can't break a script or fake a line of output.
   - **Caching:** key cached results by file content hash, rule set version, ignore settings, and engine version, so any change makes a miss, never a wrong hit. Apply suppressions after the cache, so adding or removing one never makes cached results stale.
 
 ### Remediation has consequences
