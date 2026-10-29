@@ -1295,6 +1295,47 @@ fn a_logged_secret_name_in_code_or_labelling_a_value_outranks_a_mention_which_ou
     );
 }
 
+/// The confidence of the one match a shell echo rule finds in a line.
+fn echo_confidence(line: &str) -> u8 {
+    let rule_set = only_rule(
+        DetectionType::UnsafeHandling,
+        r"(?i)\b(?:echo|printf)\b[^\n|>]*\$\{?(?P<key>[A-Za-z_]*(?:token|secret|password|api_key|apikey)[A-Za-z_]*)",
+    );
+    let result = scan(1, line, &rule_set).expect("scan should run");
+    let found = matches(&result);
+    assert_eq!(found.len(), 1, "{line}");
+    found[0].confidence
+}
+
+#[test]
+fn a_shell_variable_inside_double_quotes_is_code() {
+    let braced = echo_confidence(r#"printf 'db password: %s\n' "${DB_PASSWORD}""#);
+    assert_eq!(braced, 82);
+    assert_eq!(
+        echo_confidence(r#"echo "Deploying with token $NIMBUS_TOKEN""#),
+        braced
+    );
+}
+
+#[test]
+fn a_shell_variable_quoted_on_its_own_is_code() {
+    assert_eq!(echo_confidence(r#"echo "$NIMBUS_TOKEN" > /tmp/token"#), 82);
+}
+
+#[test]
+fn a_shell_variable_in_single_quotes_or_escaped_is_only_text() {
+    assert_eq!(echo_confidence(r#"echo 'Set $NIMBUS_TOKEN first'"#), 12);
+    assert_eq!(echo_confidence(r#"echo "Set \$NIMBUS_TOKEN first""#), 12);
+}
+
+#[test]
+fn a_plain_secret_word_in_a_message_still_scores_low_beside_shell_variables() {
+    let found = from_rule(&run("logger.info(\"token refresh scheduled\")"), 5);
+    assert_eq!(found[0].confidence, 12);
+    let found = from_rule(&run("logger.info(\"cost $5, token refresh scheduled\")"), 5);
+    assert_eq!(found[0].confidence, 12);
+}
+
 #[test]
 fn a_logging_rule_without_a_key_group_has_no_evidence_either_way() {
     let rule_set = only_rule(

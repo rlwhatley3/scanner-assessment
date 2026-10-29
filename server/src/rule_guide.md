@@ -167,7 +167,7 @@ A model this server hasn't loaded, or one whose shape doesn't fit (`list_models`
   | Fixed syntax around the `value` group (a header name, not a `key` group) | +1 |
   | Randomness: entropy as a share of the most a value its length can have | −1.5 (none) to +1.5 (every character differs) |
   | Password shape score, in place of randomness | +0.35 per point above 3 |
-  | No value: the secret name in `key` is code (`dbPassword`, `{token}`, `${token}`) | +1.5 |
+  | No value: the secret name in `key` is code (`dbPassword`, `{token}`, `${token}`, or `$TOKEN` outside single quotes) | +1.5 |
   | No value: the secret name labels the value logged with it (`"password:", pw`, `"token=%s" % t`, `f"secret: {s}"`) | +1.5 |
   | No value: the secret name is a word in a longer message logged with another value (`"password reset for", user`) | +0.5 |
   | No value: the secret name is only a word in a quoted message | −2 |
