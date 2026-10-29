@@ -366,10 +366,6 @@ The synthetic-only model's near-perfect synthetic score and poor CredData score 
 - **Outcome:** [PR #29](https://github.com/rlwhatley3/scanner-assessment/pull/29) was closed, and the shipped model keeps its own split.
 - **What that leaves:** the two models' test sets overlap on only 15 repositories, so numbers for the detector and classifier together are only on unseen data there.
 
-### Known gaps
-
-- **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.
-
 ## Phase 3: New feedback
 
 **What came first:** the reports that apply to the scanner as it's used today, on pasted text: whether a finding can be trusted, suppressions, rule failures, scan lifecycle, and keeping scanned content safe. Repository scanning, a CLI, and remediation are designed below but not built. Each would need the guarantees above to hold first, and building them on a scanner people don't trust would only spread the problem.
