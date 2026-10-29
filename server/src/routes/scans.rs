@@ -38,10 +38,13 @@ pub struct ScanResponse {
 /// How to read a finding's violation, for API docs and MCP clients.
 const VIOLATION_HELP: &str = "Each match's violation holds ruleName, detectionType, severity, \
 location (byte offsets plus 1-based line and column), and redactedPreview (the rule's prefix only). \
-confidence (0-100) is how sure the engine is that it's a secret of the rule's kind: direct \
-credentials 95 (99 with a passing checksum, 50 with a failing one), likely credentials 50-90 by \
-how random the value is for its length (35-80 by password shape when the rule has one), unsafe \
-handling 70 (30 when commented out), and model_detection matches the model's score. A rule's value classifier lowers it to 30 when the \
+confidence (0-100) is how likely the match is what its rule describes, from the evidence about \
+that match, weighed the same whatever the rule's type: every match starts at 50, and a passing \
+or failing checksum, the format's prefix, a secret-sounding key name, required syntax around the \
+value, how random the value is for its length (or its password shape), and, for a match with no \
+value, whether the secret name it mentions is code or only a word in a quoted message and whether \
+it's commented out each move it up or down, between 1 and 99; whyFlagged lists the evidence. \
+model_detection matches the model's score. A rule's value classifier lowers it to 30 when the \
 credential score is below its minScore, or raises it halfway toward a higher credential score, up \
 to 95. placeholderScore (0-100, higher = more likely an example; null for unsafe handling). \
 valueClass (null unless the rule has a value classifier): label credential, non_secret, or \

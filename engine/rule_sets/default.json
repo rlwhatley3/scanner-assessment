@@ -78,7 +78,7 @@
         "name": "Secret written to a log",
         "detectionType": "unsafe_handling",
         "severity": "medium",
-        "pattern": "(?i)\\b(?:console\\.(?:log|info|warn|error|debug)|println!?|print|logger\\.\\w+|log\\.\\w+)\\s*\\([^)\\n]*(?:password|passwd|passphrase|secret|api[_-]?key|token|private[_ ]?key)",
+        "pattern": "(?i)\\b(?:console\\.(?:log|info|warn|error|debug)|println!?|print|logger\\.\\w+|log\\.\\w+)\\s*\\([^)\\n]*(?P<key>password|passwd|passphrase|secret|api[_-]?key|token|private[_ ]?key)",
         "remediation": "Remove the secret from this log call, or log a fixed placeholder such as \"[redacted]\" instead.",
         "enabled": true
       }

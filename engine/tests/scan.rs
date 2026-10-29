@@ -1,7 +1,8 @@
+use secrets_scanner_engine::DetectionType;
 use secrets_scanner_engine::{
     Checksum, ChecksumEncoding, Crc32Checksum, ErrorCode, FindingKind, Format, MAX_FINDINGS,
-    MAX_INPUT_BYTES, MatchDetails, Rule, RuleDefinition, RuleField, ScanError, ScanResult,
-    Violation, default_rule_set, scan,
+    MAX_INPUT_BYTES, MatchDetails, Rule, RuleDefinition, RuleField, RuleSet, ScanError, ScanResult,
+    Severity, Violation, default_rule_set, scan,
 };
 
 const AWS_KEY: &str = "AKIAZ7Q3LMN4XWY2PRT6";
@@ -46,7 +47,7 @@ fn finds_an_aws_key_with_its_location_and_a_prefix_only_preview() {
         AWS_KEY.len()
     );
     assert_eq!(aws.redacted_preview.as_deref(), Some("AKIA…"));
-    assert_eq!(aws.confidence, 95);
+    assert_eq!(aws.confidence, 97);
     assert_eq!(aws.placeholder_score, Some(5));
     assert_eq!(
         result.findings[0].violation_pretty,
@@ -451,7 +452,7 @@ fn a_token_whose_checksum_fails_is_likely_made_up() {
     let result = run(&format!("gh = {GITHUB_TOKEN}"));
     let found = matches(&result);
     assert_eq!(found[0].checksum_valid, Some(false));
-    assert_eq!(found[0].confidence, 50);
+    assert_eq!(found[0].confidence, 43);
     assert_eq!(found[0].placeholder_score, Some(70));
     assert!(found[0].why_flagged.contains("checksum doesn't match"));
 }
@@ -509,7 +510,8 @@ fn commented_out_logging_is_low_confidence() {
     let found = matches(&result);
     assert_eq!(found.len(), 1);
     assert!(found[0].in_comment);
-    assert_eq!(found[0].confidence, 30);
+    assert_eq!(found[0].confidence, 27);
+    assert!(found[0].why_flagged.contains("commented out"));
 }
 
 #[test]
@@ -562,7 +564,7 @@ fn a_card_number_that_passes_luhn_is_high_confidence_and_one_that_fails_is_not()
         .iter()
         .map(|card| (card.checksum_valid, card.confidence))
         .collect();
-    assert_eq!(cards, [(Some(true), 99), (Some(false), 50)]);
+    assert_eq!(cards, [(Some(true), 93), (Some(false), 2)]);
 }
 
 #[test]
@@ -1185,7 +1187,7 @@ fn a_short_value_with_no_repeated_characters_is_as_confident_as_a_long_random_on
     let short = run(&format!("password = {RANDOM_PASSWORD}"));
     let found = matches(&short);
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].confidence, 90);
+    assert_eq!(found[0].confidence, 92);
     assert!(
         found[0]
             .why_flagged
@@ -1193,5 +1195,98 @@ fn a_short_value_with_no_repeated_characters_is_as_confident_as_a_long_random_on
     );
 
     let repetitive = run("password = aabbccddeeff1122");
-    assert!(matches(&repetitive)[0].confidence < 90);
+    assert!(matches(&repetitive)[0].confidence < 92);
+}
+
+/// A rule set holding only a rule with this type and pattern, so no built-in rule overlaps it.
+fn only_rule(detection_type: DetectionType, pattern: &str) -> RuleSet {
+    RuleSet {
+        rules: vec![Rule {
+            id: 500,
+            definition: RuleDefinition {
+                name: Some("Custom".into()),
+                detection_type: Some(detection_type),
+                severity: Some(Severity::High),
+                pattern: Some(pattern.into()),
+                ..RuleDefinition::default()
+            },
+        }],
+    }
+}
+
+#[test]
+fn the_same_evidence_scores_the_same_whatever_the_rule_type() {
+    let text = format!("k = {AWS_KEY}");
+    let confidences: Vec<u8> = [
+        DetectionType::DirectCredential,
+        DetectionType::LikelyCredential,
+    ]
+    .into_iter()
+    .map(|detection_type| {
+        let result = scan(
+            1,
+            &text,
+            &only_rule(detection_type, r"\bAKIA[0-9A-Z]{16}\b"),
+        )
+        .expect("scan should run");
+        matches(&result)[0].confidence
+    })
+    .collect();
+    assert_eq!(confidences[0], confidences[1]);
+}
+
+#[test]
+fn a_logged_secret_name_in_code_or_labelling_a_value_outranks_a_mention_which_outranks_a_message() {
+    let confidence = |line: &str| {
+        let found = from_rule(&run(line), 5);
+        assert_eq!(found.len(), 1, "{line}");
+        found[0].confidence
+    };
+    let in_code = [
+        "console.log(\"db password\", dbPassword);",
+        "logger.info(f\"api_key={api_key}\")",
+        "console.log(`using ${token}`)",
+        "println!(\"{}\", token);",
+    ]
+    .map(confidence);
+    let labels = [
+        "console.log(\"password:\", pw)",
+        "logger.info(\"token=%s\" % t)",
+        "print(f\"secret: {s}\")",
+        "console.log(\"passwordHash = \" + h)",
+    ]
+    .map(confidence);
+    let beside = confidence("logger.info(\"password reset for\", user)");
+    let message = confidence("logger.info(\"token refresh scheduled\")");
+    let unlabelled = confidence("console.log(\"password:\")");
+    let escaped = confidence(r#"print("say \"token\" twice")"#);
+    for strong in in_code.iter().chain(&labels) {
+        assert_eq!(*strong, in_code[0]);
+    }
+    assert!(labels[0] > beside, "{} vs {beside}", labels[0]);
+    assert!(beside > message, "{beside} vs {message}");
+    assert!(message < 50);
+    assert_eq!(unlabelled, message);
+    assert_eq!(escaped, message);
+    let why = |line: &str| from_rule(&run(line), 5)[0].why_flagged.clone();
+    assert!(why("console.log(\"password:\", pw)").contains("labels the value it logs"));
+    assert!(
+        why("logger.info(\"token refresh scheduled\")").contains("only a word in a quoted message")
+    );
+}
+
+#[test]
+fn a_logging_rule_without_a_key_group_has_no_evidence_either_way() {
+    let rule_set = only_rule(
+        DetectionType::UnsafeHandling,
+        r"(?i)\bconsole\.log\s*\([^)\n]*token",
+    );
+    let result = scan(1, "console.log(token)", &rule_set).expect("scan should run");
+    let found = matches(&result);
+    assert_eq!(found[0].confidence, 50);
+    assert!(
+        found[0]
+            .why_flagged
+            .contains("nothing else about this match")
+    );
 }
