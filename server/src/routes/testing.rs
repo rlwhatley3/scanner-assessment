@@ -1221,7 +1221,7 @@ impl<'v> Evaluation<'v> {
                 }
                 entry.1 = entry.1.min(found.confidence);
                 entry.2 = entry.2.max(found.confidence);
-                entry.3 |= *case_rule != Some(found.rule_id);
+                entry.3 |= case_rule.is_some_and(|rule_id| rule_id != found.rule_id);
             }
         }
         for (rule_id, (case_ids, low, high, other)) in scored_real {
