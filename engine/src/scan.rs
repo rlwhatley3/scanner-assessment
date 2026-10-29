@@ -1170,7 +1170,7 @@ fn to_confidence(total: f64) -> u8 {
 /// Where a secret name sits in a line of code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NameUse {
-    /// Outside any string, or inside an interpolation such as `{token}` or `${token}`.
+    /// Outside any string, or inside an interpolation such as `{token}`, `${token}`, or `"$TOKEN"`.
     Code,
     /// A label for the value logged with it: in a string that ends right after the name, apart
     /// from separators and placeholders, with a value following the string or interpolated in
@@ -1234,7 +1234,11 @@ fn name_use(text: &str, start: usize, end: usize) -> NameUse {
     text[line_start..start]
         .chars()
         .for_each(|character| quotes.step(character));
-    if !quotes.in_plain_string() {
+    // A variable such as `"$TOKEN"` expands inside double quotes in shell, Perl, and PHP, as
+    // `${token}` does; single quotes and `\$` keep it literal.
+    let before = &text[line_start..start];
+    let variable = before.ends_with('$') && !before.ends_with("\\$") && quotes.quote != Some('\'');
+    if !quotes.in_plain_string() || variable {
         return NameUse::Code;
     }
     // Read to the end of the string, then see whether another value follows it.
