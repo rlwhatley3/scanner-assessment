@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 crc32fast = "1.5.2"
+hmac = "0.12.1"
 regex = "1.13.1"
 regex-syntax = "0.8.11"
 serde = { version = "1.0.229", features = ["derive"] }

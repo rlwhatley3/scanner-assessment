@@ -1,4 +1,4 @@
-//! Reads and writes rules, rule sets and their versions, and scan sessions. Plain functions over a SQLite
+//! Reads and writes rules, rule sets and their versions, scan sessions, and suppressions. Plain functions over a SQLite
 //! connection, so any front end (the MCP server today, REST routes later) can share them. Each
 //! enforces the storage rules from SUBMISSION.md: drafts are not validated, adding rules into a
 //! version validates and snapshots them, and saved versions never change except for archiving.
@@ -118,6 +118,8 @@ pub struct ScanSessionSummary {
     /// When the session's latest scan ran. Null until its first scan.
     pub last_ran: Option<String>,
     pub scan_count: i64,
+    /// Suppressions that apply to the session's next scan: not removed and not expired.
+    pub active_suppression_count: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -138,8 +140,10 @@ pub struct ScanSummary {
     pub truncated: bool,
     /// True when at least one rule could not run.
     pub partial: bool,
-    /// Matches only; rule errors are counted by `partial`.
+    /// Matches only, suppressed ones included; rule errors are counted by `partial`.
     pub match_count: i64,
+    /// Matches a suppression applied to when the scan ran. They are still in `match_count`.
+    pub suppressed_count: i64,
     pub created_at: String,
 }
 
@@ -595,7 +599,10 @@ const SESSION_COLUMNS: &str = "s.id, s.rule_set_version_id, s.last_ran, s.create
     v.rule_set_id,
     (SELECT name FROM rule_sets t WHERE t.id = v.rule_set_id),
     (SELECT COUNT(*) FROM rule_set_versions n
-        WHERE n.rule_set_id = v.rule_set_id AND n.id <= v.id)";
+        WHERE n.rule_set_id = v.rule_set_id AND n.id <= v.id),
+    (SELECT COUNT(*) FROM suppressions p
+        WHERE p.scan_session_id = s.id AND p.removed_at IS NULL
+            AND p.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
 /// Sessions joined to their version, for the rule set columns above.
 const SESSION_FROM: &str =
@@ -612,6 +619,7 @@ fn session_summary(row: &Row) -> rusqlite::Result<ScanSessionSummary> {
         rule_set_id: row.get(6)?,
         rule_set_name: row.get(7)?,
         version_number: row.get(8)?,
+        active_suppression_count: row.get(9)?,
     })
 }
 
@@ -646,7 +654,9 @@ pub fn get_session(connection: &Connection, session_id: i64) -> StoreResult<Scan
     let mut statement = connection.prepare(
         "SELECT c.id, c.truncated, c.created_at,
              EXISTS (SELECT 1 FROM findings f WHERE f.scan_id = c.id AND f.kind = 'rule_error'),
-             (SELECT COUNT(*) FROM findings f WHERE f.scan_id = c.id AND f.kind = 'match')
+             (SELECT COUNT(*) FROM findings f WHERE f.scan_id = c.id AND f.kind = 'match'),
+             (SELECT COUNT(*) FROM findings f
+                 WHERE f.scan_id = c.id AND f.suppression_id IS NOT NULL)
          FROM scans c WHERE c.scan_session_id = ?1 ORDER BY c.id",
     )?;
     let scans = statement
@@ -657,6 +667,7 @@ pub fn get_session(connection: &Connection, session_id: i64) -> StoreResult<Scan
                 created_at: row.get(2)?,
                 partial: row.get(3)?,
                 match_count: row.get(4)?,
+                suppressed_count: row.get(5)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -688,4 +699,314 @@ pub fn create_session(
         [rule_set_version_id],
     )?;
     get_session_summary(connection, connection.last_insert_rowid())
+}
+
+// Suppressions
+
+/// The longest suppression reason allowed.
+pub const MAX_SUPPRESSION_REASON: usize = 500;
+
+/// How far ahead a suppression can expire. A suppression is for a known example, not a standing
+/// exception, so it has to be renewed rather than forgotten.
+pub const MAX_SUPPRESSION_DAYS: i64 = 365;
+
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, schemars::JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SuppressionStatus {
+    /// Applies to the session's next scan.
+    Active,
+    /// Past its expiry, so it no longer applies.
+    Expired,
+    /// Removed by a user, so it no longer applies.
+    Removed,
+}
+
+/// A suppression, without its fingerprint: the fingerprint only matters to the scan path, so it
+/// never leaves the server.
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SuppressionRecord {
+    pub id: i64,
+    pub scan_session_id: i64,
+    /// The rule whose finding it covers. It covers one value found by this rule, never the rule
+    /// as a whole.
+    pub rule_id: i64,
+    pub rule_name: String,
+    /// The finding it was made from, and that finding's scan.
+    pub finding_id: i64,
+    pub scan_id: i64,
+    pub reason: String,
+    pub expires_at: String,
+    pub removed_at: Option<String>,
+    pub status: SuppressionStatus,
+    /// Findings it has marked as suppressed, in any scan of the session.
+    pub suppressed_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// What a scan's finding records about the suppression that applied to it.
+#[derive(Serialize, Clone, schemars::JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FindingSuppression {
+    pub id: i64,
+    pub reason: String,
+    pub expires_at: String,
+}
+
+const SUPPRESSION_COLUMNS: &str = "p.id, p.scan_session_id, p.rule_id,
+    COALESCE(json_extract(f.violation, '$.ruleName'), 'Rule ' || p.rule_id),
+    p.finding_id, f.scan_id, p.reason, p.expires_at, p.removed_at,
+    CASE WHEN p.removed_at IS NOT NULL THEN 'removed'
+        WHEN p.expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now') THEN 'expired'
+        ELSE 'active' END,
+    (SELECT COUNT(*) FROM findings m WHERE m.suppression_id = p.id),
+    p.created_at, p.updated_at";
+
+const SUPPRESSION_FROM: &str = "suppressions p JOIN findings f ON f.id = p.finding_id";
+
+fn suppression_record(row: &Row) -> rusqlite::Result<SuppressionRecord> {
+    let status: String = row.get(9)?;
+    Ok(SuppressionRecord {
+        id: row.get(0)?,
+        scan_session_id: row.get(1)?,
+        rule_id: row.get(2)?,
+        rule_name: row.get(3)?,
+        finding_id: row.get(4)?,
+        scan_id: row.get(5)?,
+        reason: row.get(6)?,
+        expires_at: row.get(7)?,
+        removed_at: row.get(8)?,
+        status: match status.as_str() {
+            "removed" => SuppressionStatus::Removed,
+            "expired" => SuppressionStatus::Expired,
+            _ => SuppressionStatus::Active,
+        },
+        suppressed_count: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
+    })
+}
+
+/// A session's suppressions, newest first, removed and expired ones included.
+pub fn list_suppressions(
+    connection: &Connection,
+    session_id: i64,
+) -> StoreResult<Vec<SuppressionRecord>> {
+    get_session_summary(connection, session_id)?;
+    let mut statement = connection.prepare(&format!(
+        "SELECT {SUPPRESSION_COLUMNS} FROM {SUPPRESSION_FROM}
+         WHERE p.scan_session_id = ?1 ORDER BY p.id DESC"
+    ))?;
+    let suppressions = statement
+        .query_map([session_id], suppression_record)?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(suppressions)
+}
+
+fn get_suppression(
+    connection: &Connection,
+    session_id: i64,
+    suppression_id: i64,
+) -> StoreResult<SuppressionRecord> {
+    connection
+        .query_row(
+            &format!(
+                "SELECT {SUPPRESSION_COLUMNS} FROM {SUPPRESSION_FROM}
+                 WHERE p.id = ?1 AND p.scan_session_id = ?2"
+            ),
+            [suppression_id, session_id],
+            suppression_record,
+        )
+        .optional()?
+        .ok_or_else(|| {
+            StoreError::NotFound(format!(
+                "Suppression {suppression_id} not found in scan session {session_id}."
+            ))
+        })
+}
+
+/// `expires_at` in the stored format, if it is a date or date-time in the allowed window: after
+/// now and at most `MAX_SUPPRESSION_DAYS` ahead. A date alone means midnight UTC at its start.
+fn check_expiry(connection: &Connection, expires_at: &str) -> StoreResult<String> {
+    let expires_at = expires_at.trim();
+    let looks_like_a_date = expires_at.len() >= 10
+        && expires_at.as_bytes()[..4].iter().all(u8::is_ascii_digit)
+        && expires_at.as_bytes()[4] == b'-';
+    let (normalized, in_future, in_window): (Option<String>, bool, bool) = connection.query_row(
+        &format!(
+            "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', ?1),
+                 strftime('%Y-%m-%dT%H:%M:%fZ', ?1) > {NOW},
+                 strftime('%Y-%m-%dT%H:%M:%fZ', ?1) <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?2)"
+        ),
+        rusqlite::params![expires_at, format!("+{MAX_SUPPRESSION_DAYS} days")],
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get::<_, Option<bool>>(1)?.unwrap_or(false),
+                row.get::<_, Option<bool>>(2)?.unwrap_or(false),
+            ))
+        },
+    )?;
+    let Some(normalized) = normalized.filter(|_| looks_like_a_date) else {
+        return Err(StoreError::Invalid(
+            "A suppression needs an expiry: an ISO 8601 date or date-time, such as \
+             2026-12-31T00:00:00Z."
+                .to_string(),
+        ));
+    };
+    if !in_future {
+        return Err(StoreError::Invalid(
+            "A suppression's expiry must be in the future.".to_string(),
+        ));
+    }
+    if !in_window {
+        return Err(StoreError::Invalid(format!(
+            "A suppression can expire at most {MAX_SUPPRESSION_DAYS} days from now."
+        )));
+    }
+    Ok(normalized)
+}
+
+/// Suppresses the value of one of the session's findings: later scans in this session mark a
+/// finding as suppressed when the same rule finds a value with the same fingerprint, until the
+/// suppression expires or is removed. The finding it was made from, and any other finding of the
+/// same value and rule in that scan, are marked too, so the scan being reviewed shows the
+/// decision. Nothing is hidden or uncounted; findings are only marked.
+pub fn create_suppression(
+    connection: &mut Connection,
+    session_id: i64,
+    finding_id: i64,
+    reason: &str,
+    expires_at: &str,
+) -> StoreResult<SuppressionRecord> {
+    let transaction = connection.transaction()?;
+    get_session_summary(&transaction, session_id)?;
+    // The finding is named in the request, so one outside this session makes it invalid.
+    let (scan_id, rule_id, fingerprint) = transaction
+        .query_row(
+            "SELECT f.scan_id, f.rule_id, f.fingerprint FROM findings f
+             JOIN scans c ON c.id = f.scan_id
+             WHERE f.id = ?1 AND c.scan_session_id = ?2 AND f.kind = 'match'",
+            [finding_id, session_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()?
+        .ok_or_else(|| {
+            StoreError::Invalid(format!(
+                "Finding {finding_id} is not a match in scan session {session_id}. Only matches \
+                 can be suppressed, and only in the session they were found in."
+            ))
+        })?;
+    let Some(fingerprint) = fingerprint else {
+        return Err(StoreError::Invalid(format!(
+            "Finding {finding_id} was saved before suppressions existed, so it has no \
+             fingerprint. Scan the text again and suppress the new finding."
+        )));
+    };
+    let reason = reason.trim();
+    if reason.is_empty() {
+        return Err(StoreError::Invalid(
+            "A suppression needs a reason: why this value is safe to leave.".to_string(),
+        ));
+    }
+    if reason.chars().count() > MAX_SUPPRESSION_REASON {
+        return Err(StoreError::Invalid(format!(
+            "A suppression reason can be at most {MAX_SUPPRESSION_REASON} characters."
+        )));
+    }
+    let expires_at = check_expiry(&transaction, expires_at)?;
+    if let Some(existing) = active_suppressions(&transaction, session_id)?
+        .into_iter()
+        .find(|active| active.rule_id == rule_id && active.fingerprint == fingerprint)
+    {
+        return Err(StoreError::Invalid(format!(
+            "This value is already suppressed for this rule by suppression {}. Remove it first \
+             to change the reason or expiry.",
+            existing.suppression.id
+        )));
+    }
+
+    transaction.execute(
+        "INSERT INTO suppressions
+             (scan_session_id, rule_id, fingerprint, finding_id, reason, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            session_id,
+            rule_id,
+            fingerprint,
+            finding_id,
+            reason,
+            expires_at
+        ],
+    )?;
+    let suppression_id = transaction.last_insert_rowid();
+    transaction.execute(
+        &format!(
+            "UPDATE findings SET suppression_id = ?1, updated_at = {NOW}
+             WHERE scan_id = ?2 AND rule_id = ?3 AND fingerprint = ?4
+                 AND suppression_id IS NULL"
+        ),
+        rusqlite::params![suppression_id, scan_id, rule_id, fingerprint],
+    )?;
+    let suppression = get_suppression(&transaction, session_id, suppression_id)?;
+    transaction.commit()?;
+    Ok(suppression)
+}
+
+/// Removes a suppression: later scans stop applying it. The row is kept, so past scans still
+/// say which suppression applied to their findings and why. Removing it twice is harmless.
+pub fn remove_suppression(
+    connection: &Connection,
+    session_id: i64,
+    suppression_id: i64,
+) -> StoreResult<SuppressionRecord> {
+    get_suppression(connection, session_id, suppression_id)?;
+    connection.execute(
+        &format!(
+            "UPDATE suppressions SET removed_at = {NOW}, updated_at = {NOW}
+             WHERE id = ?1 AND removed_at IS NULL"
+        ),
+        [suppression_id],
+    )?;
+    get_suppression(connection, session_id, suppression_id)
+}
+
+/// A suppression a scan can apply, with the rule and fingerprint it matches.
+pub struct ActiveSuppression {
+    pub rule_id: i64,
+    pub fingerprint: String,
+    pub suppression: FindingSuppression,
+}
+
+/// The session's suppressions that apply right now: not removed and not expired, oldest first.
+pub fn active_suppressions(
+    connection: &Connection,
+    session_id: i64,
+) -> rusqlite::Result<Vec<ActiveSuppression>> {
+    let mut statement = connection.prepare(&format!(
+        "SELECT id, rule_id, fingerprint, reason, expires_at FROM suppressions
+         WHERE scan_session_id = ?1 AND removed_at IS NULL AND expires_at > {NOW}
+         ORDER BY id"
+    ))?;
+    let active = statement
+        .query_map([session_id], |row| {
+            Ok(ActiveSuppression {
+                rule_id: row.get(1)?,
+                fingerprint: row.get(2)?,
+                suppression: FindingSuppression {
+                    id: row.get(0)?,
+                    reason: row.get(3)?,
+                    expires_at: row.get(4)?,
+                },
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(active)
 }

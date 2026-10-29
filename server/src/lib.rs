@@ -1,10 +1,13 @@
 pub mod db;
+pub mod fingerprint_key;
 pub mod mcp;
 pub mod routes;
 pub mod seed;
 pub mod store;
 
-use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions, scans};
+use routes::{
+    health, models, rule_set_versions, rule_sets, rules, scan_sessions, scans, suppressions,
+};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -31,6 +34,9 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         scan_sessions::fetch,
         scans::create_scan,
         scans::fetch_scan,
+        suppressions::list,
+        suppressions::create,
+        suppressions::remove,
         mcp::describe,
     ),
     components(schemas(
@@ -41,6 +47,10 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         scans::ScanResponse,
         scans::FindingResponse,
         scans::ErrorResponse,
+        suppressions::CreateSuppression,
+        store::SuppressionRecord,
+        store::SuppressionStatus,
+        store::FindingSuppression,
         mcp::McpDescription
     )),
     tags(
@@ -50,6 +60,7 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         (name = "Rule sets", description = "Named lines of rule set versions"),
         (name = "Rule set versions", description = "Saved, immutable sets of rule snapshots"),
         (name = "Scan sessions", description = "Scans grouped under one rule set version"),
+        (name = "Suppressions", description = "Known-safe values, suppressed within one scan session"),
         (name = "MCP", description = "The MCP server mounted at /mcp")
     )
 )]

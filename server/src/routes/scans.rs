@@ -1,4 +1,5 @@
 use super::AppState;
+use crate::store::{self, FindingSuppression};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -8,9 +9,11 @@ use axum::{
 };
 use rusqlite::{Connection, OptionalExtension};
 use secrets_scanner_engine::{
-    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanResult, scan_with_models,
+    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanOptions, ScanResult,
+    scan_with_options,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -56,6 +59,11 @@ overlapGroup cover overlapping text. whyFlagged explains the scores from signals
 of kind rule_error names the rule, field, and code of a rule that couldn't run; partial is true \
 when there is one.";
 
+/// How to read a finding's suppression, for API docs and MCP clients.
+const SUPPRESSION_HELP: &str = "The session's suppression that applied when the scan ran (id, \
+reason, expiresAt), or null. A suppressed finding is still saved, returned, and counted; it is \
+only marked. A suppression covers one value found by one rule: a changed value is not covered.";
+
 #[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FindingResponse {
@@ -68,6 +76,8 @@ pub struct FindingResponse {
     #[schemars(description = VIOLATION_HELP)]
     violation: serde_json::Value,
     violation_pretty: String,
+    #[schemars(description = SUPPRESSION_HELP)]
+    suppression: Option<FindingSuppression>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -130,7 +140,9 @@ fn internal(error: impl std::fmt::Display) -> ApiError {
     tag = "API",
     summary = "Scan text in a scan session",
     description = "Scans the text with the session's rule set version and saves the scan and its findings. \
-                   The text itself is never stored or logged. Findings are capped at 200.",
+                   The text itself is never stored or logged. Findings are capped at 200. A \
+                   finding whose value one of the session's active suppressions covers is still \
+                   returned and saved, marked with that suppression.",
     params(("scan_session_id" = i64, Path, description = "The scan session to add this scan to")),
     request_body = CreateScanRequest,
     responses(
@@ -248,10 +260,17 @@ async fn run_scan(
         .await
         .map_err(internal)?;
     let models = state.models.clone();
-    tokio::task::spawn_blocking(move || scan_with_models(scan_id, &text, &rule_set, &models))
-        .await
-        .map_err(internal)?
-        .map_err(ApiError::from)
+    let fingerprint_key = state.fingerprint_key.clone();
+    tokio::task::spawn_blocking(move || {
+        let options = ScanOptions {
+            models: Some(&models),
+            fingerprint_key: Some(&fingerprint_key),
+        };
+        scan_with_options(scan_id, &text, &rule_set, options)
+    })
+    .await
+    .map_err(internal)?
+    .map_err(ApiError::from)
 }
 
 async fn save_results(
@@ -274,21 +293,39 @@ async fn save_results(
         .db
         .call(move |connection| {
             let transaction = connection.transaction()?;
+            // The session's suppressions that apply now, by the rule and fingerprint they cover;
+            // the oldest wins if two cover the same value. An expired or removed one is left
+            // out, so its findings come back.
+            let suppressions: HashMap<(i64, String), FindingSuppression> =
+                store::active_suppressions(&transaction, scan_session_id)?
+                    .into_iter()
+                    .rev()
+                    .map(|active| ((active.rule_id, active.fingerprint), active.suppression))
+                    .collect();
             let mut findings = Vec::with_capacity(rows.len());
             for (finding, violation) in rows {
                 let kind = match finding.kind {
                     FindingKind::Match => "match",
                     FindingKind::RuleError => "rule_error",
                 };
+                let suppression = finding.fingerprint.as_ref().and_then(|fingerprint| {
+                    suppressions
+                        .get(&(finding.rule_id, fingerprint.clone()))
+                        .cloned()
+                });
                 transaction.execute(
-                    "INSERT INTO findings (scan_id, rule_id, kind, violation, violation_pretty)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    "INSERT INTO findings
+                         (scan_id, rule_id, kind, violation, violation_pretty, fingerprint,
+                          suppression_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     rusqlite::params![
                         scan_id,
                         finding.rule_id,
                         kind,
                         violation.to_string(),
-                        finding.violation_pretty
+                        finding.violation_pretty,
+                        finding.fingerprint,
+                        suppression.as_ref().map(|suppression| suppression.id)
                     ],
                 )?;
                 findings.push(FindingResponse {
@@ -297,6 +334,7 @@ async fn save_results(
                     kind: kind.to_string(),
                     violation,
                     violation_pretty: finding.violation_pretty,
+                    suppression,
                 });
             }
             transaction.execute(
@@ -338,8 +376,10 @@ pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Opti
         return Ok(None);
     };
     let mut statement = connection.prepare(
-        "SELECT id, rule_id, kind, violation, violation_pretty FROM findings
-         WHERE scan_id = ?1 ORDER BY id",
+        "SELECT f.id, f.rule_id, f.kind, f.violation, f.violation_pretty,
+             p.id, p.reason, p.expires_at
+         FROM findings f LEFT JOIN suppressions p ON p.id = f.suppression_id
+         WHERE f.scan_id = ?1 ORDER BY f.id",
     )?;
     let findings = statement
         .query_map([scan_id], |row| {
@@ -356,6 +396,14 @@ pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Opti
                     )
                 })?,
                 violation_pretty: row.get(4)?,
+                suppression: match row.get::<_, Option<i64>>(5)? {
+                    Some(id) => Some(FindingSuppression {
+                        id,
+                        reason: row.get(6)?,
+                        expires_at: row.get(7)?,
+                    }),
+                    None => None,
+                },
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;

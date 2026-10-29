@@ -16,7 +16,10 @@ const AWS_KEY: &str = "AKIAZ7Q3LMN4XWY2PRT6";
 async fn app() -> (Router, Db) {
     let db = Db::open_in_memory().expect("in-memory database should open");
     seed_default_rule_set(&db).await.expect("seed should run");
-    (routes::router(db.clone()), db)
+    (
+        routes::router(db.clone(), secrets_scanner_api::fingerprint_key::generate()),
+        db,
+    )
 }
 
 async fn post(app: &Router, body: Value, origin: Option<&str>) -> (StatusCode, Value) {
@@ -139,6 +142,7 @@ async fn initializes_and_lists_every_tool() {
             "create_rule_set",
             "create_rule_set_version",
             "create_scan_session",
+            "create_suppression",
             "delete_rule",
             "get_rule",
             "get_rule_set",
@@ -150,6 +154,8 @@ async fn initializes_and_lists_every_tool() {
             "list_rule_sets",
             "list_rules",
             "list_scan_sessions",
+            "list_suppressions",
+            "remove_suppression",
             "rule_authoring_guide",
             "run_scan",
             "set_rule_set_version_archived",
@@ -596,4 +602,76 @@ async fn the_rule_authoring_guide_covers_every_mechanism_by_topic() {
         "{error}"
     );
     assert!(error.contains("detection-types"), "{error}");
+}
+
+#[tokio::test]
+async fn suppresses_a_value_in_its_session_and_removes_it_again() {
+    let (app, db) = app().await;
+    let session = ok(&app, "create_scan_session", json!({"ruleSetVersionId": 1})).await;
+    let session_id = session["id"].as_i64().unwrap();
+    let text = format!("aws_access_key_id = {AWS_KEY}\n");
+    let scan = ok(
+        &app,
+        "run_scan",
+        json!({"sessionId": session_id, "text": text}),
+    )
+    .await;
+    assert_eq!(scan["findings"][0]["suppression"], Value::Null);
+
+    let expires_at: String = db
+        .call(|connection| {
+            connection.query_row(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+7 days')",
+                [],
+                |row| row.get(0),
+            )
+        })
+        .await
+        .unwrap();
+    let error = err(
+        &app,
+        "create_suppression",
+        json!({"sessionId": session_id, "findingId": scan["findings"][0]["id"], "reason": "", "expiresAt": expires_at}),
+    )
+    .await;
+    assert!(error.contains("reason"), "{error}");
+    let suppression = ok(
+        &app,
+        "create_suppression",
+        json!({"sessionId": session_id, "findingId": scan["findings"][0]["id"], "reason": "Test fixture", "expiresAt": expires_at}),
+    )
+    .await;
+    assert_eq!(suppression["status"], "active");
+    assert!(!suppression.to_string().contains("fingerprint"));
+
+    let later = ok(
+        &app,
+        "run_scan",
+        json!({"sessionId": session_id, "text": text}),
+    )
+    .await;
+    assert_eq!(later["findings"][0]["suppression"]["id"], suppression["id"]);
+    assert_eq!(
+        later["findings"][0]["suppression"]["reason"],
+        "Test fixture"
+    );
+    assert!(!later.to_string().contains(AWS_KEY));
+
+    let listed = ok(&app, "list_suppressions", json!({"sessionId": session_id})).await;
+    assert_eq!(listed["suppressions"][0]["id"], suppression["id"]);
+
+    let removed = ok(
+        &app,
+        "remove_suppression",
+        json!({"sessionId": session_id, "suppressionId": suppression["id"]}),
+    )
+    .await;
+    assert_eq!(removed["status"], "removed");
+    let after = ok(
+        &app,
+        "run_scan",
+        json!({"sessionId": session_id, "text": text}),
+    )
+    .await;
+    assert_eq!(after["findings"][0]["suppression"], Value::Null);
 }
