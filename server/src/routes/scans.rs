@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
 };
 use rusqlite::{Connection, OptionalExtension};
 use secrets_scanner_engine::{
@@ -13,7 +13,9 @@ use secrets_scanner_engine::{
 use serde::{Deserialize, Serialize};
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/{scan_session_id}/scans", post(create_scan))
+    Router::new()
+        .route("/{scan_session_id}/scans", post(create_scan))
+        .route("/{scan_session_id}/scans/{scan_id}", get(fetch_scan))
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -146,6 +148,40 @@ pub async fn create_scan(
 ) -> Result<(StatusCode, Json<ScanResponse>), ApiError> {
     let response = scan_in_session(&state, scan_session_id, request.text).await?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/scan-sessions/{scan_session_id}/scans/{scan_id}",
+    tag = "API",
+    summary = "Get a saved scan",
+    description = "A saved scan and its findings, in the same shape the scan endpoint returns. \
+                   Findings never contain the matched text.",
+    params(
+        ("scan_session_id" = i64, Path, description = "The scan session the scan belongs to"),
+        ("scan_id" = i64, Path, description = "Scan id")
+    ),
+    responses(
+        (status = 200, description = "The scan and its findings", body = ScanResponse),
+        (status = 404, description = "No such scan in this scan session", body = ErrorResponse)
+    )
+)]
+pub async fn fetch_scan(
+    State(state): State<AppState>,
+    Path((scan_session_id, scan_id)): Path<(i64, i64)>,
+) -> Result<Json<ScanResponse>, ApiError> {
+    state
+        .db
+        .call(move |connection| load_scan(connection, scan_id))
+        .await
+        .map_err(internal)?
+        .filter(|scan| scan.scan_session_id == scan_session_id)
+        .map(Json)
+        .ok_or_else(|| {
+            ApiError::NotFound(format!(
+                "Scan {scan_id} not found in scan session {scan_session_id}."
+            ))
+        })
 }
 
 /// Scans `text` with the session's rule set version and saves the scan and its findings. Shared
