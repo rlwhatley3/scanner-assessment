@@ -380,10 +380,10 @@ Each report below says what was built, what the design guarantees, what it doesn
 
 #### False positives, misses, and overlapping rules
 
-- **Built:** every match is reported with a confidence score, a placeholder score, and "why flagged". Placeholders, comments, failed checksums, and the value classifier score examples down. Format parsing and password shape catch odd formats. Overlapping matches share one highlight.
+- **Built:** every match is reported with a confidence score, a placeholder score, and "why flagged". Placeholders, comments, failed checksums, and the value classifier score examples down. Format parsing and password shape catch odd formats. Overlapping matches share one highlight. The results can be sorted **Likely real first**: everything that looks like an example goes last, then higher confidence first.
 - **Guarantee:** a trust signal only moves scores. It never hides a finding, so a wrong signal costs ranking, not a miss.
-- **Gaps:** the engine doesn't see file paths (`docs/`, `fixtures/`, generated files). The results view sorts by severity, not confidence. Overlapping rules each still report.
-- **Next:** pass paths in and treat docs, tests, and generated files as example evidence; sort likely examples last.
+- **Gaps:** the engine doesn't see file paths (`docs/`, `fixtures/`, generated files). Overlapping rules each still get their own entry in the list.
+- **Next:** pass paths in and treat docs, tests, and generated files as example evidence; show overlapping findings as one entry that lists every rule.
 
 #### Suppressions
 
@@ -420,18 +420,21 @@ Each report below says what was built, what the design guarantees, what it doesn
   - **No repository scanning:** file walking, symlinks, binary and huge files, renames, and caching don't exist yet.
 - **Next:**
   - Give scans a status (running, completed, failed). Only completed scans count as clean, and a scan left running is shown as interrupted.
-  - **Repository scanning:** don't follow symlinks outside the selected folder, and track visited directories so loops end. Skip binary files (a NUL byte), files over the size limit, and unreadable files, and list each one as **not scanned** with the reason. Hash each file's content when it's read, so a file edited mid-scan is detected and reported.
+  - **Repository scanning:** each scan looks at one specific commit SHA, pulled in locally, and is recorded against it. The branch can move on during or after the scan, but the record says exactly what was checked, so edits, renames, and new or deleted files can't change a scan that's running. Don't follow symlinks outside the repository, and track visited directories so loops end. Skip binary files (a NUL byte), files over the size limit, and unreadable files, and list each one as **not scanned** with the reason.
   - **Paths:** keep paths as raw bytes, never pass them through a shell, and escape them for each output: JSON strings, URI-encoded in SARIF, and control characters shown as escapes in readable output, so a file name can't break a script or fake a line of output.
   - **Caching:** key cached results by file content hash, rule set version, ignore settings, and engine version, so any change makes a miss, never a wrong hit. Apply suppressions after the cache, so adding or removing one never makes cached results stale.
 
 ### Remediation has consequences
 
-Not built. Removing a secret from code doesn't un-leak it, so the first step for any real credential is rotating it, and the UI should say so. The design for fixing findings from the results view:
+Not built. I would handle real file I/O, and fixing files, in a local desktop app (something like Tauri 2) that calls the engine in-process. I didn't want to do any of that with this setup: making a local web server read and rewrite files on the user's machine is possible, but it's an anti-pattern.
 
-- **Re-check before editing:** a suggested edit applies only if the file still hashes to what was scanned and the value at the finding's range still matches its fingerprint. Otherwise the edit is refused and the file is scanned again.
+Removing a secret from code doesn't un-leak it, so the first step for any real credential is rotating it, and the UI should say so. The design for fixing findings from the results view:
+
+- **Re-check before editing:** a suggested edit applies only if the file on disk still matches its version at the scanned commit, and the value at the finding's range still matches its fingerprint. Local edits or moved lines fail that check, so the edit is refused instead of guessed at, and the user is offered a scan of the current commit. The fingerprint makes sure the edit hits the right occurrence.
 - **Preview, one finding at a time:** each edit is shown as a diff before it applies. Overlapping findings become one edit.
 - **Automatic only when nothing can break:** replacing a value with a reference to an environment variable or a secret store needs review. Only changes that can't alter behavior, such as removing a secret from a comment, could run without review.
-- **Partial results:** each finding gets its own status (not attempted, applied, refused, failed). After a lost connection the UI shows that status, not the original results.
+- **Teams decide what's automatic:** a setting on the rule set says which rules may fix without review. It defaults to none, and because it's part of the rule set version, every fix records the policy it ran under.
+- **Partial results:** each file is written in one step (write a new copy, then swap it in), so a cancel never leaves a half-edited file. Each finding gets its own status (not attempted, applied, refused, failed). After a lost connection the UI shows that status, not the original results.
 
 ### Automation needs a stable contract
 
