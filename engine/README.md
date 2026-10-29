@@ -175,11 +175,13 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 
 ## Scores
 
-- **Confidence (0–100):** how sure the engine is that this is a secret of the rule's kind.
-  - Direct credentials: 95, or 99 when the checksum passes and 50 when it fails.
-  - Likely credentials: 50–90, rising with how random the value is for its length: its entropy compared with the most a value that long can have (log2 of its length, when every character differs). A short value with no repeated characters scores as high as a long random one. With a password shape setting, 35–80, rising with the shape score.
-  - With a value classifier: a credential score above the rule's confidence raises it halfway toward that score, up to 95; a score below the setting's minimum lowers it to 30.
-  - Unsafe handling: 70, or 30 when it's commented out.
+- **Confidence (0–100):** how likely this match is what its rule describes, from the evidence about this match. The rule's type doesn't set it: every match starts at 50, and each kind of evidence moves it by the same amount whichever rule found it. Weights are log-odds summed and turned back into a 1–99 score, so a weight of 1 takes an even match to 73, 2 to 88, and 3.5 to 97. "Why flagged" lists the evidence.
+  - Checksum: +3.5 when it passes, −3.5 when it fails.
+  - The rule's `prefix` starts the match: +2. Assigned to one of the rule's `keyNames`: +1. The pattern needed fixed syntax around its `value` group, such as a header name: +1.
+  - Randomness: the value's entropy compared with the most a value that long can have (log2 of its length, when every character differs), from −1.5 with no variety to +1.5 when every character differs. A short value with no repeated characters counts as just as random as a long one. With a password shape setting, the shape score takes its place: +0.35 per point above 3.
+  - A match with no value (unsafe handling) is judged by the secret name in its `key` group: +1.5 when it's code (`dbPassword`, `{token}`, `${token}`) or labels the value logged with it (`"password:", pw`, `"token=%s" % t`, `f"secret: {s}"`), +0.5 when it's a word in a longer message logged with another value (`"password reset for", user`), −2 when it's only a word in a quoted message. Commented out: −2.5.
+  - Model detection: the model's highest score in the span.
+  - With a value classifier: a credential score above the evidence-based confidence raises it halfway toward that score, up to 95; a score below the setting's minimum lowers it to 30.
 - **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
 
 Every match also reports `inComment` and `checksumValid` (absent when the rule has no checksum), and the scan result reports the `format` the text was read as.
@@ -266,7 +268,7 @@ Quotes are stripped from parsed values, and a `#` inside quotes is not a comment
 
 What it changes:
 - **Fewer misses:** likely-credential rules also check parsed values under suspicious key names, so a quoted value containing `$` or `;`, or a JSON key and value on separate lines, is still caught. A value found both ways is reported once.
-- **Fewer false alarms:** a secret inside a comment is still reported, but it scores as a likely example, since comments are where examples live. Commented-out code that logs a secret drops to low confidence, since it doesn't run.
+- **Fewer false alarms:** a secret inside a comment is still reported, but it scores as a likely example, since comments are where examples live. Commented-out code that logs a secret drops to low confidence, since it doesn't run, and so does a log message that only mentions a secret-sounding word.
 
 Source code isn't parsed into a syntax tree. That would need a parser per language (e.g. tree-sitter), so code is only scanned as text, with its `//` and `#` comment lines recognized.
 

@@ -108,7 +108,7 @@ fn placeholders_are_rated_placeholders_and_count_as_examples() {
 fn rules_without_the_setting_are_not_classified() {
     let details = finding("aws_access_key_id = AKIAZ7Q3LMN4XWY2PRT6\n");
     assert_eq!(details.value_class, None);
-    assert_eq!(details.confidence, 95);
+    assert_eq!(details.confidence, 97);
 }
 
 #[test]
@@ -155,10 +155,10 @@ fn other_lines_do_not_change_a_value_s_class() {
 fn a_credential_score_above_the_rule_s_confidence_raises_it_halfway() {
     let details = finding("database:\n  password: q8Z!fP2xL7mR\n");
     let class = details.value_class.unwrap();
-    assert!(class.credential > 90, "{class:?}");
-    assert_eq!(details.confidence, 90 + (class.credential - 90) / 2);
+    assert!(class.credential > 92, "{class:?}");
+    assert_eq!(details.confidence, 92 + (class.credential - 92) / 2);
     assert!(details.why_flagged.contains(&format!(
-        "raising confidence from 90 to {}",
+        "raising confidence from 92 to {}",
         details.confidence
     )));
 }

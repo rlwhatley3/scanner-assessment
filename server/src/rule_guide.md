@@ -57,7 +57,7 @@ Why test with negatives: most rule mistakes are false positives on ordinary text
 | `model_assessment` | no | `model`, `threshold` | A model's opinion of whether each finding's value is real or an example |
 | `model_detection` | yes | `model`, `threshold`, `severity` | Spans a model flags as secrets, including formats no pattern describes |
 
-Why the split matters: the type decides scoring. A direct credential starts at confidence 95 (99 with a valid checksum, 50 with a failed one). A likely credential scores 50–90 from how random its value is for its length, or 35–80 from its password shape. Pick `direct_credential` only when a match is a secret almost every time; otherwise pick `likely_credential` and let entropy or shape do the filtering.
+Why the split matters: the type decides which rules run where (likely credentials also check parsed key/value pairs, unsafe handling has no value to score) and which kinds of evidence a match can have. It doesn't set the confidence: every match starts at 50 and its own evidence moves it, weighed the same for every type (see `scoring`). Pick `direct_credential` when a match is a secret almost every time; otherwise pick `likely_credential` and let entropy or shape do the filtering.
 
 Choosing severity: `high` for anything that grants access as written (keys, tokens, passwords, private keys). `medium` for credentials that expire or need something else to use (JWTs, pre-signed URLs, password hashes, keystores with a password). `low` for values that are public by design or weak signals (Sentry DSNs, password-shaped values under ordinary names).
 
@@ -67,7 +67,7 @@ Choosing severity: `high` for anything that grants access as written (keys, toke
 
 Named groups:
 - `value`: the secret itself. The finding's location, entropy, checksum, password shape, and placeholder check all use this group. Without it, the whole match is the value.
-- `key`: the name the value is assigned to. Only `keyNames` reads it. Without it, `keyNames` is checked against the whole match.
+- `key`: the name the value is assigned to, checked against `keyNames`; without it, `keyNames` is checked against the whole match. In a rule with no `value` group (unsafe handling), `key` marks the secret name the match mentions, and confidence weighs where it sits (see `scoring`).
 
 Why `value` matters: it lets a pattern require context without reporting the context. Since Rust regex has no lookbehind, put the required context outside the group: `(?i)\bauthorization["']?\s*[:=]\s*["']?basic\s+(?P<value>[A-Za-z0-9+/]{8,}={0,2})` reports only the base64 credential, not the header name.
 
@@ -95,7 +95,7 @@ When to use it: values with no format of their own, where the name is the eviden
 
 `minEntropy` drops a candidate whose value has fewer bits of Shannon entropy per character than this, from 0 to 8. It applies to every pattern rule type except `unsafe_handling`, which has no value.
 
-Typical values, in bits per character: an English word about 2.5–3, a made-up password about 3–3.5, hex at most 4, base64 tokens 4.5–6. A value can't score above log2 of its length, so short values score low whatever they are. That is why confidence uses a different measure: a likely credential's confidence (50–90) compares its entropy with that ceiling, so a 12-character value with no repeated characters scores as high as a long random token, while `minEntropy` stays an absolute floor.
+Typical values, in bits per character: an English word about 2.5–3, a made-up password about 3–3.5, hex at most 4, base64 tokens 4.5–6. A value can't score above log2 of its length, so short values score low whatever they are. That is why confidence uses a different measure: it compares a value's entropy with that ceiling, so a 12-character value with no repeated characters counts as just as random as a long random token, while `minEntropy` stays an absolute floor.
 
 When to use it: likely-credential rules that would otherwise match ordinary settings. The built-in assignment rule uses 3.0, which keeps `password: changeme` out and keeps `password: q8Z!fP2xL7mR` in. Why it is a threshold and not a format: it is the one signal that works on secrets with no format at all. Its limit: it can't tell a random secret from a random identifier (a git SHA, a UUID), so pair it with key names, context, or a `valueClassifier`.
 
@@ -113,7 +113,7 @@ Some formats carry a checksum, so a match can be checked offline: a real value p
 
 A `crc32` value is read as `prefix + covered part + checksum`. The checksum is the CRC32 of the covered part, written in `encoding` (`base62` is `0-9A-Za-z`; `base36` and `hex` match either case) and zero-padded to `length` characters. `prefixLength` is how many characters at the start are not covered. For example, `acme_` followed by the covered part and an 8-digit hex CRC32 is `{"algorithm": "crc32", "encoding": "hex", "prefixLength": 5, "length": 8}`. `length` must be at least 6 for base62, 7 for base36, or 8 for hex (enough to hold a full CRC32), and at most 16.
 
-What it changes: a valid checksum raises confidence to 99 and the "why flagged" note says so. A failed one lowers confidence to 50 and counts as an example signal. It never drops a finding. Why: a wrong checksum setup, or a provider changing its format, must not hide real secrets. The checksum runs on the `value` group, so make sure that group holds exactly the token.
+What it changes: a valid checksum is the strongest evidence a match can have (a match with no other evidence goes from 50 to 97), and the "why flagged" note says so. A failed one is equally strong evidence against (50 to 3) and counts as an example signal. It never drops a finding. Why: a wrong checksum setup, or a provider changing its format, must not hide real secrets. The checksum runs on the `value` group, so make sure that group holds exactly the token.
 
 When to use it: whenever a provider documents one. It is the strongest offline signal there is.
 
@@ -123,7 +123,7 @@ When to use it: whenever a provider documents one. It is the strongest offline s
 
 Values never count when they are clearly something else: under 8 characters (6 for the common list) or over 64, whitespace, URLs, paths, emails, numbers, dates, versions, IPs, UUIDs, hex, colors, template references, regular naming styles (`snake_case`, `camelCase`, `ALL_CAPS`, ...), and machine-made tokens (20+ characters with 4+ bits of entropy).
 
-On any pattern rule it filters the pattern's matches. On a `likely_credential` rule it also sets the confidence (35–80, from the score) and checks parsed key/value pairs: with no `keyNames`, a password-shape rule checks every parsed key/value pair, whatever its key, and acts as a fallback: it doesn't report a value another rule already found. With `keyNames`, it checks only pairs under those names.
+On any pattern rule it filters the pattern's matches. Its score also counts as evidence in place of randomness, since a password a person made up isn't random: a score of 3 is even, and each point above it raises confidence. On a `likely_credential` rule it also checks parsed key/value pairs: with no `keyNames`, a password-shape rule checks every parsed key/value pair, whatever its key, and acts as a fallback: it doesn't report a value another rule already found. With `keyNames`, it checks only pairs under those names.
 
 When to use it: human-chosen passwords under names that don't say "password" (`safe_bet: "Tr0ub4dor&3"`), which neither entropy nor key names catch. Why a fallback: it is a weak signal, so it fills gaps instead of doubling findings. The built-in rule uses `minScore` 2 at low severity.
 
@@ -157,7 +157,23 @@ A model this server hasn't loaded, or one whose shape doesn't fit (`list_models`
 
 ## Scoring
 
-- **Confidence (0–100):** direct credentials 95, or 99 with a valid checksum and 50 with a failed one. Likely credentials 50–90, rising with how random the value is for its length; with a password shape, 35–80, rising with the score. Unsafe handling 70, or 30 when commented out. Model detection: the model's highest score in the span. A `valueClassifier` then lowers it to 30 (credential score below `minScore`) or raises it halfway toward a higher credential score, up to 95.
+- **Confidence (0–100):** how likely this match is what its rule describes, from the evidence about this match. The rule's type doesn't set it: every match starts at 50, and each kind of evidence moves it the same amount whichever rule found it. Weights are log-odds, so a weight of 1 takes an even match to 73, 2 to 88, and 3.5 to 97; the result stays between 1 and 99.
+
+  | Evidence | Weight |
+  |---|---|
+  | Checksum valid / fails | +3.5 / −3.5 |
+  | Starts with the rule's `prefix` | +2 |
+  | Assigned to one of the rule's `keyNames` | +1 |
+  | Fixed syntax around the `value` group (a header name, not a `key` group) | +1 |
+  | Randomness: entropy as a share of the most a value its length can have | −1.5 (none) to +1.5 (every character differs) |
+  | Password shape score, in place of randomness | +0.35 per point above 3 |
+  | No value: the secret name in `key` is code (`dbPassword`, `{token}`, `${token}`) | +1.5 |
+  | No value: the secret name labels the value logged with it (`"password:", pw`, `"token=%s" % t`, `f"secret: {s}"`) | +1.5 |
+  | No value: the secret name is a word in a longer message logged with another value (`"password reset for", user`) | +0.5 |
+  | No value: the secret name is only a word in a quoted message | −2 |
+  | No value: the match is commented out | −2.5 |
+
+  Model detection: the model's highest score in the span. A `valueClassifier` then lowers it to 30 (credential score below `minScore`) or raises it halfway toward a higher credential score, up to 95. "Why flagged" lists each piece of evidence.
 - **`valueClass`:** with a `valueClassifier`, the label (`credential`, `non_secret`, or `placeholder`) and a 0–100 score for each. Null otherwise.
 - **Placeholder score (0–100, higher is more likely an example):** 95 when a placeholder rule matches inside the value, 70 with any other example signal, otherwise 5. None for unsafe handling.
 - **`whyFlagged`** is built only from these signals and never quotes the input, so it is safe to show and log.
@@ -168,7 +184,7 @@ Why two scores: confidence answers "is this the kind of secret the rule describe
 
 Before matching, the text is read as JSON (starts with `{` or `[` and parses), `.env` (at least half the lines are `KEY=value`), YAML (at least half are `key: value`), or plain text. Quotes are stripped from parsed values, and all positions stay exact byte offsets into the original text.
 
-- **Comments** (`#` and `//` lines, and trailing ` # comments` in YAML and `.env`): a finding inside one is still reported, but it counts as an example signal, and commented-out unsafe handling drops to confidence 30. Note that `.npmrc` lines start with `//`, so they read as comments.
+- **Comments** (`#` and `//` lines, and trailing ` # comments` in YAML and `.env`): a finding inside one is still reported, but it counts as an example signal, and commented-out unsafe handling loses confidence (−2.5), since it doesn't run. Note that `.npmrc` lines start with `//`, so they read as comments.
 - **Overlaps:** findings whose ranges overlap share an `overlapGroup`, so a token assigned to `token:` can be found by both a format rule and the assignment rule and is drawn as one highlight.
 - **Limits:** text over 1 MB is rejected, and beyond 200 findings the rest are dropped and `truncated` is set. A rule that hits the cap is usually too broad.
 
@@ -214,7 +230,7 @@ How each kind of built-in rule is put together, so you can build the same kind f
 
 **A password a person made up** (the built-in "Password-shaped value"): `likely_credential`, a pattern for quoted assigned values, `passwordShape` with no `keyNames`, at low severity, plus this server's `valueClassifier`. Why: it is the only mechanism that catches human passwords under ordinary names, and as a fallback it adds no duplicate findings.
 
-**Unsafe code** (the built-in "Secret written to a log"): `unsafe_handling` with a pattern for the call and a secret-sounding name in its arguments. Why a separate type: there is no value to score, and the fix is a code change, not a rotation.
+**Unsafe code** (the built-in "Secret written to a log"): `unsafe_handling` with a pattern for the call and a secret-sounding name in its arguments, captured as the `key` group. Why a separate type: there is no value to score, and the fix is a code change, not a rotation. Why the `key` group: confidence then tells `log(dbPassword)` (code, 82) from `log("token refresh scheduled")` (a word in a message, 12). Without it the match has no evidence either way and stays at 50.
 
 **Your own fake values** (the built-in "Known placeholder values"): `placeholder_vs_real` with an alternation of the exact strings your docs and fixtures use.
 
