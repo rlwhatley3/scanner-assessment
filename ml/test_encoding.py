@@ -2,7 +2,7 @@
 
 import unittest
 
-from encoding import BYTE_OFFSET, PAD_ID, VALUE_END_ID, VALUE_START_ID, encode_value
+from encoding import BYTE_OFFSET, PAD_ID, VALUE_END_ID, VALUE_START_ID, encode_value, encode_window
 
 
 def shown(ids: list[int]) -> str:
@@ -21,6 +21,11 @@ class EncodeValueTest(unittest.TestCase):
     def test_short_text_is_padded_and_long_values_are_cut_short(self):
         self.assertEqual(shown(encode_value(b"a KEY b", 2, 5, 12)), "a [KEY] b___")
         self.assertEqual(shown(encode_value(b"a LONGVALUE b", 2, 11, 6)), "[LONG]")
+
+
+class EncodeWindowTest(unittest.TestCase):
+    def test_a_window_is_its_bytes_then_padding(self):
+        self.assertEqual(shown(encode_window(b"abc", 5)), "abc__")
 
 
 if __name__ == "__main__":

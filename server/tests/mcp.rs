@@ -459,13 +459,22 @@ async fn rule_sets_are_named_and_can_start_from_a_copy() {
 async fn lists_the_loaded_models() {
     let (app, _) = app().await;
     let models = ok(&app, "list_models", json!({})).await;
-    assert_eq!(models["models"][0]["id"], "value-classifier");
+    assert_eq!(models["models"][0]["id"], "secret-detector");
     assert_eq!(
         models["models"][0]["sha256"],
-        secrets_scanner_engine::VALUE_CLASSIFIER_SHA256
+        secrets_scanner_engine::SECRET_DETECTOR_SHA256
     );
     assert_eq!(
         models["models"][0]["detectionTypes"],
+        json!(["model_detection"])
+    );
+    assert_eq!(models["models"][1]["id"], "value-classifier");
+    assert_eq!(
+        models["models"][1]["sha256"],
+        secrets_scanner_engine::VALUE_CLASSIFIER_SHA256
+    );
+    assert_eq!(
+        models["models"][1]["detectionTypes"],
         json!(["model_assessment"])
     );
 }
