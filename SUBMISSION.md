@@ -245,6 +245,8 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 
 The secret detector (`engine/models/secret-detector.onnx`) is a `model_detection` model that runs locally on the CPU, so no text leaves the machine. It scores every byte of the text for how likely it is part of a secret. Details are in [ml/README.md](ml/README.md#secret-detector-training).
 
+A new database seeds it as the last built-in rule, "Secret detector" (medium severity, threshold 50, with the value classifier on it). It only fills gaps: anything another rule already found is reported once, by that rule, so marking a value safe hides it. It adds about 3.5 seconds to a 1 MB scan; disable the rule to skip it. Databases seeded before this have no detector rule.
+
 It was trained on two sources, and each is evaluated on held-out data of its own. The numbers are kept separate so synthetic and real results aren't mixed.
 
 **1. Synthetic documents** (`ml/detector_data.py`): 32,000 for training, 2,000 more from a different seed for evaluation. Every byte has a label.

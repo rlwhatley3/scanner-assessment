@@ -271,10 +271,18 @@ pub(crate) struct CompiledRule {
 }
 
 impl CompiledRule {
-    /// A rule that judges values by password shape alone, with no key names to narrow it. It is
-    /// a fallback: it only reports values no other rule found.
-    pub(crate) fn is_shape_fallback(&self) -> bool {
-        self.password_shape.is_some() && self.key_names.is_empty()
+    /// How far back this rule stands when another rule found the same value: 0 for most rules.
+    /// A rule that judges values by password shape alone, with no key names to narrow it, is 1:
+    /// it only reports values no rank-0 rule found. A detection model is 2: it only reports
+    /// values no other kind of rule found, so a key a pattern knows is one finding, not two.
+    pub(crate) fn fallback_rank(&self) -> u8 {
+        if self.detection_type == DetectionType::ModelDetection {
+            2
+        } else if self.password_shape.is_some() && self.key_names.is_empty() {
+            1
+        } else {
+            0
+        }
     }
 }
 

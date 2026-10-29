@@ -400,6 +400,41 @@ fn a_detector_finds_spans_no_pattern_describes() {
 }
 
 #[test]
+fn a_detector_only_reports_spans_no_other_rule_found() {
+    let text = "known: ~~~~~~~~~~~~ other: ~~~~~~~~~~~~";
+    let (models, sha256) = load(&trigger_detector(16));
+    let pattern = Rule {
+        id: 1,
+        definition: RuleDefinition {
+            name: Some("Known token".into()),
+            detection_type: Some(DetectionType::DirectCredential),
+            severity: Some(Severity::High),
+            pattern: Some("known: (?P<value>~{4})".into()),
+            ..RuleDefinition::default()
+        },
+    };
+    let rule_set = RuleSet {
+        rules: vec![
+            pattern,
+            model_rule(2, DetectionType::ModelDetection, &sha256, 50),
+        ],
+    };
+    let result = scan_with_models(1, text, &rule_set, &models).expect("scan should run");
+    let found: Vec<_> = matches(&result)
+        .iter()
+        .map(|details| (details.rule_name.as_str(), details.location.start_byte))
+        .collect();
+    // The detector's first span overlaps the pattern's match, even though it is longer.
+    assert_eq!(
+        found,
+        [
+            ("Known token", text.find('~').unwrap()),
+            ("Model rule 2", text.rfind(' ').unwrap() + 1),
+        ]
+    );
+}
+
+#[test]
 fn detector_spans_shorter_than_the_minimum_are_dropped() {
     let short = "~".repeat(MIN_DETECTION_BYTES - 1);
     assert!(matches(&detect(&format!("a {short} b"), 16)).is_empty());
