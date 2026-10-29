@@ -19,7 +19,7 @@ pub const VALUE_CLASSIFIER_ONNX: &[u8] = include_bytes!("../models/value-classif
 
 /// The SHA-256 of [`VALUE_CLASSIFIER_ONNX`], which is how a rule names it.
 pub const VALUE_CLASSIFIER_SHA256: &str =
-    "e620ed64c0f0307884e0103f97e6ab62820685909ef876c42833cf4807ee1459";
+    "6980e3533403a83a17b45abfd709bbbe4753e9d550702b06f0423fdb1eb0c6cc";
 
 /// A value classifier setting that runs the bundled classifier: matches it rates below 50 as a
 /// credential get lower confidence. The built-in rules don't carry it, since they run without

@@ -146,7 +146,7 @@ Models add judgment to pattern rules in two ways. Both name a model by `{"id": "
 - A `placeholder` verdict counts as an example signal in the placeholder score.
 - The finding records the scores as `valueClass`.
 
-When to use it: rules that match by randomness or password shape, which can't tell a password from a git SHA or UUID under a secret-sounding name. Fixed formats (`AKIA…`, `ghp_…`) don't need it. This server loads the `value-classifier` model at startup and seeds it, at `minScore` 50, on the built-in `likely_credential` rules of a new database. It judges the value and its name, not the file, so it doesn't decide whether text is a test or documentation.
+When to use it: rules that match by randomness or password shape, which can't tell a password from a git SHA or UUID under a secret-sounding name. It also works on a `model_detection` rule, where a second model's agreement cuts the detector's false alarms: spans it doesn't rate as credentials drop to confidence 30. Fixed formats (`AKIA…`, `ghp_…`) don't need it. This server loads the `value-classifier` model at startup and seeds it, at `minScore` 50, on the built-in `likely_credential` rules of a new database. It judges the value and its name, not the file, so it doesn't decide whether text is a test or documentation.
 
 **Model rules** take `model` and `threshold` (0–100) instead of a pattern:
 
