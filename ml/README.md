@@ -57,6 +57,11 @@ Results, from the run that produced the committed model (classes are credential 
 
 On the CredData test repositories, credential precision and recall are 0.874 and 0.920, non-secret 0.815 and 0.829, placeholder 0.890 and 0.768. `engine/tests/value_classifier.rs` also checks it on hand-written cases. The limits are listed in the [engine README](../engine/README.md#the-value-classifier).
 
+**Its split differs from the secret detector's.** The classifier splits CredData repositories by its own hash: 241 training, 28 validation and 63 test. The detector uses 234, 37 and 66 (see [below](#creddata)).
+
+- **The detector's split was tried and rejected** ([PR #29](https://github.com/rlwhatley3/scanner-assessment/pull/29), closed). Retrained on it, the classifier was worse on the test repositories. That includes the 15 that neither model trained on, the only comparison fair to both: accuracy 0.845 against 0.885, and 5.0% of credentials scored below 50 against 2.8%. So the shipped model and its split stay as they are.
+- **What this means for combined numbers:** the classifier trained on 51 of the detector's 66 test repositories. Numbers for the two models together (the detector proposing, the classifier gating) are only on unseen data for those 15 repositories.
+
 # Secret detector training
 
 Trains the model behind [`engine/models/secret-detector.onnx`](../engine/models/secret-detector.onnx): a `model_detection` model that reads raw text and scores every byte for how likely it is part of a secret, so it can flag secrets no pattern rule describes. It is trained on synthetic documents mixed with real labeled code from [CredData](#creddata). The engine's side of the contract is in [`engine/README.md`](../engine/README.md#the-secret-detector).
@@ -251,6 +256,7 @@ The batches are small, and the person who wrote them also wrote the generator. v
 - **Precision on ordinary code is modest.** On held-out real repositories other than the dominant one, about half of the findings at threshold 50 are credentials (about 7 in 10 at 70). Treat findings as leads to review, not verdicts.
 - **Passwords are the weakest kind.** It finds about 8 in 10 of the passwords long enough to report, and none under 8 bytes.
 - **Its real data is one benchmark,** with obfuscated values, labels only on lines other scanners flagged, and one repository that dominates the held-out labels.
+- **Its test repositories aren't all held out from the value classifier,** which splits CredData its own way and trained on 51 of the 66. Only 15 test repositories are unseen by both models. Measure the detector and classifier together on those (see [above](#secret-detector-training) and the classifier's notes).
 - **Each byte sees about 64 bytes either side** and a summary of its 256-byte window. A name further away than that doesn't help, and the middle of a long private key looks like a certificate, which is why only a key's first lines are labeled.
 - **No test or example context.** A real-looking value in a unit test or a README is flagged like any other; placeholders are only recognized by their look.
 - **Speed.** About 3.5 seconds for 1 MB in a release build on an Apple M1 Pro, 30 seconds in a debug build; see the [engine README](../engine/README.md#the-secret-detector).

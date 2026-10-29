@@ -122,6 +122,8 @@ It judges the matched value and the name it's assigned to, not the file around i
 - About 1 in 4 placeholders is classed as something else, and when that is a credential, it keeps its confidence.
 - Retraining changes the file's hash. Rule set versions that name the old hash keep naming it, so their rules report the classifier as unavailable until a new version uses the new setting.
 
+- Its CredData split isn't the secret detector's: it trained on 51 of the detector's 66 test repositories. Retraining on the detector's split made it worse, including on the 15 repositories neither model saw (accuracy 0.845 against 0.885), so the shipped model keeps its own split. Numbers for the two together are only on unseen data for those 15 repositories.
+
 `tests/value_classifier.rs` runs it through the engine on hand-written cases: passwords and keys, hashes and UUIDs under secret-sounding names, URLs and paths, and placeholders.
 
 ### The secret detector

@@ -309,7 +309,7 @@ It was trained on two sources, and each is evaluated on held-out data of its own
   - better on the test repositories: 0.680 / 0.658
   - worse on validation: 0.554 / 0.601, against 0.702 / 0.694
   Validation decides, so the shipped model stayed. Some unlabeled CredData text is probably real secrets, which makes those negatives noisy.
-- **Value classifier overlap:** the value classifier splits CredData by its own hash, so most of these test repositories were in its training data. Numbers for the detector and classifier together on these repositories would not be on unseen data.
+- **Value classifier overlap:** the value classifier splits CredData by its own hash and trained on 51 of these 66 test repositories. Numbers for the detector and classifier together are only on unseen data for the other 15. Retraining the classifier on this split was tried and rejected; see its section below.
 
 ### Scan endpoint
 
@@ -359,6 +359,12 @@ It was trained on two sources, each evaluated on held-out data of its own:
 | Synthetic | accuracy 0.986 | accuracy 0.974 |
 
 The synthetic-only model's near-perfect synthetic score and poor CredData score show why the real data mattered: it had learned the generator, not real code.
+
+**Tried and not shipped: the secret detector's split.**
+- **What was tried:** the classifier was retrained on the detector's repository split (234 training, 37 validation, 66 test), so both models would hold out the same test repositories. One setting, the number of synthetic samples, was chosen on validation.
+- **Result:** it was worse on the test repositories. On the 15 repositories neither model trained on, the only comparison fair to both, it scored accuracy 0.845 against 0.885, with 5.0% of credentials lowered against 2.8%.
+- **Outcome:** [PR #29](https://github.com/rlwhatley3/scanner-assessment/pull/29) was closed, and the shipped model keeps its own split.
+- **What that leaves:** the two models' test sets overlap on only 15 repositories, so numbers for the detector and classifier together are only on unseen data there.
 
 ### Known gaps
 
