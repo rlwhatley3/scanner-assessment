@@ -85,13 +85,17 @@ $env:API_PORT = "3011"
 
 ### Connect an MCP client
 
-While the stack is running, the API serves an MCP server at `http://127.0.0.1:3001/mcp` for reading and writing rules, rule set versions, scan sessions, and scans. To add it to Claude Code:
+While the stack is running, the API serves an MCP server at `http://127.0.0.1:3001/mcp` for reading and writing rules, rule set versions, scan sessions, scans, and suppressions. To add it to Claude Code:
 
 ```sh
 claude mcp add --transport http secrets-scanner http://127.0.0.1:3001/mcp
 ```
 
 It only accepts loopback connections, and it rejects requests from web pages.
+
+### Local data
+
+`server/data/` (git-ignored) holds the SQLite database and `fingerprint.key`, a secret key generated on first start that suppressions use to recognize a value without storing it. Set `DATABASE_PATH` or `FINGERPRINT_KEY_PATH` to move them. Deleting the key only ends existing suppressions. See [Fingerprints and suppressions](engine/README.md#fingerprints-and-suppressions).
 
 ## Dev Containers
 

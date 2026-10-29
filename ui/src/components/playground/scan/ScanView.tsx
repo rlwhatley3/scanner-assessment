@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  createSuppression,
+  getScan,
   getVersion,
+  listSuppressions,
   MAX_FINDINGS,
   MAX_INPUT_BYTES,
-  type MatchFinding,
   runScan,
+  type SavedMatch,
   type ScanResponse,
 } from "../api.ts";
 import { useActiveSession } from "../session.tsx";
@@ -14,6 +17,7 @@ import FindingsList, { findingElementId } from "./FindingsList.tsx";
 import { buildHighlights, type Highlight } from "./highlights.ts";
 import ScanText, { highlightElementId } from "./ScanText.tsx";
 import SessionBar from "./SessionBar.tsx";
+import SuppressionsPanel from "./SuppressionsPanel.tsx";
 
 // The scan text lives only in component state: never in storage, the URL, or a log.
 // The view stays mounted while the user visits other menu sections, so the text survives.
@@ -39,6 +43,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [cancelArmed, setCancelArmed] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
+  const [showSuppressions, setShowSuppressions] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const scanTokenRef = useRef(0);
@@ -52,6 +57,13 @@ export default function ScanView({ visible }: { visible: boolean }) {
   );
   const enabledRules =
     version.data?.rules.filter((rule) => rule.definition.enabled !== false).length ?? 0;
+  const sessionId = session?.id ?? null;
+  const suppressions = useLoad(
+    () => (sessionId === null ? Promise.resolve([]) : listSuppressions(sessionId)),
+    [sessionId],
+  );
+  const activeSuppressions =
+    suppressions.data?.filter((suppression) => suppression.status === "active").length ?? null;
 
   const byteLength = useMemo(() => textEncoder.encode(text).length, [text]);
   const isBlank = text.trim() === "";
@@ -61,9 +73,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
   const result = phase.kind === "scanned" ? phase.result : null;
   const matches = useMemo(
     () =>
-      (result?.findings ?? []).filter(
-        (finding): finding is MatchFinding & { id: number } => finding.kind === "match",
-      ),
+      (result?.findings ?? []).filter((finding): finding is SavedMatch => finding.kind === "match"),
     [result],
   );
   const ruleErrors = useMemo(
@@ -105,7 +115,6 @@ export default function ScanView({ visible }: { visible: boolean }) {
 
   // Results belong to the session they ran in; switching sessions clears them and stops a
   // running scan. Unscanned text is kept so it can be scanned in the new session.
-  const sessionId = session?.id ?? null;
   const previousSessionRef = useRef(sessionId);
   useEffect(() => {
     if (previousSessionRef.current === sessionId) return;
@@ -115,6 +124,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
     disarmCancel();
     setSelected([]);
     setNotice(null);
+    setShowSuppressions(false);
     setPhase((current) =>
       current.kind === "editing" && sessionId !== null ? current : { kind: "none" },
     );
@@ -161,6 +171,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
       const response = await runScan(session.id, text, controller.signal);
       if (token !== scanTokenRef.current) return; // A newer scan or a cancel replaced this one.
       setPhase({ kind: "scanned", result: response });
+      suppressions.reload(); // Their marked counts changed.
     } catch (error) {
       if (token !== scanTokenRef.current) return;
       setPhase({ kind: "editing" });
@@ -181,6 +192,21 @@ export default function ScanView({ visible }: { visible: boolean }) {
     setNotice({ tone: "info", message: "Scan cancelled. Your text is unchanged." });
   }
 
+  /** Suppresses a finding's value, then rereads the scan, which the API marked to match. */
+  async function suppress(finding: SavedMatch, reason: string, expiresAt: string) {
+    if (!session || !result) return;
+    const token = scanTokenRef.current;
+    await createSuppression(session.id, { findingId: finding.id, reason, expiresAt });
+    suppressions.reload();
+    const reread = await getScan(session.id, result.scanId);
+    if (token !== scanTokenRef.current) return;
+    setPhase({ kind: "scanned", result: reread });
+    setNotice({
+      tone: "info",
+      message: "Suppressed. Later scans in this session mark this value too, until it expires.",
+    });
+  }
+
   function selectHighlight(highlight: Highlight) {
     setSelected(highlight.findings);
     scrollIntoView(findingElementId(highlight.findings[0]));
@@ -199,7 +225,15 @@ export default function ScanView({ visible }: { visible: boolean }) {
         version={version.data}
         locked={phase.kind === "scanning"}
         onLeave={leaveSession}
+        activeSuppressions={activeSuppressions}
+        showSuppressions={showSuppressions}
+        onToggleSuppressions={() => setShowSuppressions((shown) => !shown)}
       />
+      {session && showSuppressions && (
+        <section className="panel">
+          <SuppressionsPanel sessionId={session.id} suppressions={suppressions} />
+        </section>
+      )}
 
       {!session ? null : phase.kind === "none" ? (
         <section className="panel playground-empty">
@@ -321,7 +355,12 @@ export default function ScanView({ visible }: { visible: boolean }) {
                     </p>
                   )
                 ) : (
-                  <FindingsList findings={matches} selected={selected} onSelect={selectFinding} />
+                  <FindingsList
+                    findings={matches}
+                    selected={selected}
+                    onSelect={selectFinding}
+                    onSuppress={suppress}
+                  />
                 )}
               </>
             ) : (

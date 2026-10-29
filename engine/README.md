@@ -7,7 +7,7 @@ let result = scan(scan_id, text, &rule_set)?;
 // result.findings, result.truncated, result.log
 ```
 
-Rule sets with [model rules](#model-rules) use `scan_with_models` and need the `ml` feature.
+Rule sets with [model rules](#model-rules) use `scan_with_models` and need the `ml` feature. `scan_with_options` takes models and a [fingerprint key](#fingerprints-and-suppressions) together.
 
 ## The rule set contract
 
@@ -271,6 +271,29 @@ What it changes:
 - **Fewer false alarms:** a secret inside a comment is still reported, but it scores as a likely example, since comments are where examples live. Commented-out code that logs a secret drops to low confidence, since it doesn't run, and so does a log message that only mentions a secret-sounding word.
 
 Source code isn't parsed into a syntax tree. That would need a parser per language (e.g. tree-sitter), so code is only scanned as text, with its `//` and `#` comment lines recognized.
+
+## Fingerprints and suppressions
+
+A user can mark a finding's value as known to be safe (a documented example key, a test fixture) so later scans don't raise it again. That needs a way to recognize the same value later without storing it, so the engine can fingerprint each match:
+
+```rust
+let options = ScanOptions { models: Some(&models), fingerprint_key: Some(&key) };
+let result = scan_with_options(scan_id, text, &rule_set, options)?;
+// result.findings[i].fingerprint: Some("…64 hex characters…") for every match
+```
+
+- **A fingerprint is HMAC-SHA256 of the matched value** (the finding's `location` range) under a 32-byte key, as 64 hex characters. It sits on `Finding`, not in `violation`, so it is never shown as a detail. Rule errors, and scans without a key, have none.
+- **Keyed, not a plain hash:** a SHA-256 of a short password can be reversed by trying guesses. Without the key, a fingerprint says nothing about the value.
+- **Computed in the engine:** it is the only place that knows exactly which bytes are the value, and the text is gone once the scan returns, so a fingerprint can't be added later. Doing it here also gives a future CLI the same fingerprints as the API. The engine still does no I/O: the caller generates the key, keeps it, and passes it in.
+- **Exact:** one changed character, or the same value reformatted (a card number with spaces instead of dashes), is a different fingerprint. A suppression can only fail toward showing a finding again, never toward hiding a different one.
+
+**How the API uses it.** A suppression belongs to one scan session, since input is still pasted text with no file path to scope it to. It covers one rule plus one fingerprint, never a whole rule or a line, and needs a reason and an expiry (at most 365 days ahead).
+
+- **Key:** generated once from the OS's random source into `server/data/fingerprint.key` (beside the database, or `FINGERPRINT_KEY_PATH`), readable by its owner only, and git-ignored with the rest of `server/data/`. It is kept out of the SQLite file, so a copy of the database alone has fingerprints that can't be tested against guesses. It is never logged or returned by the API or MCP server. Deleting it is safe: every suppression stops matching and its findings come back.
+- **Scanning:** each finding's fingerprint is saved in `findings.fingerprint`. A match whose rule and fingerprint equal an active suppression in the same session (not removed, not expired) is saved with that `suppression_id`. It is still returned and counted, marked `suppression: { id, reason, expiresAt }`; nothing is dropped. Suppressing a finding also marks the same value from the same rule in the scan it came from.
+- **Never returned:** the API takes a finding id to suppress, so fingerprints never leave the server.
+- **Removing** a suppression sets `removed_at` and keeps the row, so past scans still show which suppression applied and why. An expired one stays on record the same way.
+- **Endpoints:** `GET`/`POST /api/scan-sessions/{id}/suppressions` and `DELETE /api/scan-sessions/{id}/suppressions/{suppressionId}`, and the MCP tools `list_suppressions`, `create_suppression`, and `remove_suppression`, all through `server/src/store.rs`.
 
 ## Trade-offs
 
