@@ -240,7 +240,9 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 
 ### Scan endpoint
 
-`POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged.
+`POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged. `GET /api/scan-sessions/{id}/scans/{scanId}` reads a saved scan back in the same shape.
+
+Rules, rule sets, rule set versions, and scan sessions have REST routes too (`/api/rules`, `/api/rule-sets`, `/api/rule-set-versions`, `/api/scan-sessions`), including `POST /api/rules/check` to check rules as one set without saving. They cover everything the MCP tools do except reading the rule authoring guide, through the same storage module. Swagger UI at `/swagger-ui` lists them all.
 
 - **Concurrency cap:** at most 4 scans run at once. Others wait their turn, so a burst of scans can't starve the rest of the API.
 - **At scale:** scanning in the API process would compete with every other request. The intended production shape avoids that entirely: scanning runs on the client (a CLI or a real local app calling the engine in-process), and the hosted API only serves rule sets. If a hosted scanning service were ever needed, the next steps would be a separate worker pool, then a queue with independently scaled workers.
@@ -267,4 +269,3 @@ The tools follow the same rules as the rest of the API, through a shared storage
 ### Known gaps
 
 - **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.
-- **No REST endpoints for rules, versions, or sessions yet.** The MCP server's tools cover them, and the REST routes can reuse the same storage module.

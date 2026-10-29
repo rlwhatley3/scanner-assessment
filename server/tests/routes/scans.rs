@@ -251,3 +251,49 @@ async fn the_value_classifier_lowers_confidence_for_a_hash_under_a_secret_name()
     assert_eq!(violation["valueClass"]["label"], "non_secret");
     assert_eq!(violation["confidence"], 30);
 }
+
+async fn get(app: &Router, uri: String) -> (StatusCode, Value) {
+    let request = Request::get(uri)
+        .body(Body::empty())
+        .expect("request should build");
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("request should run");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn a_saved_scan_reads_back_as_it_was_returned() {
+    let (app, db) = app().await;
+    db.call(|connection| {
+        connection.execute(
+            "INSERT INTO scan_sessions (rule_set_version_id) VALUES (1)",
+            [],
+        )
+    })
+    .await
+    .expect("a second scan session should insert");
+    let (status, scanned) = post_scan(&app, 1, json!({ "text": format!("aws = {AWS_KEY}") })).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let scan_id = scanned["scanId"].as_i64().expect("scan should have an id");
+
+    let (status, saved) = get(&app, format!("/api/scan-sessions/1/scans/{scan_id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved, scanned);
+
+    // A scan is only found under its own session.
+    let (status, body) = get(&app, format!("/api/scan-sessions/2/scans/{scan_id}")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(body["error"].as_str().is_some());
+    let (status, _) = get(&app, "/api/scan-sessions/1/scans/999".to_owned()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
