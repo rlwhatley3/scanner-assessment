@@ -875,7 +875,12 @@ fn match_details(
             "contains a known placeholder value",
         ),
         (
-            candidate.entropy.is_some_and(|entropy| entropy < 2.0),
+            // Under 2 bits per character, and under two thirds of what a value this long can
+            // have, so a short value isn't an example just because it's short. From 8
+            // characters on, the second limit is never the lower one.
+            candidate
+                .entropy
+                .is_some_and(|entropy| entropy < 2.0_f64.min(candidate.max_entropy * 2.0 / 3.0)),
             "very little randomness",
         ),
         (
