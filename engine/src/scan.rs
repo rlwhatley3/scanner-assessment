@@ -1,6 +1,8 @@
 use crate::format::{self, Format, Structure};
 use crate::location::{LineIndex, Location};
-use crate::models::{LoadedModel, Models, encode_value, encode_window, to_score};
+use crate::models::{
+    LoadedModel, ModelUse, Models, encode_value, encode_window, line_bounds, to_score,
+};
 use crate::password_shape;
 use crate::rules::{
     CompiledRule, DetectionType, ErrorCode, Matcher, Rule, RuleError, RuleField, RuleSet, Severity,
@@ -8,6 +10,7 @@ use crate::rules::{
 };
 use regex::Regex;
 use serde::Serialize;
+use std::collections::HashMap;
 
 /// Inputs larger than this are rejected before scanning.
 pub const MAX_INPUT_BYTES: usize = 1024 * 1024;
@@ -19,6 +22,14 @@ pub const MAX_FINDINGS: usize = 200;
 /// A model detection span shorter than this many bytes is dropped: a few stray bytes are noise,
 /// not a secret.
 pub const MIN_DETECTION_BYTES: usize = 8;
+
+/// The most a value classifier can raise a match's confidence to: a model alone is never surer
+/// than a known format.
+const MAX_CLASSIFIER_CONFIDENCE: u8 = 95;
+
+/// The confidence a match keeps when its value classifier doesn't rate the value a credential,
+/// the same as commented-out code.
+const NOT_A_CREDENTIAL_CONFIDENCE: u8 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -41,6 +52,8 @@ pub struct MatchDetails {
     /// How likely the value is a placeholder or example rather than a real secret, 0–100.
     /// Absent for unsafe handling, which has no value.
     pub placeholder_score: Option<u8>,
+    /// What the rule's value classifier says the value is. Absent when the rule has none.
+    pub value_class: Option<ValueClass>,
     /// What each model assessment rule concluded about the value, in rule order. These sit
     /// beside the scores above and never change them.
     pub model_assessments: Vec<ModelAssessment>,
@@ -56,6 +69,26 @@ pub struct MatchDetails {
     pub in_comment: bool,
     /// Whether the value passed the rule's checksum; absent when the rule has none.
     pub checksum_valid: Option<bool>,
+}
+
+/// What a value classifier says a matched value is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ValueLabel {
+    Credential,
+    /// A random-looking string that isn't secret, such as a hash, ID, or encoded data.
+    NonSecret,
+    Placeholder,
+}
+
+/// A value classifier's scores (0–100, summing to about 100) and the class that scored highest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueClass {
+    pub label: ValueLabel,
+    pub credential: u8,
+    pub non_secret: u8,
+    pub placeholder: u8,
 }
 
 /// What a model assessment rule concluded about a finding's value.
@@ -142,6 +175,9 @@ struct Candidate<'r> {
     start: usize,
     end: usize,
     entropy: Option<f64>,
+    /// The most entropy a value this long can have: log2 of its length, reached when every
+    /// character differs.
+    max_entropy: f64,
     checksum_valid: Option<bool>,
     /// How password-like the value is, for rules with a password shape setting.
     shape: Option<password_shape::Assessment>,
@@ -151,6 +187,8 @@ struct Candidate<'r> {
     model_score: Option<u8>,
     /// Each model assessment rule that scored the value, with its score.
     assessments: Vec<(&'r CompiledRule, u8)>,
+    /// What the rule's value classifier says the value is.
+    value_class: Option<ValueClass>,
 }
 
 /// Scans `text` with the enabled rules. Rules that fail their checks are skipped and reported
@@ -207,9 +245,9 @@ pub fn scan_with_models(
     }
     let mut runnable = Vec::new();
     for rule in compiled {
-        match rule_model(&rule, models) {
-            Ok(model) => runnable.push((rule, model)),
-            Err(error) => rule_errors.push(error),
+        match (rule_model(&rule, models), rule_value_model(&rule, models)) {
+            (Ok(model), Ok(value_model)) => runnable.push((rule, model, value_model)),
+            (Err(error), _) | (_, Err(error)) => rule_errors.push(error),
         }
     }
     log_line(format!(
@@ -229,7 +267,7 @@ pub fn scan_with_models(
     let mut placeholder_ranges = Vec::new();
     let mut candidates = Vec::new();
     let mut assessors = Vec::new();
-    for (rule, model) in &runnable {
+    for (rule, model, _) in &runnable {
         let creates_findings = rule.detection_type.creates_findings();
         match (&rule.matcher, model) {
             (Matcher::Pattern(regex), _) if creates_findings => {
@@ -281,6 +319,45 @@ pub fn scan_with_models(
             candidates.len()
         ));
         candidates.truncate(MAX_FINDINGS);
+    }
+
+    // Classify only the matches that are kept, each value once per model. A classifier that
+    // fails makes its rule a rule error, so none of that rule's matches are reported.
+    let value_models: HashMap<i64, &LoadedModel> = runnable
+        .iter()
+        .filter_map(|(rule, _, value_model)| value_model.map(|model| (rule.id, model)))
+        .collect();
+    let mut classified: HashMap<(usize, usize, &str), ValueClass> = HashMap::new();
+    let mut failed = Vec::new();
+    for candidate in &mut candidates {
+        let rule = candidate.rule;
+        let (Some(setting), Some(model)) = (&rule.value_classifier, value_models.get(&rule.id))
+        else {
+            continue;
+        };
+        if candidate.entropy.is_none() || failed.contains(&rule.id) {
+            continue;
+        }
+        let key = (candidate.start, candidate.end, setting.sha256.as_str());
+        let class = match classified.get(&key) {
+            Some(class) => Some(*class),
+            None => classify(model, text, candidate.start, candidate.end),
+        };
+        match class {
+            Some(class) => {
+                classified.insert(key, class);
+                candidate.value_class = Some(class);
+            }
+            None => failed.push(rule.id),
+        }
+    }
+    if !failed.is_empty() {
+        candidates.retain(|candidate| !failed.contains(&candidate.rule.id));
+        rule_errors.extend(
+            failed
+                .into_iter()
+                .map(|rule_id| model_failed(rule_id, RuleField::ValueClassifier)),
+        );
     }
 
     // Assess only the matches that are kept, so a flood of matches can't multiply model runs.
@@ -441,6 +518,7 @@ fn candidate<'r>(
         start,
         end,
         entropy,
+        max_entropy: max_entropy(value),
         checksum_valid: rule.checksum.map(|checksum| checksum.is_valid(value)),
         shape,
         // Both set once every rule has run and the text has been parsed.
@@ -448,6 +526,7 @@ fn candidate<'r>(
         in_comment: false,
         model_score: None,
         assessments: Vec::new(),
+        value_class: None,
     })
 }
 
@@ -478,25 +557,105 @@ fn rule_model<'m>(
             "This engine was built without model support.".to_string()
         }));
     };
-    if rule.detection_type == DetectionType::ModelDetection {
-        if model.output_len() != model.input_len() {
-            return Err(unavailable(format!(
-                "The model {name} must return one score per input position to detect secrets."
-            )));
-        }
-    } else if model.output_len() != 1 || model.input_len() < 3 {
+    let model_use = if rule.detection_type == DetectionType::ModelDetection {
+        ModelUse::ModelDetection
+    } else {
+        ModelUse::ModelAssessment
+    };
+    if !model.fits(model_use) {
+        return Err(unavailable(
+            if rule.detection_type == DetectionType::ModelDetection {
+                format!(
+                    "The model {name} must return one score per input position to detect secrets."
+                )
+            } else {
+                format!(
+                    "The model {name} must return a single score, and have room for a value, to \
+                     assess findings."
+                )
+            },
+        ));
+    }
+    Ok(Some(model))
+}
+
+/// The model a rule's value classifier setting runs, if it has one, checked to return one score
+/// per class.
+fn rule_value_model<'m>(
+    rule: &CompiledRule,
+    models: &'m Models,
+) -> Result<Option<&'m LoadedModel>, RuleError> {
+    let Some(setting) = &rule.value_classifier else {
+        return Ok(None);
+    };
+    let unavailable = |message: String| RuleError {
+        rule_id: rule.id,
+        field: RuleField::ValueClassifier,
+        code: ErrorCode::ModelUnavailable,
+        message,
+        span: None,
+    };
+    let name = setting
+        .label
+        .clone()
+        .unwrap_or_else(|| format!("{}…", &setting.sha256[..12]));
+    let Some(model) = models.get(&setting.sha256) else {
+        return Err(unavailable(if cfg!(feature = "ml") {
+            format!("The value classifier model {name} was not loaded into the engine.")
+        } else {
+            "This engine was built without model support.".to_string()
+        }));
+    };
+    if !model.fits(ModelUse::ValueClassifier) {
         return Err(unavailable(format!(
-            "The model {name} must return a single score, and have room for a value, to assess \
-             findings."
+            "The model {name} must return three scores (credential, non-secret, placeholder) to \
+             classify values."
         )));
     }
     Ok(Some(model))
 }
 
-fn model_failed(rule: &CompiledRule) -> RuleError {
+/// What a value classifier says the value at `start..end` is, or `None` if the model failed.
+/// The model sees only the value's own line, so the name it's assigned to counts but other lines
+/// don't.
+fn classify(model: &LoadedModel, text: &str, start: usize, end: usize) -> Option<ValueClass> {
+    let (line_start, line_end) = line_bounds(text.as_bytes(), start, end);
+    let line = &text.as_bytes()[line_start..line_end];
+    let ids = encode_value(
+        line,
+        start - line_start,
+        end - line_start,
+        model.input_len(),
+    );
+    let output = model.run(&ids).ok()?;
+    let &[credential, non_secret, placeholder] = output.as_slice() else {
+        return None;
+    };
+    let (credential, non_secret, placeholder) = (
+        to_score(credential),
+        to_score(non_secret),
+        to_score(placeholder),
+    );
+    // The highest score wins; on a tie, the earlier class in this order.
+    let label = if credential >= non_secret && credential >= placeholder {
+        ValueLabel::Credential
+    } else if non_secret >= placeholder {
+        ValueLabel::NonSecret
+    } else {
+        ValueLabel::Placeholder
+    };
+    Some(ValueClass {
+        label,
+        credential,
+        non_secret,
+        placeholder,
+    })
+}
+
+fn model_failed(rule_id: i64, field: RuleField) -> RuleError {
     RuleError {
-        rule_id: rule.id,
-        field: RuleField::Model,
+        rule_id,
+        field,
         code: ErrorCode::ModelFailed,
         message: "The model failed while running.".to_string(),
         span: None,
@@ -521,7 +680,7 @@ fn detect<'r>(
         let end = (start + window).min(bytes.len());
         let output = model
             .run(&encode_window(&bytes[start..end], window))
-            .map_err(|()| model_failed(rule))?;
+            .map_err(|()| model_failed(rule.id, RuleField::Model))?;
         for (score, &probability) in scores[start..end].iter_mut().zip(&output) {
             *score = (*score).max(to_score(probability));
         }
@@ -552,6 +711,7 @@ fn detect<'r>(
             start,
             end,
             entropy: Some(shannon_entropy(&text[start..end])),
+            max_entropy: max_entropy(&text[start..end]),
             checksum_valid: None,
             shape: None,
             // Both set once every rule has run and the text has been parsed.
@@ -559,6 +719,7 @@ fn detect<'r>(
             in_comment: false,
             model_score: scores[run_start..index].iter().max().copied(),
             assessments: Vec::new(),
+            value_class: None,
         });
     }
     Ok(candidates)
@@ -584,7 +745,9 @@ fn assess(
                 candidate.end,
                 model.input_len(),
             );
-            let output = model.run(&ids).map_err(|()| model_failed(rule))?;
+            let output = model
+                .run(&ids)
+                .map_err(|()| model_failed(rule.id, RuleField::Model))?;
             Ok(output.first().copied().map(to_score))
         })
         .collect()
@@ -646,6 +809,12 @@ fn match_details(
             "its checksum doesn't match, so it's likely made up",
         ),
         (candidate.in_comment, "it's in a comment"),
+        (
+            candidate
+                .value_class
+                .is_some_and(|class| class.label == ValueLabel::Placeholder),
+            "the value classifier rates it a placeholder",
+        ),
     ]
     .into_iter()
     .filter_map(|(present, signal)| present.then_some(signal))
@@ -659,7 +828,7 @@ fn match_details(
             5
         }
     });
-    let (confidence, mut why) = match (rule.detection_type, candidate.entropy) {
+    let (mut confidence, mut why) = match (rule.detection_type, candidate.entropy) {
         (DetectionType::DirectCredential, _) => {
             let confidence = match candidate.checksum_valid {
                 Some(true) => 99,
@@ -689,9 +858,21 @@ fn match_details(
             (confidence, why)
         }
         (DetectionType::LikelyCredential, Some(entropy)) => {
+            // Judged against the most a value this long can have, since a short value can't
+            // reach a long one's entropy however random it is: 50 when it has none, 90 when
+            // every character differs.
+            let randomness = if candidate.max_entropy > 0.0 {
+                (entropy / candidate.max_entropy).min(1.0)
+            } else {
+                0.0
+            };
+            let confidence = (50.0 + 40.0 * randomness).round() as u8;
             let minimum = rule.min_entropy.unwrap_or(0.0);
-            let confidence = (50.0 + (entropy - minimum).max(0.0) * 15.0).min(90.0) as u8;
-            let mut why = format!("High-entropy value ({entropy:.1} bits per character");
+            let mut why = format!(
+                "High-entropy value ({entropy:.1} of a possible {:.1} bits per character for \
+                 its length",
+                candidate.max_entropy
+            );
             if rule.min_entropy.is_some() {
                 why.push_str(&format!(", threshold {minimum:.1}"));
             }
@@ -738,6 +919,37 @@ fn match_details(
             ));
         }
     }
+    if let (Some(class), Some(setting)) = (candidate.value_class, &rule.value_classifier) {
+        if class.credential < setting.min_score {
+            confidence = confidence.min(NOT_A_CREDENTIAL_CONFIDENCE);
+            let looks_like = match class.label {
+                ValueLabel::NonSecret => {
+                    "; it looks more like a non-secret string such as a hash or ID"
+                }
+                ValueLabel::Placeholder => "; it looks more like a placeholder",
+                ValueLabel::Credential => "",
+            };
+            why.push_str(&format!(
+                " The value classifier doesn't rate it a credential (score {}, minimum {}){looks_like}.",
+                class.credential, setting.min_score
+            ));
+        } else if class.credential > confidence && confidence < MAX_CLASSIFIER_CONFIDENCE {
+            // Halfway from the rule's confidence to the classifier's score.
+            let raised =
+                (confidence + (class.credential - confidence) / 2).min(MAX_CLASSIFIER_CONFIDENCE);
+            why.push_str(&format!(
+                " The value classifier rates it a credential (score {}), raising confidence from \
+                 {confidence} to {raised}.",
+                class.credential
+            ));
+            confidence = raised;
+        } else {
+            why.push_str(&format!(
+                " The value classifier rates it a credential (score {}).",
+                class.credential
+            ));
+        }
+    }
     let mut model_assessments = Vec::new();
     for &(assessor, score) in &candidate.assessments {
         let threshold = threshold(assessor);
@@ -766,6 +978,7 @@ fn match_details(
             .expect("rules that create findings always have a severity"),
         confidence,
         placeholder_score,
+        value_class: candidate.value_class,
         model_assessments,
         location: index.location(candidate.start, candidate.end),
         redacted_preview: rule.prefix.as_ref().map(|prefix| format!("{prefix}…")),
@@ -775,6 +988,11 @@ fn match_details(
         in_comment: candidate.in_comment,
         checksum_valid: candidate.checksum_valid,
     }
+}
+
+/// The most entropy per character a value this long can have: log2 of its length in characters.
+fn max_entropy(value: &str) -> f64 {
+    (value.chars().count() as f64).log2().max(0.0)
 }
 
 /// Shannon entropy in bits per character.

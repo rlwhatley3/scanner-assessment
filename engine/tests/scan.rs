@@ -1179,3 +1179,19 @@ fn without_the_ml_feature_a_model_rule_is_a_rule_error() {
         "This engine was built without model support."
     );
 }
+
+#[test]
+fn a_short_value_with_no_repeated_characters_is_as_confident_as_a_long_random_one() {
+    let short = run(&format!("password = {RANDOM_PASSWORD}"));
+    let found = matches(&short);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].confidence, 90);
+    assert!(
+        found[0]
+            .why_flagged
+            .contains("of a possible 3.6 bits per character")
+    );
+
+    let repetitive = run("password = aabbccddeeff1122");
+    assert!(matches(&repetitive)[0].confidence < 90);
+}

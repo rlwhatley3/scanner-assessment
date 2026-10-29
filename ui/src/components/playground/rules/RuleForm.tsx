@@ -4,6 +4,8 @@ import {
   checkRule,
   type DetectionType,
   deleteRule,
+  listModels,
+  type Model,
   type Rule,
   type RuleCheck,
   type RuleDefinition,
@@ -12,6 +14,7 @@ import {
 } from "../api.ts";
 import { VersionLink } from "../rule-sets/RuleSetPanel.tsx";
 import { DETECTION_LABELS, SEVERITY_LABELS } from "../severity.tsx";
+import { useLoad } from "../useLoad.ts";
 import ChecksumFields, {
   type ChecksumForm,
   checksumFormFrom,
@@ -22,6 +25,11 @@ import PasswordShapeFields, {
   passwordShapeFormFrom,
   passwordShapeFrom,
 } from "./PasswordShapeFields.tsx";
+import ValueClassifierFields, {
+  type ValueClassifierForm,
+  valueClassifierFormFrom,
+  valueClassifierFrom,
+} from "./ValueClassifierFields.tsx";
 
 interface FormState {
   name: string;
@@ -34,7 +42,10 @@ interface FormState {
   minEntropy: string;
   checksum: ChecksumForm;
   passwordShape: PasswordShapeForm;
+  valueClassifier: ValueClassifierForm;
   remediation: string;
+  model: { id?: string; sha256: string } | null;
+  threshold: string;
 }
 
 function fromDefinition(definition: RuleDefinition): FormState {
@@ -49,7 +60,12 @@ function fromDefinition(definition: RuleDefinition): FormState {
     minEntropy: definition.minEntropy == null ? "" : String(definition.minEntropy),
     checksum: checksumFormFrom(definition.checksum),
     passwordShape: passwordShapeFormFrom(definition.passwordShape),
+    valueClassifier: valueClassifierFormFrom(definition.valueClassifier),
     remediation: definition.remediation ?? "",
+    model: definition.model?.sha256
+      ? { ...(definition.model.id && { id: definition.model.id }), sha256: definition.model.sha256 }
+      : null,
+    threshold: definition.threshold == null ? "" : String(definition.threshold),
   };
 }
 
@@ -64,7 +80,10 @@ const FORM_KEYS = [
   "minEntropy",
   "checksum",
   "passwordShape",
+  "valueClassifier",
   "remediation",
+  "model",
+  "threshold",
 ];
 
 /** Fields the form has no input for, carried through a save unchanged. */
@@ -80,6 +99,7 @@ function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinit
     .filter(Boolean);
   const checksum = checksumFrom(form.checksum);
   const passwordShape = passwordShapeFrom(form.passwordShape);
+  const valueClassifier = valueClassifierFrom(form.valueClassifier);
   return {
     ...others,
     ...(form.name.trim() && { name: form.name.trim() }),
@@ -92,8 +112,20 @@ function toDefinition(form: FormState, others: RuleDefinition = {}): RuleDefinit
     ...(form.minEntropy.trim() && { minEntropy: Number(form.minEntropy) }),
     ...(checksum && { checksum }),
     ...(passwordShape && { passwordShape }),
+    ...(valueClassifier && { valueClassifier }),
     ...(form.remediation.trim() && { remediation: form.remediation.trim() }),
+    ...(form.model && { model: form.model }),
+    ...(form.threshold.trim() && { threshold: Number(form.threshold) }),
   };
+}
+
+function modelOption(model: Model): { sha256: string; label: string } {
+  return { sha256: model.sha256, label: `${model.id} · ${model.sha256.slice(0, 12)}…` };
+}
+
+/** Model rules run a model instead of a pattern. */
+function usesModel(detectionType: DetectionType | ""): boolean {
+  return detectionType === "model_assessment" || detectionType === "model_detection";
 }
 
 const CHECK_DELAY_MS = 400;
@@ -117,7 +149,24 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
     () => JSON.stringify(toDefinition(fromDefinition(rule.definition), others)),
     [rule.definition, others],
   );
-  const isPlaceholder = form.detectionType === "placeholder_vs_real";
+  const createsNoFindings =
+    form.detectionType === "placeholder_vs_real" || form.detectionType === "model_assessment";
+  const isModel = usesModel(form.detectionType);
+  const models = useLoad(listModels, []);
+  // Models that fit this rule type, plus the rule's own model if the API hasn't loaded it.
+  const modelOptions = useMemo(() => {
+    const fitting = (models.data ?? []).filter(
+      (model) =>
+        (form.detectionType === "model_assessment" || form.detectionType === "model_detection") &&
+        model.uses.includes(form.detectionType),
+    );
+    const current = form.model;
+    if (current && !fitting.some((model) => model.sha256 === current.sha256)) {
+      const label = `${current.id ?? current.sha256.slice(0, 12)} (not available)`;
+      return [{ sha256: current.sha256, label }, ...fitting.map(modelOption)];
+    }
+    return fitting.map(modelOption);
+  }, [models.data, form.detectionType, form.model]);
   const dirty = JSON.stringify(definition) !== saved;
 
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
@@ -235,7 +284,7 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
         </Field>
         <Field
           label="Severity"
-          hint={isPlaceholder ? "Not used: placeholder rules create no findings." : undefined}
+          hint={createsNoFindings ? "Not used: this rule type creates no findings." : undefined}
           errors={fieldErrors("severity")}
         >
           <select
@@ -260,68 +309,126 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
         </label>
       </div>
 
-      <Field
-        label="Pattern"
-        hint="A regular expression. A named group “value” narrows the finding to the secret; “key” is checked against key names."
-        errors={fieldErrors("pattern")}
-        warnings={fieldWarnings("pattern")}
-      >
-        <textarea
-          className="mono"
-          rows={3}
-          spellCheck={false}
-          value={form.pattern}
-          onChange={(event) => update("pattern", event.target.value)}
-        />
-      </Field>
+      {isModel ? (
+        <div className="field-row">
+          <Field
+            label="Model"
+            hint={
+              models.error
+                ? `Could not load the model list: ${models.error}`
+                : "Models the API has loaded that fit this rule type."
+            }
+            errors={fieldErrors("model")}
+          >
+            <select
+              value={form.model?.sha256 ?? ""}
+              onChange={(event) => {
+                const model = models.data?.find((option) => option.sha256 === event.target.value);
+                update("model", model ? { id: model.id, sha256: model.sha256 } : null);
+              }}
+            >
+              <option value="">{models.loading ? "Loading…" : "Choose…"}</option>
+              {modelOptions.map((option) => (
+                <option key={option.sha256} value={option.sha256}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="Threshold"
+            hint="0–100. A model score at or above this counts as a secret."
+            errors={fieldErrors("threshold")}
+          >
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={form.threshold}
+              onChange={(event) => update("threshold", event.target.value)}
+            />
+          </Field>
+        </div>
+      ) : (
+        <>
+          <Field
+            label="Pattern"
+            hint="A regular expression. A named group “value” narrows the finding to the secret; “key” is checked against key names."
+            errors={fieldErrors("pattern")}
+            warnings={fieldWarnings("pattern")}
+          >
+            <textarea
+              className="mono"
+              rows={3}
+              spellCheck={false}
+              value={form.pattern}
+              onChange={(event) => update("pattern", event.target.value)}
+            />
+          </Field>
 
-      <div className="field-row">
-        <Field
-          label="Prefix"
-          hint="Public prefix shown as the redacted preview, e.g. AKIA."
-          errors={fieldErrors("prefix")}
-        >
-          <input
-            className="mono"
-            value={form.prefix}
-            onChange={(event) => update("prefix", event.target.value)}
+          <div className="field-row">
+            <Field
+              label="Prefix"
+              hint="Public prefix shown as the redacted preview, e.g. AKIA."
+              errors={fieldErrors("prefix")}
+            >
+              <input
+                className="mono"
+                value={form.prefix}
+                onChange={(event) => update("prefix", event.target.value)}
+              />
+            </Field>
+            <Field
+              label="Minimum entropy"
+              hint="0–8 bits per character. Optional."
+              errors={fieldErrors("min_entropy")}
+            >
+              <input
+                type="number"
+                min={0}
+                max={8}
+                step={0.1}
+                value={form.minEntropy}
+                onChange={(event) => update("minEntropy", event.target.value)}
+              />
+            </Field>
+          </div>
+
+          <Field
+            label="Key names"
+            hint="Comma-separated, e.g. password, secret, token. Optional."
+            errors={fieldErrors("key_names")}
+          >
+            <input
+              value={form.keyNames}
+              onChange={(event) => update("keyNames", event.target.value)}
+            />
+          </Field>
+
+          <ChecksumFields
+            value={form.checksum}
+            onChange={(checksum) => update("checksum", checksum)}
+            errors={fieldErrors("checksum")}
           />
-        </Field>
-        <Field
-          label="Minimum entropy"
-          hint="0–8 bits per character. Optional."
-          errors={fieldErrors("min_entropy")}
-        >
-          <input
-            type="number"
-            min={0}
-            max={8}
-            step={0.1}
-            value={form.minEntropy}
-            onChange={(event) => update("minEntropy", event.target.value)}
+
+          <PasswordShapeFields
+            value={form.passwordShape}
+            onChange={(passwordShape) => update("passwordShape", passwordShape)}
+            errors={fieldErrors("password_shape")}
           />
-        </Field>
-      </div>
 
-      <Field
-        label="Key names"
-        hint="Comma-separated, e.g. password, secret, token. Optional."
-        errors={fieldErrors("key_names")}
-      >
-        <input value={form.keyNames} onChange={(event) => update("keyNames", event.target.value)} />
-      </Field>
-
-      <ChecksumFields
-        value={form.checksum}
-        onChange={(checksum) => update("checksum", checksum)}
-        errors={fieldErrors("checksum")}
-      />
-
-      <PasswordShapeFields
-        value={form.passwordShape}
-        onChange={(passwordShape) => update("passwordShape", passwordShape)}
-        errors={fieldErrors("password_shape")}
-      />
+          {form.detectionType !== "unsafe_handling" &&
+            form.detectionType !== "placeholder_vs_real" && (
+              <ValueClassifierFields
+                value={form.valueClassifier}
+                onChange={(valueClassifier) => update("valueClassifier", valueClassifier)}
+                errors={fieldErrors("value_classifier")}
+                models={models.data}
+              />
+            )}
+        </>
+      )}
 
       <Field label="Remediation" errors={fieldErrors("remediation")}>
         <textarea

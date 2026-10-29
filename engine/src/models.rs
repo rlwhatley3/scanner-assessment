@@ -11,6 +11,7 @@
 //! Models run on the CPU through tract with the `ml` feature. Without it, nothing can be loaded
 //! and every model rule reports that the engine was built without model support.
 
+use serde::Serialize;
 use std::collections::HashMap;
 
 const PAD_ID: i64 = 0;
@@ -65,6 +66,67 @@ impl Models {
     pub(crate) fn get(&self, sha256: &str) -> Option<&LoadedModel> {
         self.loaded.get(sha256)
     }
+
+    /// Every loaded model, by hash, with what it can be used for.
+    pub fn list(&self) -> Vec<ModelInfo> {
+        let mut models: Vec<ModelInfo> = self
+            .loaded
+            .iter()
+            .map(|(sha256, model)| ModelInfo {
+                sha256: sha256.clone(),
+                input_len: model.input_len(),
+                output_len: model.output_len(),
+                uses: [
+                    ModelUse::ModelAssessment,
+                    ModelUse::ModelDetection,
+                    ModelUse::ValueClassifier,
+                ]
+                .into_iter()
+                .filter(|&model_use| model.fits(model_use))
+                .collect(),
+            })
+            .collect();
+        models.sort_by(|a, b| a.sha256.cmp(&b.sha256));
+        models
+    }
+}
+
+/// How many scores a value classifier returns: credential, non-secret, and placeholder.
+pub(crate) const VALUE_CLASSES: usize = 3;
+
+/// What a model can be used for: one of the two model rule types, or a rule's value
+/// classifier setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelUse {
+    ModelAssessment,
+    ModelDetection,
+    ValueClassifier,
+}
+
+/// A loaded model's shape, and what it can be used for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    pub sha256: String,
+    pub input_len: usize,
+    pub output_len: usize,
+    pub uses: Vec<ModelUse>,
+}
+
+impl LoadedModel {
+    /// Whether the model's shape fits a use: an assessment returns one score for a value (with
+    /// room for the value's markers), a value classifier one score per class, and a detection
+    /// one score per byte of its window.
+    pub(crate) fn fits(&self, model_use: ModelUse) -> bool {
+        match model_use {
+            ModelUse::ModelAssessment => self.output_len() == 1 && self.input_len() >= 3,
+            ModelUse::ValueClassifier => {
+                self.output_len() == VALUE_CLASSES && self.input_len() >= 3
+            }
+            ModelUse::ModelDetection => self.output_len() == self.input_len(),
+        }
+    }
 }
 
 /// Turns a model output into a 0–100 score. Rounding before any threshold is applied keeps tiny
@@ -91,6 +153,21 @@ pub(crate) fn encode_value(text: &[u8], start: usize, end: usize, len: usize) ->
     ids.extend(text[end..end + after].iter().map(byte_id));
     ids.resize(len, PAD_ID);
     ids
+}
+
+/// The line or lines holding `start..end`: from just after the line break before `start` to just
+/// before the line break at or after `end`. `\n`, `\r\n`, and a lone `\r` all break lines.
+pub(crate) fn line_bounds(text: &[u8], start: usize, end: usize) -> (usize, usize) {
+    let is_break = |byte: &u8| *byte == b'\n' || *byte == b'\r';
+    let line_start = text[..start]
+        .iter()
+        .rposition(is_break)
+        .map_or(0, |index| index + 1);
+    let line_end = text[end..]
+        .iter()
+        .position(is_break)
+        .map_or(text.len(), |index| end + index);
+    (line_start, line_end)
 }
 
 /// A detector's input for one window of text, padded to `len`.
@@ -258,6 +335,16 @@ mod tests {
     fn short_text_is_padded_and_long_values_are_cut_short() {
         assert_eq!(bytes(&encode_value(b"a KEY b", 2, 5, 12)), "a [KEY] b___");
         assert_eq!(bytes(&encode_value(b"a LONGVALUE b", 2, 11, 6)), "[LONG]");
+    }
+
+    #[test]
+    fn line_bounds_stop_at_any_line_break() {
+        let text = b"a=1\nkey: VALUE # note\r\nb=2";
+        let start = 9;
+        assert_eq!(&text[start..start + 5], b"VALUE");
+        assert_eq!(line_bounds(text, start, start + 5), (4, 21));
+        assert_eq!(line_bounds(b"VALUE", 0, 5), (0, 5));
+        assert_eq!(line_bounds(b"x\rVALUE\ry", 2, 7), (2, 7));
     }
 
     #[test]

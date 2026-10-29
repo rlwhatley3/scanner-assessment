@@ -3,9 +3,9 @@
 
 use prost::Message;
 use secrets_scanner_engine::{
-    DetectionType, ErrorCode, MIN_DETECTION_BYTES, MatchDetails, ModelAssessment, ModelLoadError,
-    ModelRef, ModelVerdict, Models, Rule, RuleDefinition, RuleField, RuleSet, ScanError,
-    ScanResult, Severity, Violation, default_rule_set, scan, scan_with_models,
+    DetectionType, ErrorCode, MIN_DETECTION_BYTES, MatchDetails, ModelAssessment, ModelInfo,
+    ModelLoadError, ModelRef, ModelUse, ModelVerdict, Models, Rule, RuleDefinition, RuleField,
+    RuleSet, ScanError, ScanResult, Severity, Violation, default_rule_set, scan, scan_with_models,
 };
 use tract_onnx::pb;
 
@@ -423,4 +423,27 @@ fn assessment_rules_alone_cannot_scan() {
         scan_with_models(1, "key = value", &rule_set, &models),
         Err(ScanError::NoRulesEnabled)
     );
+}
+
+#[test]
+fn listing_models_says_what_each_can_be_used_for() {
+    let mut models = Models::new();
+    let assessor = models.load(&constant_assessor(0.5)).unwrap();
+    let detector = models.load(&trigger_detector(16)).unwrap();
+    let mut expected = vec![
+        ModelInfo {
+            sha256: assessor,
+            input_len: 32,
+            output_len: 1,
+            uses: vec![ModelUse::ModelAssessment],
+        },
+        ModelInfo {
+            sha256: detector,
+            input_len: 16,
+            output_len: 16,
+            uses: vec![ModelUse::ModelDetection],
+        },
+    ];
+    expected.sort_by(|a, b| a.sha256.cmp(&b.sha256));
+    assert_eq!(models.list(), expected);
 }

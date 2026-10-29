@@ -10,7 +10,11 @@ export type DetectionType =
   | "likely_credential"
   | "unsafe_handling"
   /** Marks other findings as likely examples; creates no findings of its own. */
-  | "placeholder_vs_real";
+  | "placeholder_vs_real"
+  /** A model rates each finding's value as likely real or an example; creates no findings. */
+  | "model_assessment"
+  /** A model flags spans of the text as secrets. */
+  | "model_detection";
 
 export interface Location {
   startByte: number;
@@ -36,6 +40,30 @@ export interface MatchDetails {
   inComment: boolean;
   /** Whether the value passed the rule's checksum; null when the rule has none. */
   checksumValid: boolean | null;
+  /** What the rule's value classifier says the value is; null when the rule has none. Missing
+   * on findings saved before value classifiers existed. */
+  valueClass?: ValueClass | null;
+  /** What each model assessment rule concluded about the value. Missing on findings saved
+   * before model rules existed. */
+  modelAssessments?: ModelAssessment[];
+}
+
+/** What a value classifier says a matched value is, with its 0–100 scores. */
+export interface ValueClass {
+  label: "credential" | "non_secret" | "placeholder";
+  credential: number;
+  nonSecret: number;
+  placeholder: number;
+}
+
+/** A model's verdict on a finding's value. It sits beside the rule's scores and never changes
+ * them. */
+export interface ModelAssessment {
+  ruleId: number;
+  ruleName: string;
+  /** How likely the model rates the value as a real secret, 0–100. */
+  score: number;
+  verdict: "likely_real" | "likely_example";
 }
 
 /** A problem that stops a rule from running or from joining a rule set version. */
@@ -108,8 +136,38 @@ export interface RuleDefinition {
   checksum?: Checksum | null;
   passwordShape?: PasswordShape | null;
   remediation?: string;
+  /** For model rules: the model, named by the SHA-256 of its file. */
+  model?: { id?: string | null; sha256?: string | null } | null;
+  /** For model rules: a model score (0–100) at or above this counts as a secret. */
+  threshold?: number | null;
+  valueClassifier?: ValueClassifier | null;
   /** Fields this UI doesn't edit (e.g. a newer engine's `checksum`) are kept as-is. */
   [other: string]: unknown;
+}
+
+/** What a model can be used for: a model rule type, or a rule's value classifier setting. */
+export type ModelUse = "model_assessment" | "model_detection" | "value_classifier";
+
+/** A model the API has loaded, which rules name by SHA-256. */
+export interface Model {
+  id: string;
+  sha256: string;
+  /** How many token ids the model reads at once. */
+  inputLength: number;
+  uses: ModelUse[];
+}
+
+/** A model as a rule names it. */
+export interface ModelRef {
+  id?: string;
+  sha256: string;
+}
+
+/** Runs a model on a rule's matches; values it rates below `minScore` as a credential get lower
+ * confidence. */
+export interface ValueClassifier {
+  model?: { id?: string | null; sha256?: string | null } | null;
+  minScore?: number | null;
 }
 
 export interface Rule {
@@ -256,6 +314,7 @@ export async function checkHealth(signal?: AbortSignal): Promise<boolean> {
   }
 }
 
+export const listModels = () => request<Model[]>("GET", "/api/models");
 export const listRules = () => request<Rule[]>("GET", "/api/rules");
 export const createRule = (definition: RuleDefinition = {}) =>
   request<Rule>("POST", "/api/rules", { definition });

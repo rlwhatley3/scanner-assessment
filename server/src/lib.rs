@@ -4,12 +4,13 @@ pub mod routes;
 pub mod seed;
 pub mod store;
 
-use routes::{health, rule_set_versions, rule_sets, rules, scan_sessions, scans};
+use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions, scans};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
         health::health,
+        models::list,
         rules::list,
         rules::create,
         rules::fetch,
@@ -31,6 +32,7 @@ use routes::{health, rule_set_versions, rule_sets, rules, scan_sessions, scans};
     ),
     components(schemas(
         health::HealthResponse,
+        models::ModelResponse,
         routes::ErrorBody,
         scans::CreateScanRequest,
         scans::ScanResponse,
@@ -39,6 +41,7 @@ use routes::{health, rule_set_versions, rule_sets, rules, scan_sessions, scans};
     )),
     tags(
         (name = "API", description = "API for managing and scanning secrets"),
+        (name = "Models", description = "Models that model rules can run"),
         (name = "Rules", description = "Detection rules, drafts included"),
         (name = "Rule sets", description = "Named lines of rule set versions"),
         (name = "Rule set versions", description = "Saved, immutable sets of rule snapshots"),

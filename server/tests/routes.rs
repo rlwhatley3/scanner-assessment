@@ -1,5 +1,7 @@
 #[path = "routes/health.rs"]
 mod health;
+#[path = "routes/models.rs"]
+mod models;
 #[path = "routes/rule_set_versions.rs"]
 mod rule_set_versions;
 #[path = "routes/rule_sets.rs"]

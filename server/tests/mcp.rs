@@ -145,6 +145,7 @@ async fn initializes_and_lists_every_tool() {
             "get_rule_set_version",
             "get_scan",
             "get_scan_session",
+            "list_models",
             "list_rule_set_versions",
             "list_rule_sets",
             "list_rules",
@@ -173,7 +174,7 @@ async fn rejects_browser_origins() {
 #[tokio::test]
 async fn reads_the_seeded_rules_and_version() {
     let (app, _) = app().await;
-    let built_in = secrets_scanner_engine::default_rule_set().rules.len();
+    let built_in = secrets_scanner_api::seed::built_in_rules().len();
 
     let rules = ok(&app, "list_rules", json!({})).await;
     assert_eq!(rules["rules"].as_array().unwrap().len(), built_in);
@@ -456,6 +457,49 @@ async fn rule_sets_are_named_and_can_start_from_a_copy() {
 }
 
 #[tokio::test]
+async fn lists_the_loaded_models() {
+    let (app, _) = app().await;
+    let models = ok(&app, "list_models", json!({})).await;
+    assert_eq!(models["models"][0]["id"], "value-classifier");
+    assert_eq!(
+        models["models"][0]["sha256"],
+        secrets_scanner_engine::VALUE_CLASSIFIER_SHA256
+    );
+    assert_eq!(models["models"][0]["uses"], json!(["value_classifier"]));
+}
+
+#[tokio::test]
+async fn the_scan_tools_explain_findings_and_the_rule_tools_list_every_field() {
+    let (app, _) = app().await;
+    let tools = rpc(&app, "tools/list", json!({})).await;
+    let tools = tools["result"]["tools"].as_array().unwrap();
+    let tool = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap_or_else(|| panic!("{name} should be listed"))
+            .to_string()
+    };
+    for name in ["get_scan", "run_scan"] {
+        let schema = tool(name);
+        for field in [
+            "confidence",
+            "valueClass",
+            "placeholderScore",
+            "modelAssessments",
+        ] {
+            assert!(schema.contains(field), "{name} should explain {field}");
+        }
+    }
+    for name in ["create_rule", "update_rule"] {
+        let schema = tool(name);
+        for field in ["passwordShape", "valueClassifier", "checksum"] {
+            assert!(schema.contains(field), "{name} should list {field}");
+        }
+    }
+}
+
+#[tokio::test]
 async fn the_rule_authoring_guide_covers_every_mechanism_by_topic() {
     let (app, _) = app().await;
     let whole = ok(&app, "rule_authoring_guide", json!({})).await;
@@ -495,6 +539,7 @@ async fn the_rule_authoring_guide_covers_every_mechanism_by_topic() {
         "remediation",
         "model",
         "threshold",
+        "valueClassifier",
     ] {
         assert!(
             text.contains(&format!("`{field}`")),

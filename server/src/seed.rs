@@ -1,8 +1,27 @@
 use crate::db::Db;
-use secrets_scanner_engine::default_rule_set;
+use secrets_scanner_engine::{
+    DetectionType, RuleDefinition, default_rule_set, value_classifier_setting,
+};
 
 /// The name the built-in rules are seeded under. Users can rename it.
 pub const BUILT_IN_RULE_SET_NAME: &str = "Built-in rules";
+
+/// The rules a new database starts with: the engine's built-in rule set, with the value
+/// classifier turned on for the likely-credential rules. Those match by randomness or password
+/// shape, so they're the ones that catch hashes and IDs; the API loads the classifier at startup.
+pub fn built_in_rules() -> Vec<RuleDefinition> {
+    default_rule_set()
+        .rules
+        .into_iter()
+        .map(|rule| {
+            let mut definition = rule.definition;
+            if definition.detection_type == Some(DetectionType::LikelyCredential) {
+                definition.value_classifier = Some(value_classifier_setting());
+            }
+            definition
+        })
+        .collect()
+}
 
 /// Seeds the built-in rules as the first version of a "Built-in rules" rule set, once, on an
 /// empty database. Each built-in rule becomes a saved (non-draft) rule, joined to the version
@@ -31,9 +50,9 @@ pub async fn seed_default_rule_set(db: &Db) -> rusqlite::Result<()> {
             [transaction.last_insert_rowid()],
         )?;
         let version_id = transaction.last_insert_rowid();
-        for rule in default_rule_set().rules {
-            let definition = serde_json::to_string(&rule.definition)
-                .expect("a rule definition always serializes");
+        for definition in built_in_rules() {
+            let definition =
+                serde_json::to_string(&definition).expect("a rule definition always serializes");
             transaction.execute(
                 "INSERT INTO rules (definition, drafting) VALUES (?1, 0)",
                 [&definition],

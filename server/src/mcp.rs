@@ -4,6 +4,7 @@
 //! never stored or logged here either.
 
 use crate::routes::AppState;
+use crate::routes::models::{self, ModelResponse};
 use crate::routes::scans::{self, ApiError, ScanResponse};
 use crate::store::{
     self, RuleRecord, RuleSetRecord, RuleSetSummary, RuleSetVersionRecord, RuleSetVersionSummary,
@@ -33,16 +34,20 @@ an exact copy of any version. A version is added to a set from a list of rule id
 checked as a set, and each one's current definition is snapshotted into the version, so later rule \
 edits never change a saved version. Versions are numbered within their set. Saved versions can only \
 be archived or restored. A scan session uses one version; each scan in it \
-runs that version's snapshots. Scan text is never stored, and findings never contain matched \
-values. Before writing or changing a rule, read rule_authoring_guide: it explains every mechanism a \
-rule is built from (patterns and their value and key groups, detection types, key names, entropy, \
-checksums, password shape, placeholders, model rules), when to use each and why, and how each \
-built-in rule is assembled from them.";
+runs that version's snapshots. Model rules (model_assessment, model_detection) run a model the API \
+has loaded instead of a pattern, and a rule's valueClassifier setting runs one on the rule's own \
+matches; list_models shows which models are available and what each can be used for. Scan text is \
+never stored, and findings never contain matched values. Before writing or changing a rule, read \
+rule_authoring_guide: it explains every mechanism a rule is built from (patterns and their value and \
+key groups, detection types, key names, entropy, checksums, password shape, placeholders, model \
+rules, value classifiers), when to use each and why, and how each built-in rule is assembled from \
+them.";
 
 const DEFINITION_HELP: &str = "The rule's definition as canonical JSON. Every field is optional \
 while drafting, and unknown fields are rejected. Fields: name (string); enabled (boolean, default \
-true); detectionType (direct_credential, likely_credential, unsafe_handling, or \
-placeholder_vs_real); severity (high, medium, or low; not used by placeholder_vs_real); pattern \
+true); detectionType (direct_credential, likely_credential, unsafe_handling, placeholder_vs_real, \
+model_assessment, or model_detection); severity (high, medium, or low; not used by \
+placeholder_vs_real or model_assessment); pattern \
 (a Rust regex: a named group `value` narrows the finding to the secret, a named group `key` is \
 checked against keyNames); prefix (the public prefix shown as the redacted preview); keyNames \
 (string array); minEntropy (0 to 8 bits per character); checksum ({\"algorithm\": \"luhn\"}, \
@@ -50,7 +55,9 @@ checked against keyNames); prefix (the public prefix shown as the redacted previ
 \"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); passwordShape \
 ({\"minScore\": 1 to 10}, built for likely_credential); remediation (string); model ({\"id\": string, \
 \"sha256\": 64 hex characters}) and threshold (0 to 100), for model_assessment and model_detection \
-only. rule_authoring_guide explains what each field does, when to use it, and why.";
+only; valueClassifier ({\"model\": {\"id\": string, \"sha256\": 64 hex characters}, \"minScore\": \
+0 to 100}), which runs a value classifier model from list_models on the rule's matches. \
+rule_authoring_guide explains what each field does, when to use it, and why.";
 
 /// The MCP service, ready to mount on the API router.
 pub fn service(state: AppState) -> StreamableHttpService<ScannerMcp, LocalSessionManager> {
@@ -265,6 +272,11 @@ fn guide_sections() -> Vec<(String, &'static str)> {
 }
 
 #[derive(Serialize, JsonSchema)]
+pub struct ModelList {
+    models: Vec<ModelResponse>,
+}
+
+#[derive(Serialize, JsonSchema)]
 pub struct RuleList {
     rules: Vec<RuleRecord>,
 }
@@ -348,6 +360,18 @@ impl ScannerMcp {
 
 #[tool_router]
 impl ScannerMcp {
+    #[tool(
+        description = "List the models the API has loaded, which rules name by sha256, with \
+                       what each can be used for: model_assessment or model_detection rules, or \
+                       a rule's value_classifier setting.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_models(&self) -> Result<Json<ModelList>, ToolError> {
+        Ok(Json(ModelList {
+            models: models::loaded_models(&self.state),
+        }))
+    }
+
     #[tool(
         description = "How to build rules: every mechanism a rule definition can use, when to use \
                        it, and why, with recipes for each kind of built-in rule. Read it before \
@@ -673,8 +697,9 @@ impl ScannerMcp {
     }
 
     #[tool(
-        description = "Get a saved scan and its findings. Findings hold rule, location, scores, \
-                       and a redacted preview, never the matched text.",
+        description = "Get a saved scan and its findings. Findings never contain the matched \
+                       text; the output schema explains confidence, valueClass, and the other \
+                       finding fields.",
         annotations(read_only_hint = true)
     )]
     async fn get_scan(
@@ -691,7 +716,8 @@ impl ScannerMcp {
     #[tool(
         description = "Scan text with the session's rule set version and save the scan and \
                           its findings to the session. The text is never stored or logged. \
-                          Findings are capped at 200.",
+                          Findings are capped at 200; the output schema explains confidence, \
+                          valueClass, and the other finding fields.",
         annotations(destructive_hint = false)
     )]
     async fn run_scan(

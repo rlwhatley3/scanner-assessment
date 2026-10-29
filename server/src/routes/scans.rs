@@ -8,7 +8,7 @@ use axum::{
 };
 use rusqlite::{Connection, OptionalExtension};
 use secrets_scanner_engine::{
-    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanResult, scan,
+    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanResult, scan_with_models,
 };
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +35,22 @@ pub struct ScanResponse {
     pub findings: Vec<FindingResponse>,
 }
 
+/// How to read a finding's violation, for API docs and MCP clients.
+const VIOLATION_HELP: &str = "Each match's violation holds ruleName, detectionType, severity, \
+location (byte offsets plus 1-based line and column), and redactedPreview (the rule's prefix only). \
+confidence (0-100) is how sure the engine is that it's a secret of the rule's kind: direct \
+credentials 95 (99 with a passing checksum, 50 with a failing one), likely credentials 50-90 by \
+how random the value is for its length (35-80 by password shape when the rule has one), unsafe \
+handling 70 (30 when commented out), and model_detection matches the model's score. A rule's value classifier lowers it to 30 when the \
+credential score is below its minScore, or raises it halfway toward a higher credential score, up \
+to 95. placeholderScore (0-100, higher = more likely an example; null for unsafe handling). \
+valueClass (null unless the rule has a value classifier): label credential, non_secret, or \
+placeholder, with a 0-100 score for each. modelAssessments: each model_assessment rule's score \
+and verdict. checksumValid and inComment are true, false, or null. Matches with the same \
+overlapGroup cover overlapping text. whyFlagged explains the scores from signals only. A finding \
+of kind rule_error names the rule, field, and code of a rule that couldn't run; partial is true \
+when there is one.";
+
 #[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FindingResponse {
@@ -44,6 +60,7 @@ pub struct FindingResponse {
     kind: String,
     /// Match details or the rule error, exactly as stored. Never contains the matched text.
     #[schema(value_type = Object)]
+    #[schemars(description = VIOLATION_HELP)]
     violation: serde_json::Value,
     violation_pretty: String,
 }
@@ -191,7 +208,8 @@ async fn run_scan(
         .acquire_owned()
         .await
         .map_err(internal)?;
-    tokio::task::spawn_blocking(move || scan(scan_id, &text, &rule_set))
+    let models = state.models.clone();
+    tokio::task::spawn_blocking(move || scan_with_models(scan_id, &text, &rule_set, &models))
         .await
         .map_err(internal)?
         .map_err(ApiError::from)

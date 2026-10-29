@@ -8,6 +8,12 @@ interface FindingsListProps {
   onSelect: (index: number) => void;
 }
 
+const VALUE_LABELS = {
+  credential: "credential",
+  non_secret: "non-secret",
+  placeholder: "placeholder",
+};
+
 export function findingElementId(index: number): string {
   return `scan-finding-${index}`;
 }
@@ -74,6 +80,26 @@ export default function FindingsList({ findings, selected, onSelect }: FindingsL
                   {details.checksumValid !== null &&
                     (details.checksumValid ? " · Checksum valid" : " · Checksum fails")}
                   {details.inComment && " · In a comment"}
+                  {details.valueClass && (
+                    <span className={`value-class ${details.valueClass.label}`}>
+                      {" "}
+                      · Value: {VALUE_LABELS[details.valueClass.label]} (
+                      {details.valueClass.label === "credential"
+                        ? details.valueClass.credential
+                        : details.valueClass.label === "non_secret"
+                          ? details.valueClass.nonSecret
+                          : details.valueClass.placeholder}
+                      )
+                    </span>
+                  )}
+                  {details.modelAssessments?.map((assessment) => (
+                    <span key={assessment.ruleId} className={`model-verdict ${assessment.verdict}`}>
+                      {" "}
+                      · {assessment.ruleName}:{" "}
+                      {assessment.verdict === "likely_real" ? "likely real" : "likely an example"} (
+                      {assessment.score})
+                    </span>
+                  ))}
                   {details.redactedPreview && (
                     <>
                       {" "}

@@ -67,7 +67,7 @@ async fn seeding_twice_leaves_one_built_in_rule_set() {
         count(&db, "SELECT COUNT(*) FROM rule_set_versions").await,
         1
     );
-    let built_in = secrets_scanner_engine::default_rule_set().rules.len() as i64;
+    let built_in = secrets_scanner_api::seed::built_in_rules().len() as i64;
     assert_eq!(
         count(&db, "SELECT COUNT(*) FROM rules WHERE drafting = 0").await,
         built_in
@@ -237,4 +237,17 @@ fn scans_are_capped_at_a_fixed_number_running_at_once() {
         state.scan_permits.available_permits(),
         routes::MAX_CONCURRENT_SCANS
     );
+}
+
+#[tokio::test]
+async fn the_value_classifier_lowers_confidence_for_a_hash_under_a_secret_name() {
+    let (app, _) = app().await;
+    let text =
+        "password_hash: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\n";
+    let (status, body) = post_scan(&app, 1, json!({ "text": text })).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["partial"], false);
+    let violation = &body["findings"][0]["violation"];
+    assert_eq!(violation["valueClass"]["label"], "non_secret");
+    assert_eq!(violation["confidence"], 30);
 }

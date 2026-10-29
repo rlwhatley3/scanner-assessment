@@ -20,6 +20,7 @@ A rule is a JSON `definition`. Every field is optional while drafting; unknown f
 | `passwordShape` | any pattern rule; built for `likely_credential` | Only count values that look like a password a person made up (see `password-shape`) |
 | `remediation` | rule types that create findings | What to do about a finding |
 | `model`, `threshold` | `model_assessment`, `model_detection` | The model to run and its cut-off (see `models`) |
+| `valueClassifier` | any pattern rule; built for `likely_credential` | A model that says whether each matched value is a credential, a non-secret string, or a placeholder, and moves confidence to match (see `models`) |
 
 How a scan uses a rule, in order:
 
@@ -29,7 +30,9 @@ How a scan uses a rule, in order:
 4. `likely_credential` rules also check parsed key/value pairs.
 5. `checksum` marks each candidate as valid or not; it never drops one.
 6. Placeholder rules mark candidates that contain a known fake value.
-7. Candidates are scored, overlaps are grouped, and at most 200 are kept.
+7. Candidates are sorted, and at most 200 are kept.
+8. Rules with a `valueClassifier` classify each kept value.
+9. Candidates are scored and overlaps are grouped.
 
 Scan text is never stored, and no finding contains the matched value. Only positions, scores, and the `prefix` are returned.
 
@@ -54,7 +57,7 @@ Why test with negatives: most rule mistakes are false positives on ordinary text
 | `model_assessment` | no | `model`, `threshold` | A model's opinion of whether each finding's value is real or an example |
 | `model_detection` | yes | `model`, `threshold`, `severity` | Spans a model flags as secrets, including formats no pattern describes |
 
-Why the split matters: the type decides scoring. A direct credential starts at confidence 95 (99 with a valid checksum, 50 with a failed one). A likely credential scores 50–90 from its entropy, or 35–80 from its password shape. Pick `direct_credential` only when a match is a secret almost every time; otherwise pick `likely_credential` and let entropy or shape do the filtering.
+Why the split matters: the type decides scoring. A direct credential starts at confidence 95 (99 with a valid checksum, 50 with a failed one). A likely credential scores 50–90 from how random its value is for its length, or 35–80 from its password shape. Pick `direct_credential` only when a match is a secret almost every time; otherwise pick `likely_credential` and let entropy or shape do the filtering.
 
 Choosing severity: `high` for anything that grants access as written (keys, tokens, passwords, private keys). `medium` for credentials that expire or need something else to use (JWTs, pre-signed URLs, password hashes, keystores with a password). `low` for values that are public by design or weak signals (Sentry DSNs, password-shaped values under ordinary names).
 
@@ -92,9 +95,9 @@ When to use it: values with no format of their own, where the name is the eviden
 
 `minEntropy` drops a candidate whose value has fewer bits of Shannon entropy per character than this, from 0 to 8. It applies to every pattern rule type except `unsafe_handling`, which has no value.
 
-Typical values, in bits per character: an English word about 2.5–3, a made-up password about 3–3.5, hex at most 4, base64 tokens 4.5–6. A value can't score above log2 of its length, so short values score low whatever they are.
+Typical values, in bits per character: an English word about 2.5–3, a made-up password about 3–3.5, hex at most 4, base64 tokens 4.5–6. A value can't score above log2 of its length, so short values score low whatever they are. That is why confidence uses a different measure: a likely credential's confidence (50–90) compares its entropy with that ceiling, so a 12-character value with no repeated characters scores as high as a long random token, while `minEntropy` stays an absolute floor.
 
-When to use it: likely-credential rules that would otherwise match ordinary settings. The built-in assignment rule uses 3.0, which keeps `password: changeme` out and keeps `password: q8Z!fP2xL7mR` in. Why it is a threshold and not a format: it is the one signal that works on secrets with no format at all. Its limit: it can't tell a random secret from a random identifier (a git SHA, a UUID), so pair it with key names or context.
+When to use it: likely-credential rules that would otherwise match ordinary settings. The built-in assignment rule uses 3.0, which keeps `password: changeme` out and keeps `password: q8Z!fP2xL7mR` in. Why it is a threshold and not a format: it is the one signal that works on secrets with no format at all. Its limit: it can't tell a random secret from a random identifier (a git SHA, a UUID), so pair it with key names, context, or a `valueClassifier`.
 
 Separately, any value under 2 bits per character counts as an example signal in the placeholder score, whatever the rule's threshold.
 
@@ -134,16 +137,28 @@ The other example signals, which score 70, need no rule: entropy under 2 bits pe
 
 ## Models
 
-Model rules add a model's judgment to the pattern rules. `model` is `{"id": "readable name", "sha256": "64 hex characters"}` and `threshold` is 0–100; neither needs a pattern.
+Models add judgment to pattern rules in two ways. Both name a model by `{"id": "readable name", "sha256": "64 hex characters"}`; the hash is what counts, so a rule set version names the exact model it scanned with. `list_models` shows the models this server has loaded and what each can be used for.
+
+**`valueClassifier` on a pattern rule** (`{"model": {…}, "minScore": 0–100}`): a model reads each value the rule matched, from the value's own line, and says whether it is a `credential`, a `non_secret` string (a hash, digest, ID, URL, or encoded data), or a `placeholder`. It never drops a finding:
+
+- A credential score below `minScore` lowers confidence to 30, and "why flagged" says what the value looks like instead.
+- A credential score above the rule's own confidence raises it halfway toward that score, up to 95, so a model alone is never surer than a known format.
+- A `placeholder` verdict counts as an example signal in the placeholder score.
+- The finding records the scores as `valueClass`.
+
+When to use it: rules that match by randomness or password shape, which can't tell a password from a git SHA or UUID under a secret-sounding name. Fixed formats (`AKIA…`, `ghp_…`) don't need it. This server loads the `value-classifier` model at startup and seeds it, at `minScore` 50, on the built-in `likely_credential` rules of a new database. It judges the value and its name, not the file, so it doesn't decide whether text is a test or documentation.
+
+**Model rules** take `model` and `threshold` (0–100) instead of a pattern:
 
 - `model_assessment` rates each finding's value as `likely_real` or `likely_example`, adds a `modelAssessments` entry and a "why flagged" line, and never changes the finding's scores.
 - `model_detection` reads the whole text and turns runs of bytes scoring at or above the threshold into findings, which catches secrets no pattern describes. It is the slowest rule type.
 
-**This server doesn't load models.** It runs the engine without model support, so through this API every model rule becomes a `rule_error` (field `model`, code `model_unavailable`) and the scan is marked partial. You can still draft, check, and version model rules here; they run only where the engine is built with its `ml` feature and the caller loads the model file whose SHA-256 the rule names. Why the hash: a rule set version then names the exact model it scanned with.
+A model this server hasn't loaded, or one whose shape doesn't fit (`list_models` says which uses each model fits), makes the rule a `rule_error` (field `model` or `value_classifier`, code `model_unavailable`) and the scan is partial. You can still draft, check, and version such rules here. Retraining a model changes its hash, so versions that name the old hash report it as unavailable until a new version names the new one.
 
 ## Scoring
 
-- **Confidence (0–100):** direct credentials 95, or 99 with a valid checksum and 50 with a failed one. Likely credentials 50–90, rising with entropy above `minEntropy`; with a password shape, 35–80, rising with the score. Unsafe handling 70, or 30 when commented out. Model detection: the model's highest score in the span.
+- **Confidence (0–100):** direct credentials 95, or 99 with a valid checksum and 50 with a failed one. Likely credentials 50–90, rising with how random the value is for its length; with a password shape, 35–80, rising with the score. Unsafe handling 70, or 30 when commented out. Model detection: the model's highest score in the span. A `valueClassifier` then lowers it to 30 (credential score below `minScore`) or raises it halfway toward a higher credential score, up to 95.
+- **`valueClass`:** with a `valueClassifier`, the label (`credential`, `non_secret`, or `placeholder`) and a 0–100 score for each. Null otherwise.
 - **Placeholder score (0–100, higher is more likely an example):** 95 when a placeholder rule matches inside the value, 70 with any other example signal, otherwise 5. None for unsafe handling.
 - **`whyFlagged`** is built only from these signals and never quotes the input, so it is safe to show and log.
 
@@ -187,7 +202,7 @@ How each kind of built-in rule is put together, so you can build the same kind f
 
 **A value only its surrounding syntax identifies** (AWS secret keys by name, Basic auth headers, passwords in URLs, SQL `PASSWORD '…'`, connection-string `Password=`, `.netrc`, registry `_auth`): `direct_credential` with the syntax outside a `value` group. Why direct: the syntax only ever holds a credential, even though the value itself has no format. Skip templates in the value's first character (`[^$%{<]`), so `${PASSWORD}` and `%s` aren't reported.
 
-**A secret-sounding name and a random value** (the built-in "Secret-looking assignment"): `likely_credential`, a pattern with `key` and `value` groups, `keyNames`, and `minEntropy` 3.0. Why likely: the name is evidence, not proof, and the entropy threshold keeps ordinary settings out.
+**A secret-sounding name and a random value** (the built-in "Secret-looking assignment"): `likely_credential`, a pattern with `key` and `value` groups, `keyNames`, and `minEntropy` 3.0. Why likely: the name is evidence, not proof, and the entropy threshold keeps ordinary settings out. This server adds a `valueClassifier` to it, which lowers the confidence of hashes and IDs under secret-sounding names.
 
 **Context and randomness without a name** (Bearer headers, session cookies): `likely_credential` with a `value` group and `minEntropy`, no `keyNames`. Why: the header or cookie syntax says a token is there, and entropy keeps out variables and short placeholders.
 
@@ -197,7 +212,7 @@ How each kind of built-in rule is put together, so you can build the same kind f
 
 **A JSON structure** (JWKs with private members): match within one object with `\{[^{}]*?…[^{}]*\}`, and list both field orders as alternatives, since JSON doesn't fix the order.
 
-**A password a person made up** (the built-in "Password-shaped value"): `likely_credential`, a pattern for quoted assigned values, `passwordShape` with no `keyNames`, at low severity. Why: it is the only mechanism that catches human passwords under ordinary names, and as a fallback it adds no duplicate findings.
+**A password a person made up** (the built-in "Password-shaped value"): `likely_credential`, a pattern for quoted assigned values, `passwordShape` with no `keyNames`, at low severity, plus this server's `valueClassifier`. Why: it is the only mechanism that catches human passwords under ordinary names, and as a fallback it adds no duplicate findings.
 
 **Unsafe code** (the built-in "Secret written to a log"): `unsafe_handling` with a pattern for the call and a secret-sounding name in its arguments. Why a separate type: there is no value to score, and the fix is a code change, not a rotation.
 

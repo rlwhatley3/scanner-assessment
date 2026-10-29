@@ -1,6 +1,6 @@
 use secrets_scanner_engine::{
     DetectionType, ErrorCode, ModelRef, Rule, RuleDefinition, RuleField, RuleSet, Severity,
-    WarningCode, check_rule, check_rule_set, default_rule_set,
+    ValueClassifierSetting, WarningCode, check_rule, check_rule_set, default_rule_set,
 };
 
 fn rule(id: i64, definition: RuleDefinition) -> Rule {
@@ -329,5 +329,43 @@ fn a_model_rule_reads_from_the_forms_camel_case_json() {
     assert!(
         serde_json::from_str::<RuleDefinition>(r#"{"model": {"sha": "x"}}"#).is_err(),
         "a misspelled model field should be rejected"
+    );
+}
+
+#[test]
+fn a_value_classifier_setting_needs_a_valid_model_and_a_minimum_score() {
+    let with_setting = |setting| RuleDefinition {
+        value_classifier: Some(setting),
+        ..valid("x")
+    };
+    assert_eq!(
+        errors(with_setting(ValueClassifierSetting::default())),
+        [
+            (RuleField::ValueClassifier, ErrorCode::Required),
+            (RuleField::ValueClassifier, ErrorCode::Required),
+        ]
+    );
+    assert_eq!(
+        errors(with_setting(ValueClassifierSetting {
+            model: Some(ModelRef {
+                id: None,
+                sha256: Some("abc".into()),
+            }),
+            min_score: Some(101),
+        })),
+        [
+            (RuleField::ValueClassifier, ErrorCode::InvalidFormat),
+            (RuleField::ValueClassifier, ErrorCode::OutOfRange),
+        ]
+    );
+    assert_eq!(
+        errors(with_setting(ValueClassifierSetting {
+            model: Some(ModelRef {
+                id: Some("value-classifier".into()),
+                sha256: Some("0f".repeat(32)),
+            }),
+            min_score: Some(50),
+        })),
+        []
     );
 }
