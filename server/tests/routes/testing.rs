@@ -542,3 +542,147 @@ async fn says_when_suppressions_hid_matches_from_a_run() {
     assert_eq!(case(&second, "notes.txt#1")["outcome"], "missed");
     assert!(diagnostic(&second, "suppressed").is_some(), "{second}");
 }
+
+/// About `bytes` of text made of `line`, called with each line's number.
+fn document(bytes: usize, line: impl Fn(usize) -> String) -> String {
+    let mut text = String::new();
+    for number in 0.. {
+        if text.len() >= bytes {
+            break;
+        }
+        text.push_str(&line(number));
+    }
+    text
+}
+
+/// A random-looking value that differs from line to line.
+fn varied(number: usize, length: usize) -> String {
+    "Zq7Lm2Xc9Vb4Nn6Tt1Rr8Pp3Kk5Hh0Wd"
+        .chars()
+        .cycle()
+        .skip(number % 32)
+        .take(length)
+        .collect()
+}
+
+const WORDS: [&str; 8] = [
+    "service", "returns", "request", "handler", "config", "value", "user", "data",
+];
+
+fn word(number: usize) -> &'static str {
+    WORDS[number % WORDS.len()]
+}
+
+#[tokio::test]
+async fn names_a_rule_whose_matches_flood_a_document_with_its_count_and_time() {
+    let (app, _) = app().await;
+    let every_word = create_rule(
+        &app,
+        json!({
+            "name": "Every word",
+            "detectionType": "direct_credential",
+            "severity": "low",
+            "pattern": "(?P<value>\\w+)"
+        }),
+    )
+    .await;
+    let aws = create_rule(&app, valid_definition("AWS key")).await;
+    let version = create_version(&app, &[every_word, aws]).await;
+    let session_id = session(&app, version).await;
+    let prose = document(32_000, |number| {
+        format!(
+            "the {} {} the {}\n",
+            word(number),
+            word(number + 3),
+            word(number + 5)
+        )
+    });
+    let (status, report) = run(
+        &app,
+        session_id,
+        json!({ "documents": [{ "name": "notes.txt", "text": prose, "cases": [] }] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{report}");
+    let slow: Vec<&Value> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "slow_rule")
+        .collect();
+    assert_eq!(slow.len(), 1, "{report}");
+    assert_eq!(slow[0]["ruleId"], every_word);
+    let message = slow[0]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("Every word matched ") && message.contains(" ms on its own work"),
+        "{message}"
+    );
+}
+
+#[tokio::test]
+async fn no_built_in_rule_floods_the_documents_the_threshold_was_measured_on() {
+    let (app, _) = app().await;
+    let session_id = session(&app, 1).await;
+    let size = 64_000;
+    let documents = [
+        (
+            "passwords.txt",
+            document(size, |number| {
+                format!("password = {}\n", varied(number, 20))
+            }),
+        ),
+        (
+            ".env",
+            document(size, |number| {
+                format!(
+                    "{}_{}={}\n",
+                    word(number).to_uppercase(),
+                    word(number + 1).to_uppercase(),
+                    varied(number, 12)
+                )
+            }),
+        ),
+        (
+            "records.json",
+            document(size, |number| {
+                format!(
+                    "{{\"id\": \"{}\", \"name\": \"{}\", \"count\": {}}},\n",
+                    varied(number, 24),
+                    word(number),
+                    number % 100_000
+                )
+            }),
+        ),
+        (
+            "main.rs",
+            document(size, |number| {
+                format!(
+                    "    let {} = {}.{}({number}, \"{}\"); // {}\n",
+                    word(number),
+                    word(number + 1),
+                    word(number + 2),
+                    word(number + 3),
+                    word(number + 4)
+                )
+            }),
+        ),
+        (
+            "notes.txt",
+            document(size, |number| {
+                format!(
+                    "the {} {} the {}\n",
+                    word(number),
+                    word(number + 3),
+                    word(number + 5)
+                )
+            }),
+        ),
+    ];
+    let documents: Vec<Value> = documents
+        .into_iter()
+        .map(|(name, text)| json!({ "name": name, "text": text, "cases": [] }))
+        .collect();
+    let (status, report) = run(&app, session_id, json!({ "documents": documents })).await;
+    assert_eq!(status, StatusCode::CREATED, "{report}");
+    assert!(diagnostic(&report, "slow_rule").is_none(), "{report}");
+}

@@ -120,6 +120,28 @@ export interface Suppression {
  */
 export type ScanStatus = "running" | "completed" | "interrupted";
 
+/** What one rule cost a scan. */
+export interface RuleTiming {
+  ruleId: number;
+  ruleName: string;
+  /** Time spent on the rule's own work, in microseconds. */
+  micros: number;
+  /** Values it found, before overlapping findings were merged and the findings were capped. */
+  matches: number;
+  /** True when it matched so much of the text that it slowed the scan. */
+  floods: boolean;
+}
+
+/** A rule that matched so much of a scan's text that it slowed the scan. */
+export interface SlowRule {
+  ruleId: number;
+  ruleName: string;
+  matches: number;
+  micros: number;
+  /** What happened and what to change, for rule authors. */
+  message: string;
+}
+
 export interface ScanResponse {
   scanId: number;
   scanSessionId: number;
@@ -131,6 +153,10 @@ export interface ScanResponse {
   partial: boolean;
   /** Matches left out because an active suppression in the session covers their value. */
   suppressedCount: number;
+  /** Rules that matched so much of the text that they slowed the scan. */
+  slowRules: SlowRule[];
+  /** What each rule that ran cost the scan. Empty for a scan that didn't finish. */
+  ruleTimings: RuleTiming[];
 }
 
 export type ChecksumEncoding = "base62" | "base36" | "hex" | "digits";
@@ -327,6 +353,8 @@ export interface StoredScan {
   matchCount: number;
   /** Matches left out because an active suppression covered their value. */
   suppressedCount: number;
+  /** Rules that matched so much of the text that they slowed the scan. */
+  slowRules: SlowRule[];
   createdAt: string;
   findings: SavedFinding[];
 }
@@ -415,6 +443,8 @@ export const checkRule = (id: number, definition: RuleDefinition, signal?: Abort
 export interface TryRuleResponse {
   truncated: boolean;
   findings: Finding[];
+  /** The rule, if it matched so much of the text that it would slow every scan. */
+  slowRules: SlowRule[];
 }
 
 /** Whether one example value passes a checksum, and where its parts start. */

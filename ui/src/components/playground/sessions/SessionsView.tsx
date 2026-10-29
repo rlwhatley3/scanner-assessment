@@ -8,6 +8,7 @@ import {
   type StoredScan,
 } from "../api.ts";
 import { HelpLink } from "../guide/GuideView.tsx";
+import { SlowRulesNote } from "../scan/SlowRules.tsx";
 import SuppressionsPanel from "../scan/SuppressionsPanel.tsx";
 import { useActiveSession } from "../session.tsx";
 import { SEVERITY_LABELS, SeverityIcon } from "../severity.tsx";
@@ -142,6 +143,7 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
         Scan {scan.id} · {formatDate(scan.createdAt)} ·{" "}
         <span className={`outcome ${outcome.toLowerCase()}`}>{outcome}</span>
         {scan.truncated && <span className="badge">Cut off at 200</span>}
+        {scan.slowRules.length > 0 && <span className="badge">Slow</span>}
         {scan.suppressedCount > 0 && (
           <span className="badge subtle">{scan.suppressedCount} marked safe, not flagged</span>
         )}
@@ -153,6 +155,7 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
             : "This scan stopped before it finished, so its results weren't saved. It doesn't mean the text was clean. Scan the text again to check it."}
         </p>
       )}
+      <SlowRulesNote slowRules={scan.slowRules} />
       {ruleErrors.length > 0 && (
         <ul className="banner warning">
           {ruleErrors.map((finding) => (
