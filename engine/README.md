@@ -67,7 +67,7 @@ Rust's `regex` crate runs in linear time, so no pattern can backtrack catastroph
 
 ## Model rules
 
-Model rules add a model's judgment on top of the pattern rules; a [trained value classifier](#the-value-classifier) and a [trained secret detector](#the-secret-detector) ship with the engine. A rule set without them scans exactly as before. They run only when the engine is built with the `ml` feature (`cargo build --features ml`), which runs ONNX models on the CPU with [tract](https://github.com/sonos/tract), a pure-Rust runtime.
+Models add judgment on top of the pattern rules in two ways: as **model rules** (`model_assessment`, `model_detection`), and as a pattern rule's **[value classifier setting](#value-classifier-setting)**, which checks that rule's own matches the way a checksum does. A [trained value classifier](#the-value-classifier) and a [trained secret detector](#the-secret-detector) ship with the engine. A rule set without models scans exactly as before. They run only when the engine is built with the `ml` feature (`cargo build --features ml`), which runs ONNX models on the CPU with [tract](https://github.com/sonos/tract), a pure-Rust runtime.
 
 ```json
 {
@@ -95,17 +95,34 @@ Every model takes one row of token ids, `int64[1, L]`, with `L` fixed by the mod
 - **Assessments run after the 200-finding cap,** so a flood of matches can't multiply model runs. Findings with no value (unsafe handling) get no assessment. Detection findings are assessed too.
 - **Detection reads the whole text,** about `2 × bytes / L` model runs per scan, so it is the slowest rule type: a 1 MB input with `L = 256` means about 8,000 model runs. With the bundled detector that takes about 3.5 seconds in a release build (see [below](#the-secret-detector)).
 
+### Value classifier setting
+
+A pattern rule can run a model on its own matches to say what each matched value is: a credential, a non-secret random string (a hash, digest, ID, or encoded data), or a placeholder.
+
+```json
+"valueClassifier": {
+  "model": { "id": "value-classifier", "sha256": "…64 hex characters…" },
+  "minScore": 50
+}
+```
+
+- **Input and output:** the same value-between-markers input as a model assessment, but built from the value's own line only, so the name it's assigned to counts and other lines don't. The output is three scores, `float[1, 3]`, that sum to 1: credential, non-secret, placeholder.
+- **What it changes:** a value whose credential score (0–100) is below `minScore` keeps its finding, but its confidence drops to 30, the same as commented-out code, and "why flagged" says what the value looks like instead. A credential score above the rule's own confidence raises it halfway toward that score, up to 95, so a model alone is never surer than a known format. A value rated a placeholder also counts as an example signal for the placeholder score. The finding records the scores as `valueClass`.
+- **Where it helps:** rules that match by randomness or password shape, which can't tell a password from a commit hash, UUID, or digest under a secret-sounding name. Fixed-format rules (`AKIA…`, `ghp_…`) don't need it.
+- **Checked like a checksum:** `model.sha256` must be 64 hexadecimal characters and `minScore` 0–100. A model that wasn't loaded or doesn't return three scores makes the rule a `rule_error` (field `value_classifier`), so none of its matches are reported. Each value is classified once per model, after the 200-finding cap. Rules with no value (unsafe handling) ignore the setting.
+
 ### The value classifier
 
-[`models/value-classifier.onnx`](models/value-classifier.onnx) is a trained `model_assessment` model (about 140 KB, `L = 128`, SHA-256 `b72bdda9…8528`). It is not part of the engine's built-in rule set, which runs without models; the engine exports it as `VALUE_CLASSIFIER_ONNX` with a ready-made rule, `value_classifier_rule()`. The API loads it at startup, lists it at `GET /api/models` (and the MCP `list_models` tool), and seeds the rule into new databases. [`ml/`](../ml/README.md) has the code that trains it and how to retrain it.
+[`models/value-classifier.onnx`](models/value-classifier.onnx) is a trained model for the value classifier setting (about 140 KB, `L = 128`, SHA-256 `e620ed64…1459`). The engine exports it as `VALUE_CLASSIFIER_ONNX`, with `value_classifier_setting()` naming it at a minimum score of 50. The engine's built-in rule set doesn't use it, since that runs without models. The API loads it at startup, lists it at `GET /api/models` (and the MCP `list_models` tool), and turns it on for every likely-credential built-in rule (secret-looking assignment, password-shaped value, Bearer tokens, session cookies) when it seeds a new database. [`ml/`](../ml/README.md) has the code that trains it and how to retrain it.
 
-It is a small byte-level convolutional network trained only on synthetic data, so it has learned the generator, not real repositories:
+It judges the matched value and the name it's assigned to, not the file around it: it doesn't try to tell a test from production config. It is a small byte-level convolutional network trained only on synthetic data, so its held-out accuracy (99%) says little about real repositories. Known limits:
 
-- It reads 128 bytes around a value, so an example or test cue further away than that doesn't count.
-- It rates any value in a test or example context as an example, including a real secret someone pasted into a test. The finding is still reported either way.
-- Retraining changes the file's hash. Rule set versions that name the old hash keep naming it, so scans with them report the classifier rule as unavailable until a new version uses the new rule.
+- A hex string under a secret-sounding name is genuinely ambiguous (an API key or a hash), and it may call it either way.
+- Some values get the wrong "not a credential" class: a resource path can come back as a placeholder rather than a non-secret. The outcome, lower confidence, is still right.
+- Credentials whose format looks like an ID, such as API keys that are UUIDs, will be rated non-secret.
+- Retraining changes the file's hash. Rule set versions that name the old hash keep naming it, so their rules report the classifier as unavailable until a new version uses the new setting.
 
-`tests/value_classifier.rs` runs it through the engine on hand-written cases. Treat its verdicts as a hint until it has been trained and checked on real labeled data.
+`tests/value_classifier.rs` runs it through the engine on hand-written cases: passwords and keys, hashes and UUIDs under secret-sounding names, URLs and paths, and placeholders.
 
 ### The secret detector
 
@@ -131,22 +148,51 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 |---|---|---|---|---|
 | AWS access key | Direct credential | High | `AKIA` followed by 16 uppercase letters or digits | Other AWS key prefixes (`ASIA` temporary keys); secret access keys, which have no fixed format |
 | GitHub token | Direct credential | High | `ghp_`, `gho_`, `ghu_`, `ghs_`, or `ghr_` followed by 36 letters or digits, checked with GitHub's CRC32 checksum | Fine-grained tokens (`github_pat_`), which use a different format |
-| Private key block | Direct credential | High | A `-----BEGIN … PRIVATE KEY-----` block, through its END line when present, otherwise just the header | Keys stored without PEM armor (raw base64, JWKs) |
-| Secret-looking assignment | Likely credential | Medium | A value of 8+ characters assigned with `=` or `:` to a name containing `password`, `passwd`, `secret`, `api_key`, `apikey`, or `token`, with at least 3.0 bits of entropy per character | Short or low-randomness secrets; secrets under other names. Values starting with `$`, `{`, or `(` are treated as references (`${DB_PASSWORD}`) and skipped |
-| Secret written to a log | Unsafe handling | Medium | `console.log`/`info`/`warn`/`error`/`debug`, `print`, `println!`, `logger.*`, or `log.*` with a secret-sounding name among its arguments | Calls split across lines; secrets passed through a renamed variable |
-| Known placeholder values | Placeholder vs. real | n/a | `your_key_here`, `changeme`, `xxxx`, `example`, `dummy`, or `test` (any case) inside another rule's finding, which then scores as a likely example | Fake values not on the list; a real secret that happens to contain `test` scores as an example |
+| Private key block | Direct credential | High | A `-----BEGIN … PRIVATE KEY-----` block (or PGP's `PRIVATE KEY BLOCK`), through its END line when present, otherwise just the header | Keys without PEM armor have their own rules below |
+| Secret-looking assignment | Likely credential | Medium | A value of 8+ characters assigned with `=` or `:` to a name containing `password`, `passwd`, `passphrase`, `_pass`, `_pwd`, `secret`, `api_key`, `apikey`, `api-key`, `token`, `signing_key`, `encryption_key`, or `master_key` (with or without the underscore), with at least 3.0 bits of entropy per character | Short or low-randomness secrets; secrets under other names. Values starting with `$`, `{`, or `(` are treated as references (`${DB_PASSWORD}`) and skipped |
+| Secret written to a log | Unsafe handling | Medium | `console.log`/`info`/`warn`/`error`/`debug`, `print`, `println!`, `logger.*`, or `log.*` with a secret-sounding name (including `passphrase`, `api-key`, and `private key`) among its arguments | Calls split across lines; secrets passed through a renamed variable |
+| Known placeholder values | Placeholder vs. real | n/a | `your_key_here`, `changeme` or `change_me`, `xxxx`, `example`, `dummy`, `test`, or a URL password of literally `password` (`:password@`), in any case, inside another rule's finding, which then scores as a likely example | Fake values not on the list; a real secret that happens to contain `test` scores as an example |
 | npm token | Direct credential | High | `npm_` followed by 36 letters or digits, checked with the same CRC32 checksum as GitHub | Legacy npm tokens (UUIDs), which npm retired |
 | GitLab personal access token | Direct credential | High | Routable `glpat-` tokens (37 to 310 characters after the prefix), checked with GitLab's base36 CRC32 checksum | Other GitLab token types (`gldt-`, `glrt-`, ...) |
 | GitLab personal access token (legacy format) | Direct credential | High | `glpat-` followed by exactly 20 characters, the format before routable tokens; it has no checksum | Same as above |
-| Payment card number | Direct credential | High | 15- and 16-digit Visa, Mastercard, Amex, and Discover numbers, plain or in space- or dash-separated groups, checked with Luhn | 13- and 19-digit cards; other networks; numbers split across lines |
+| Payment card number | Direct credential | High | Visa (13 or 16 to 19 digits), Mastercard (16), Amex (15), Diners Club (14), and Discover, JCB, and UnionPay (16 to 19) numbers, plain or in space- or dash-separated groups, and a grouped number broken once across lines at a group boundary; checked with Luhn | Maestro and other networks; a 17- to 19-digit number written in groups, which is reported as its first 16 digits, since a short trailing group can't be told apart from a CVV; a number broken inside a group or more than once, since a column of short numbers would otherwise read as a card; UnionPay cards issued without a Luhn digit score 50 |
 | Bitcoin private key (WIF) | Direct credential | High | Wallet Import Format keys (51 or 52 Base58 characters starting with `5`, `K`, or `L`), checked with Base58Check | Raw hex private keys; other coins' formats |
 | Password-shaped value | Likely credential | Low | A quoted assigned value, or any parsed key/value pair, that looks like a password a person made up (password shape, minimum score 2), under any name, e.g. `safe_bet: "myUnencryptedPWHERE"`. A fallback: it skips values another rule already reported | Made-up passwords in a regular naming style (`myFirstPassword` reads as camelCase), all-lowercase ones (`summer2024`), and plain words; see [Password shape](#password-shape) |
+| Slack token | Direct credential | High | `xoxb-`, `xoxp-`, `xoxa-`, `xoxo-`, `xoxs-`, or `xoxr-` followed by a numeric id and the rest of the token | App-level (`xapp-`) and config (`xoxe-`) tokens; placeholder-style values with no numeric id (`xoxb-your-token`) are skipped on purpose |
+| Slack webhook URL | Direct credential | High | `https://hooks.slack.com/services/T…/B…/…` | Workflow and trigger webhook URLs |
+| Stripe live secret key | Direct credential | High | `sk_live_` followed by 24 or more letters or digits | Test-mode keys (`sk_test_`), which only reach test data |
+| Stripe live restricted key | Direct credential | High | `rk_live_` followed by 24 or more letters or digits | Same as above |
+| SendGrid API key | Direct credential | High | `SG.` followed by a 22-character and a 43-character part | |
+| Google API key | Direct credential | High | `AIza` followed by 35 characters | OAuth client secrets and access tokens (`ya29.`) |
+| OpenAI API key | Direct credential | High | `sk-proj-`, `sk-svcacct-`, and `sk-admin-` keys, and legacy `sk-` keys with the `T3BlbkFJ` marker | Legacy keys without the marker |
+| Anthropic API key | Direct credential | High | `sk-ant-api…-` and `sk-ant-admin…-` keys | |
+| GitHub fine-grained token | Direct credential | High | `github_pat_` followed by a 22-character and a 59-character part | No checksum check: GitHub doesn't document one for this format |
+| AWS secret access key | Direct credential | High | 40 base64 characters assigned to a name like `aws_secret_access_key`, `secretAccessKey`, or `secret_key` | A secret key under any other name. Without the name, 40 random characters can't be told from other values |
+| Sentry DSN | Direct credential | Low | The 32-character key in a `https://…@….sentry.io/…` DSN. Low, since browser apps ship it publicly | Self-hosted Sentry hosts |
+| Credentials in a URL | Direct credential | High | `scheme://user:password@` in any URL (databases, Redis, git over HTTPS), up to the `@`. Values starting with `$`, `%`, `{`, or `<` are treated as templates and skipped | Passwords that contain a `/` or `@` that isn't percent-encoded |
+| Basic auth header | Direct credential | High | The base64 value after `Authorization: Basic` (or `"Authorization": "Basic …"`) | Basic credentials passed another way (`curl -u`) |
+| Bearer token in a header | Likely credential | Medium | A value after `Authorization: Bearer` with at least 3.0 bits of entropy per character. Variables (`Bearer $TOKEN`) are skipped | Tokens in other headers (`X-Api-Key`) |
+| JSON Web Token | Direct credential | Medium | Three base64url parts, the first two starting with `eyJ` (base64 of `{"`) | Unsigned or encrypted (JWE) tokens; whether the token has expired |
+| Password hash | Direct credential | Medium | bcrypt (`$2b$…`), argon2 (`$argon2id$…`), and SHA-crypt (`$5$`, `$6$`) hashes, which can be cracked offline | Unsalted hex digests (MD5, SHA-1), which look like any other hex value |
+| Password in a SQL statement | Direct credential | High | The quoted value after `PASSWORD` or `IDENTIFIED BY` (`CREATE ROLE`, `ALTER USER`, MySQL `CREATE USER`), 3 characters or more | Passwords passed through variables or bind parameters |
+| Password in a connection string | Direct credential | High | `Password=` or `Pwd=` in a `Server=…;`, `Data Source=…;`, or `Host=…;` connection string | Connection strings that don't start with a server, data source, or host field |
+| Azure account or shared access key | Direct credential | High | `AccountKey=` (88 base64 characters) or `SharedAccessKey=` (44) in an Azure connection string | SAS tokens (`sig=` in a URL) |
+| JSON Web Key with private material | Direct credential | High | A JWK object with a `kty` and a private (`d`) or symmetric (`k`) member, in either order | JWKs split across nested objects or escaped inside a string |
+| PuTTY private key | Direct credential | High | A `PuTTY-User-Key-File-2:` or `-3:` file, through its `Private-MAC:` line | |
+| Private key without PEM armor | Direct credential | High | Base64 RSA (PKCS#1 and PKCS#8), EC (P-256, P-384), and Ed25519 keys with the PEM header removed, after `=`, `:`, a quote, or a space | Keys on a line of their own with nothing before them (a PEM block's body is skipped this way on purpose); other curves |
+| Keystore file in base64 | Direct credential | Medium | A base64 PKCS#12 (`.p12`/`.pfx`) or Java keystore (JKS). Medium, since a keystore usually has a password | Binary keystore files, which aren't text |
+| Kubernetes Secret with inline data | Direct credential | High | A `kind: Secret` manifest's `data:` or `stringData:` entries, with `kind` before or after them. Templated values (`{{ … }}`, `${…}`) and empty values are skipped | Secrets in JSON; it doesn't decode the base64 values to check what's inside. The finding covers the manifest, so a placeholder word anywhere in it (such as `test` in its name) scores the whole finding as an example |
+| Registry auth (base64 user and password) | Direct credential | High | `_auth=` in `.npmrc` and `"auth": "…"` in Docker's `config.json`, 12 or more base64 characters | `.npmrc` lines starting with `//` are read as comments, so those findings score as likely examples |
+| .netrc password | Direct credential | High | The value after `password` in a `machine … login … password …` or `default …` entry | Entries whose fields are in another order |
+| Session cookie | Likely credential | Medium | A `Cookie:` or `Set-Cookie:` value whose name contains `sess`, `sid`, `auth`, `token`, or `jwt`, with at least 3.0 bits of entropy per character | Session cookies under other names |
+| Pre-signed storage URL | Direct credential | Medium | An S3 or GCS URL with an `X-Amz-Signature` or `X-Goog-Signature` | Whether the URL has expired; Azure SAS URLs |
 
 ## Scores
 
 - **Confidence (0–100):** how sure the engine is that this is a secret of the rule's kind.
   - Direct credentials: 95, or 99 when the checksum passes and 50 when it fails.
-  - Likely credentials: 50–90, rising with entropy above the rule's threshold. With a password shape setting, 35–80, rising with the shape score.
+  - Likely credentials: 50–90, rising with how random the value is for its length: its entropy compared with the most a value that long can have (log2 of its length, when every character differs). A short value with no repeated characters scores as high as a long random one. With a password shape setting, 35–80, rising with the shape score.
+  - With a value classifier: a credential score above the rule's confidence raises it halfway toward that score, up to 95; a score below the setting's minimum lowers it to 30.
   - Unsafe handling: 70, or 30 when it's commented out.
 - **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
 
@@ -161,7 +207,7 @@ A rule picks a checksum `algorithm` in its `checksum` field:
 | `algorithm` | Other fields | Used for |
 |---|---|---|
 | `crc32` | `encoding`, `prefixLength`, `length` (below) | Tokens that end in a CRC32 of the rest: GitHub, npm, GitLab, and in-house formats |
-| `luhn` | none | The mod-10 check digit on payment card numbers. Spaces and dashes between digit groups are ignored |
+| `luhn` | none | The mod-10 check digit on payment card numbers. Whitespace (including a line break) and dashes between digit groups are ignored |
 | `base58check` | none | Base58 with a 4-byte double-SHA-256 checksum, as in Bitcoin private keys (WIF) |
 
 A `crc32` token is read as `prefix + covered part + checksum`:
@@ -240,7 +286,7 @@ Source code isn't parsed into a syntax tree. That would need a parser per langua
 
 ## Trade-offs
 
-- **Regex plus entropy, checksums, and format parsing first, machine learning as an optional extra:** the built-in rules are predictable, explainable, and fast, so every finding can say exactly why it was flagged. Checksums and format parsing reduce false positives and misses without leaving the machine. The cost is remaining false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness. Model rules target both, but only when a rule set includes them, and their verdicts sit beside the other rules' scores instead of replacing them.
+- **Regex plus entropy, checksums, and format parsing first, machine learning as an optional extra:** the built-in rules are predictable, explainable, and fast, so every finding can say exactly why it was flagged. Checksums and format parsing reduce false positives and misses without leaving the machine. The cost is remaining false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness. Models target both, but only when a rule set includes them: model rules' verdicts sit beside the other rules' scores, and a value classifier only moves a match's confidence, never drops it.
 - **No live verification:** asking a provider whether a secret works (as TruffleHog does) is the strongest signal, but it sends the secret off the machine, which this design rules out.
 - **Narrow formats over broad ones:** the direct-credential rules match exact, well-known formats, so they rarely fire by mistake. The assignment rule casts the wider net and is ranked lower.
 - **Signals only in explanations:** "why flagged" notes and log events never quote the input, so they're safe to store and log. The cost is that an explanation can't say *which* key name triggered it.

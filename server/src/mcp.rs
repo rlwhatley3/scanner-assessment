@@ -35,8 +35,13 @@ checked as a set, and each one's current definition is snapshotted into the vers
 edits never change a saved version. Versions are numbered within their set. Saved versions can only \
 be archived or restored. A scan session uses one version; each scan in it \
 runs that version's snapshots. Model rules (model_assessment, model_detection) run a model the API \
-has loaded instead of a pattern; list_models shows which models are available and which rule types \
-each fits. Scan text is never stored, and findings never contain matched values.";
+has loaded instead of a pattern, and a rule's valueClassifier setting runs one on the rule's own \
+matches; list_models shows which models are available and what each can be used for. Scan text is \
+never stored, and findings never contain matched values. Before writing or changing a rule, read \
+rule_authoring_guide: it explains every mechanism a rule is built from (patterns and their value and \
+key groups, detection types, key names, entropy, checksums, password shape, placeholders, model \
+rules, value classifiers), when to use each and why, and how each built-in rule is assembled from \
+them.";
 
 const DEFINITION_HELP: &str = "The rule's definition as canonical JSON. Every field is optional \
 while drafting, and unknown fields are rejected. Fields: name (string); enabled (boolean, default \
@@ -47,9 +52,12 @@ placeholder_vs_real or model_assessment); pattern \
 checked against keyNames); prefix (the public prefix shown as the redacted preview); keyNames \
 (string array); minEntropy (0 to 8 bits per character); checksum ({\"algorithm\": \"luhn\"}, \
 {\"algorithm\": \"base58check\"}, or {\"algorithm\": \"crc32\", \"encoding\": \
-\"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); remediation (string). \
-Model rules take model ({\"id\": name, \"sha256\": hash}, from list_models) and threshold (0 to \
-100: a model score at or above it counts as a secret) instead of a pattern.";
+\"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); passwordShape \
+({\"minScore\": 1 to 10}, built for likely_credential); remediation (string); model ({\"id\": string, \
+\"sha256\": 64 hex characters}) and threshold (0 to 100), for model_assessment and model_detection \
+only; valueClassifier ({\"model\": {\"id\": string, \"sha256\": 64 hex characters}, \"minScore\": \
+0 to 100}), which runs a value classifier model from list_models on the rule's matches. \
+rule_authoring_guide explains what each field does, when to use it, and why.";
 
 /// The MCP service, ready to mount on the API router.
 pub fn service(state: AppState) -> StreamableHttpService<ScannerMcp, LocalSessionManager> {
@@ -229,6 +237,40 @@ pub struct RunScanParams {
     text: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GuideParams {
+    /// One section of the guide, by id (see the tool description). Omit for the whole guide.
+    topic: Option<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct RuleGuide {
+    /// Every section id, in reading order.
+    topics: Vec<String>,
+    /// The section returned, or none for the whole guide.
+    topic: Option<String>,
+    /// The guide text, as Markdown.
+    text: String,
+}
+
+/// How to build rules from the engine's mechanisms, served by `rule_authoring_guide`.
+const RULE_GUIDE: &str = include_str!("rule_guide.md");
+
+/// The guide's sections as (id, text), split at its `## ` headings. The id is the heading in
+/// lowercase with spaces as dashes, e.g. "Detection types" is `detection-types`.
+fn guide_sections() -> Vec<(String, &'static str)> {
+    RULE_GUIDE
+        .split("\n## ")
+        .skip(1)
+        .map(|section| {
+            let heading = section.lines().next().unwrap_or_default();
+            let id = heading.trim().to_lowercase().replace(' ', "-");
+            (id, section)
+        })
+        .collect()
+}
+
 #[derive(Serialize, JsonSchema)]
 pub struct ModelList {
     models: Vec<ModelResponse>,
@@ -319,13 +361,48 @@ impl ScannerMcp {
 #[tool_router]
 impl ScannerMcp {
     #[tool(
-        description = "List the models the API has loaded, which model rules name by sha256, \
-                       with the model rule types each one fits.",
+        description = "List the models the API has loaded, which rules name by sha256, with \
+                       what each can be used for: model_assessment or model_detection rules, or \
+                       a rule's value_classifier setting.",
         annotations(read_only_hint = true)
     )]
     async fn list_models(&self) -> Result<Json<ModelList>, ToolError> {
         Ok(Json(ModelList {
             models: models::loaded_models(&self.state),
+        }))
+    }
+
+    #[tool(
+        description = "How to build rules: every mechanism a rule definition can use, when to use \
+                       it, and why, with recipes for each kind of built-in rule. Read it before \
+                       creating or changing rules. Sections: overview, workflow, detection-types, \
+                       patterns, key-names, entropy, checksums, password-shape, placeholders, \
+                       models, scoring, parsing, validation, recipes, pitfalls. Omit topic for \
+                       the whole guide.",
+        annotations(read_only_hint = true)
+    )]
+    async fn rule_authoring_guide(
+        &self,
+        Parameters(params): Parameters<GuideParams>,
+    ) -> Result<Json<RuleGuide>, ToolError> {
+        let sections = guide_sections();
+        let topics: Vec<String> = sections.iter().map(|(id, _)| id.clone()).collect();
+        let text = match &params.topic {
+            None => RULE_GUIDE.to_string(),
+            Some(topic) => match sections.iter().find(|(id, _)| id == topic) {
+                Some((_, section)) => format!("## {}", section.trim_end()),
+                None => {
+                    return Err(ToolError(format!(
+                        "There is no guide section \"{topic}\". Sections: {}.",
+                        topics.join(", ")
+                    )));
+                }
+            },
+        };
+        Ok(Json(RuleGuide {
+            topics,
+            topic: params.topic,
+            text,
         }))
     }
 
@@ -620,8 +697,9 @@ impl ScannerMcp {
     }
 
     #[tool(
-        description = "Get a saved scan and its findings. Findings hold rule, location, scores, \
-                       and a redacted preview, never the matched text.",
+        description = "Get a saved scan and its findings. Findings never contain the matched \
+                       text; the output schema explains confidence, valueClass, and the other \
+                       finding fields.",
         annotations(read_only_hint = true)
     )]
     async fn get_scan(
@@ -638,7 +716,8 @@ impl ScannerMcp {
     #[tool(
         description = "Scan text with the session's rule set version and save the scan and \
                           its findings to the session. The text is never stored or logged. \
-                          Findings are capped at 200.",
+                          Findings are capped at 200; the output schema explains confidence, \
+                          valueClass, and the other finding fields.",
         annotations(destructive_hint = false)
     )]
     async fn run_scan(

@@ -2,7 +2,15 @@
 
 import unittest
 
-from encoding import BYTE_OFFSET, PAD_ID, VALUE_END_ID, VALUE_START_ID, encode_value, encode_window
+from encoding import (
+    BYTE_OFFSET,
+    PAD_ID,
+    VALUE_END_ID,
+    VALUE_START_ID,
+    encode_value,
+    encode_window,
+    line_bounds,
+)
 
 
 def shown(ids: list[int]) -> str:
@@ -21,6 +29,15 @@ class EncodeValueTest(unittest.TestCase):
     def test_short_text_is_padded_and_long_values_are_cut_short(self):
         self.assertEqual(shown(encode_value(b"a KEY b", 2, 5, 12)), "a [KEY] b___")
         self.assertEqual(shown(encode_value(b"a LONGVALUE b", 2, 11, 6)), "[LONG]")
+
+
+class LineBoundsTest(unittest.TestCase):
+    def test_line_bounds_stop_at_any_line_break(self):
+        text = b"a=1\nkey: VALUE # note\r\nb=2"
+        self.assertEqual(text[9:14], b"VALUE")
+        self.assertEqual(line_bounds(text, 9, 14), (4, 21))
+        self.assertEqual(line_bounds(b"VALUE", 0, 5), (0, 5))
+        self.assertEqual(line_bounds(b"x\rVALUE\ry", 2, 7), (2, 7))
 
 
 class EncodeWindowTest(unittest.TestCase):

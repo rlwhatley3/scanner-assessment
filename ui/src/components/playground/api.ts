@@ -40,9 +40,20 @@ export interface MatchDetails {
   inComment: boolean;
   /** Whether the value passed the rule's checksum; null when the rule has none. */
   checksumValid: boolean | null;
+  /** What the rule's value classifier says the value is; null when the rule has none. Missing
+   * on findings saved before value classifiers existed. */
+  valueClass?: ValueClass | null;
   /** What each model assessment rule concluded about the value. Missing on findings saved
    * before model rules existed. */
   modelAssessments?: ModelAssessment[];
+}
+
+/** What a value classifier says a matched value is, with its 0–100 scores. */
+export interface ValueClass {
+  label: "credential" | "non_secret" | "placeholder";
+  credential: number;
+  nonSecret: number;
+  placeholder: number;
 }
 
 /** A model's verdict on a finding's value. It sits beside the rule's scores and never changes
@@ -129,18 +140,34 @@ export interface RuleDefinition {
   model?: { id?: string | null; sha256?: string | null } | null;
   /** For model rules: a model score (0–100) at or above this counts as a secret. */
   threshold?: number | null;
+  valueClassifier?: ValueClassifier | null;
   /** Fields this UI doesn't edit (e.g. a newer engine's `checksum`) are kept as-is. */
   [other: string]: unknown;
 }
 
-/** A model the API has loaded, which model rules name by SHA-256. */
+/** What a model can be used for: a model rule type, or a rule's value classifier setting. */
+export type ModelUse = "model_assessment" | "model_detection" | "value_classifier";
+
+/** A model the API has loaded, which rules name by SHA-256. */
 export interface Model {
   id: string;
   sha256: string;
   /** How many token ids the model reads at once. */
   inputLength: number;
-  /** The model rule types this model can run as. */
-  detectionTypes: DetectionType[];
+  uses: ModelUse[];
+}
+
+/** A model as a rule names it. */
+export interface ModelRef {
+  id?: string;
+  sha256: string;
+}
+
+/** Runs a model on a rule's matches; values it rates below `minScore` as a credential get lower
+ * confidence. */
+export interface ValueClassifier {
+  model?: { id?: string | null; sha256?: string | null } | null;
+  minScore?: number | null;
 }
 
 export interface Rule {

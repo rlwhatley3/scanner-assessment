@@ -1,6 +1,6 @@
 use super::AppState;
 use axum::{Json, extract::State};
-use secrets_scanner_engine::DetectionType;
+use secrets_scanner_engine::ModelUse;
 use serde::Serialize;
 
 #[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]
@@ -12,11 +12,11 @@ pub struct ModelResponse {
     sha256: String,
     /// How many token ids the model reads at once.
     input_length: usize,
-    /// The model rule types this model can run as: `model_assessment`, `model_detection`, or
-    /// both.
+    /// What the model can be used for: `model_assessment` or `model_detection` rules, or a
+    /// rule's `value_classifier` setting.
     #[schema(value_type = Vec<String>)]
     #[schemars(with = "Vec<String>")]
-    detection_types: Vec<DetectionType>,
+    uses: Vec<ModelUse>,
 }
 
 #[utoipa::path(
@@ -45,7 +45,7 @@ pub fn loaded_models(state: &AppState) -> Vec<ModelResponse> {
                 .unwrap_or_else(|| model.sha256[..12].to_owned()),
             sha256: model.sha256,
             input_length: model.input_len,
-            detection_types: model.detection_types,
+            uses: model.uses,
         })
         .collect();
     models.sort_by(|a, b| a.id.cmp(&b.id));

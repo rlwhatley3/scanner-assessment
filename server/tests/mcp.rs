@@ -150,6 +150,7 @@ async fn initializes_and_lists_every_tool() {
             "list_rule_sets",
             "list_rules",
             "list_scan_sessions",
+            "rule_authoring_guide",
             "run_scan",
             "set_rule_set_version_archived",
             "update_rule",
@@ -464,17 +465,104 @@ async fn lists_the_loaded_models() {
         models["models"][0]["sha256"],
         secrets_scanner_engine::SECRET_DETECTOR_SHA256
     );
-    assert_eq!(
-        models["models"][0]["detectionTypes"],
-        json!(["model_detection"])
-    );
+    assert_eq!(models["models"][0]["uses"], json!(["model_detection"]));
     assert_eq!(models["models"][1]["id"], "value-classifier");
     assert_eq!(
         models["models"][1]["sha256"],
         secrets_scanner_engine::VALUE_CLASSIFIER_SHA256
     );
+    assert_eq!(models["models"][1]["uses"], json!(["value_classifier"]));
+}
+
+#[tokio::test]
+async fn the_scan_tools_explain_findings_and_the_rule_tools_list_every_field() {
+    let (app, _) = app().await;
+    let tools = rpc(&app, "tools/list", json!({})).await;
+    let tools = tools["result"]["tools"].as_array().unwrap();
+    let tool = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap_or_else(|| panic!("{name} should be listed"))
+            .to_string()
+    };
+    for name in ["get_scan", "run_scan"] {
+        let schema = tool(name);
+        for field in [
+            "confidence",
+            "valueClass",
+            "placeholderScore",
+            "modelAssessments",
+        ] {
+            assert!(schema.contains(field), "{name} should explain {field}");
+        }
+    }
+    for name in ["create_rule", "update_rule"] {
+        let schema = tool(name);
+        for field in ["passwordShape", "valueClassifier", "checksum"] {
+            assert!(schema.contains(field), "{name} should list {field}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_rule_authoring_guide_covers_every_mechanism_by_topic() {
+    let (app, _) = app().await;
+    let whole = ok(&app, "rule_authoring_guide", json!({})).await;
     assert_eq!(
-        models["models"][1]["detectionTypes"],
-        json!(["model_assessment"])
+        whole["topics"],
+        json!([
+            "overview",
+            "workflow",
+            "detection-types",
+            "patterns",
+            "key-names",
+            "entropy",
+            "checksums",
+            "password-shape",
+            "placeholders",
+            "models",
+            "scoring",
+            "parsing",
+            "validation",
+            "recipes",
+            "pitfalls"
+        ])
     );
+    let text = whole["text"].as_str().expect("the guide is text");
+    // Every definition field is explained somewhere in it.
+    for field in [
+        "name",
+        "enabled",
+        "detectionType",
+        "severity",
+        "pattern",
+        "prefix",
+        "keyNames",
+        "minEntropy",
+        "checksum",
+        "passwordShape",
+        "remediation",
+        "model",
+        "threshold",
+        "valueClassifier",
+    ] {
+        assert!(
+            text.contains(&format!("`{field}`")),
+            "{field} is not documented"
+        );
+    }
+
+    let section = ok(&app, "rule_authoring_guide", json!({"topic": "checksums"})).await;
+    let section_text = section["text"].as_str().expect("a section is text");
+    assert!(section_text.starts_with("## Checksums"));
+    assert!(section_text.contains("prefixLength"));
+    assert!(!section_text.contains("## Password shape"));
+
+    let error = err(&app, "rule_authoring_guide", json!({"topic": "regex"})).await;
+    assert!(
+        error.contains("There is no guide section \"regex\""),
+        "{error}"
+    );
+    assert!(error.contains("detection-types"), "{error}");
 }

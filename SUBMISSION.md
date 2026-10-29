@@ -218,7 +218,7 @@ Phase 2 notes so far. The UI and the rest of the API are still to come.
 
 The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a pure Rust library: no network, disk, or HTTP. It layers four techniques, all running locally:
 
-1. **Regex rules** for known formats (AWS access keys, GitHub, npm, and GitLab tokens, private key blocks, payment card numbers, Bitcoin private keys) and for risky code (secrets written to logs).
+1. **Regex rules** for known formats (AWS keys; GitHub, npm, GitLab, and Slack tokens; Stripe, SendGrid, Google, OpenAI, and Anthropic keys; private keys with or without PEM armor, JWKs, PuTTY keys, and keystores; payment card numbers; Bitcoin private keys), for credentials in a known syntax (URLs, auth headers, JWTs, connection strings, SQL, `.netrc`, registry auth, Kubernetes Secrets, cookies, pre-signed URLs, password hashes), and for risky code (secrets written to logs).
 2. **Entropy** for likely credentials: a random-looking value (at least 3 bits per character) assigned to a name like `password`, `secret`, or `token`.
 3. **Checksums:** some formats carry one, so the engine can tell a real value from a made-up one offline. GitHub, npm, and GitLab tokens end in a CRC32 of the rest, card numbers carry a Luhn check digit, and Bitcoin private keys use Base58Check. A valid checksum raises confidence to 99; a failed one drops it to 50 and marks the finding as a likely example. A failed checksum never hides a finding, because GitHub, npm, and GitLab haven't published test tokens to confirm the exact encoding against.
    - **Seeded and custom setups:** a checksum is a small description on the rule. `luhn` and `base58check` need nothing else; `crc32` also takes an encoding (`base62`, `base36`, or `hex`), a prefix length, and a checksum length. The built-in rules seed the common setups: GitHub, npm, GitLab (routable tokens, plus a separate rule for the older format, which has no checksum), payment cards, and Bitcoin private keys. A rule author can describe their own, e.g. for an in-house token format.
@@ -247,9 +247,11 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 
 ### MCP server
 
-The API also serves an MCP server at `/mcp` (Streamable HTTP), so an AI agent can read and write the same data the UI will. It has 15 tools:
+The API also serves an MCP server at `/mcp` (Streamable HTTP), so an AI agent can read and write the same data the UI will. It has 20 tools:
 
+- **Rule authoring:** `rule_authoring_guide` explains every mechanism a rule can use (patterns and their `value` and `key` groups, detection types, key names, entropy, checksums, password shape, placeholders, model rules), when to use each and why, and how each built-in rule is assembled from them. It returns the whole guide or one section by topic, and the server's instructions tell agents to read it before writing rules. The guide lives in `server/src/rule_guide.md`.
 - **Rules:** `list_rules`, `get_rule`, `create_rule`, `update_rule`, `delete_rule`, `check_rules`
+- **Rule sets:** `list_rule_sets`, `get_rule_set`, `create_rule_set`, `update_rule_set`
 - **Rule set versions:** `list_rule_set_versions`, `get_rule_set_version`, `create_rule_set_version`, `set_rule_set_version_archived`
 - **Scan sessions and scans:** `list_scan_sessions`, `get_scan_session`, `create_scan_session`, `get_scan`, `run_scan`
 

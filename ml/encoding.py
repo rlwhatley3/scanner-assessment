@@ -11,6 +11,15 @@ BYTE_OFFSET = 3
 VOCAB_SIZE = 256 + BYTE_OFFSET
 
 
+def line_bounds(text: bytes, start: int, end: int) -> tuple[int, int]:
+    """The line or lines holding `start:end`: from just after the line break before `start` to
+    just before the line break at or after `end`. `\\n`, `\\r\\n`, and a lone `\\r` all break
+    lines."""
+    line_start = max(text.rfind(b"\n", 0, start), text.rfind(b"\r", 0, start)) + 1
+    breaks = [i for i in (text.find(b"\n", end), text.find(b"\r", end)) if i != -1]
+    return line_start, min(breaks, default=len(text))
+
+
 def encode_value(text: bytes, start: int, end: int, length: int) -> list[int]:
     """A classifier's input for one value: the value between its markers, with as much of the
     text on either side as fits, split evenly when both sides have room. A value too long to fit
