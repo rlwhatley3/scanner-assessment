@@ -834,7 +834,9 @@ a.button {
     color: var(--danger);
   }
 
-  &.partial {
+  &.partial,
+  &.running,
+  &.interrupted {
     color: var(--warning);
   }
 

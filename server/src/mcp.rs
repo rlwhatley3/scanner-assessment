@@ -767,7 +767,9 @@ impl ScannerMcp {
     }
 
     #[tool(
-        description = "Get a scan session and a summary of each of its scans.",
+        description = "Get a scan session and a summary of each of its scans. A scan's status \
+                       is interrupted when it ended before its findings were saved, so its \
+                       counts are missing, not zero.",
         annotations(read_only_hint = true)
     )]
     async fn get_scan_session(
@@ -798,7 +800,8 @@ impl ScannerMcp {
     #[tool(
         description = "Get a saved scan and its findings. Findings never contain the matched \
                        text; the output schema explains confidence, valueClass, and the other \
-                       finding fields.",
+                       finding fields. status is interrupted when the scan ended before its \
+                       findings were saved, so they are missing: it is not a clean scan.",
         annotations(read_only_hint = true)
     )]
     async fn get_scan(

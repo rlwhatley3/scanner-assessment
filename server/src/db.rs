@@ -10,6 +10,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("db/migrations/0001_initial.sql"),
     include_str!("db/migrations/0002_rule_sets.sql"),
     include_str!("db/migrations/0003_suppressions.sql"),
+    include_str!("db/migrations/0004_scan_status.sql"),
 ];
 
 /// A shared SQLite connection. Cloning is cheap; all clones use the same connection.

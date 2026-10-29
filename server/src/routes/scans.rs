@@ -14,6 +14,7 @@ use secrets_scanner_engine::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use tokio::sync::oneshot;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -33,6 +34,11 @@ pub struct CreateScanRequest {
 pub struct ScanResponse {
     pub scan_id: i64,
     pub scan_session_id: i64,
+    /// `completed` once the findings are saved. `running` while the engine runs, and
+    /// `interrupted` when the scan ended before its findings were saved (the request was
+    /// cancelled or cut off, or the server stopped), so they are missing: an interrupted scan
+    /// with no findings is not clean.
+    pub status: String,
     /// True when there were more findings than the cap and the rest were not saved.
     pub truncated: bool,
     /// True when at least one rule could not run.
@@ -164,7 +170,8 @@ pub async fn create_scan(
     tag = "API",
     summary = "Get a saved scan",
     description = "A saved scan and its findings, in the same shape the scan endpoint returns. \
-                   Findings never contain the matched text.",
+                   Findings never contain the matched text. status is interrupted when the scan \
+                   ended before its findings were saved, so they are missing.",
     params(
         ("scan_session_id" = i64, Path, description = "The scan session the scan belongs to"),
         ("scan_id" = i64, Path, description = "Scan id")
@@ -194,10 +201,28 @@ pub async fn fetch_scan(
 
 /// Scans `text` with the session's rule set version and saves the scan and its findings. Shared
 /// by the REST endpoint and the MCP `run_scan` tool. The text itself is never stored or logged.
+///
+/// The scan runs as its own task, so it always settles: completed, interrupted, or removed. A
+/// request's future is dropped when its caller disconnects, and code after the await that was
+/// running would never run. Dropping this future only tells the task its caller left.
 pub async fn scan_in_session(
     state: &AppState,
     scan_session_id: i64,
     text: String,
+) -> Result<ScanResponse, ApiError> {
+    let (_caller, caller_left) = oneshot::channel::<()>();
+    let state = state.clone();
+    tokio::spawn(async move { scan_and_save(&state, scan_session_id, text, caller_left).await })
+        .await
+        .map_err(internal)?
+}
+
+/// The task behind [`scan_in_session`]. `caller_left` resolves when the request is dropped.
+async fn scan_and_save(
+    state: &AppState,
+    scan_session_id: i64,
+    text: String,
+    mut caller_left: oneshot::Receiver<()>,
 ) -> Result<ScanResponse, ApiError> {
     let rule_set = state
         .db
@@ -212,7 +237,7 @@ pub async fn scan_in_session(
         .db
         .call(move |connection| {
             connection.execute(
-                "INSERT INTO scans (scan_session_id) VALUES (?1)",
+                "INSERT INTO scans (scan_session_id, status) VALUES (?1, 'running')",
                 [scan_session_id],
             )?;
             Ok(connection.last_insert_rowid())
@@ -220,9 +245,21 @@ pub async fn scan_in_session(
         .await
         .map_err(internal)?;
 
-    let result = run_scan(state, scan_id, text, rule_set, true).await;
+    // If the caller leaves first, the scan stops waiting for the engine (which can't be stopped
+    // midway, so it finishes and its results are dropped) and is marked interrupted.
+    let result = tokio::select! {
+        result = run_scan(state, scan_id, text, rule_set, true) => result,
+        _ = &mut caller_left => {
+            interrupt(state, scan_id).await;
+            return Err(ApiError::Internal("The caller left before the scan finished.".into()));
+        }
+    };
     let result = match result {
         Ok(result) => result,
+        Err(error @ ApiError::Internal(_)) => {
+            interrupt(state, scan_id).await;
+            return Err(error);
+        }
         Err(error) => {
             state
                 .db
@@ -239,7 +276,23 @@ pub async fn scan_in_session(
         eprintln!("[scan {}] {}", event.scan_id, event.message);
     }
 
-    save_results(state, scan_session_id, scan_id, result).await
+    let saved = save_results(state, scan_session_id, scan_id, result).await;
+    if saved.is_err() {
+        interrupt(state, scan_id).await;
+    }
+    saved
+}
+
+/// Marks a scan that ended before its findings were saved as interrupted. If even that fails,
+/// the scan stays running until the server next starts and marks it.
+async fn interrupt(state: &AppState, scan_id: i64) {
+    let marked = state
+        .db
+        .call(move |connection| store::interrupt_running_scans(connection, Some(scan_id)))
+        .await;
+    if let Err(error) = marked {
+        eprintln!("[scan {scan_id}] could not be marked interrupted: {error}");
+    }
 }
 
 /// Runs the engine off the async runtime, behind the concurrency cap. `fingerprint` is false
@@ -333,7 +386,7 @@ async fn save_results(
                 });
             }
             transaction.execute(
-                "UPDATE scans SET truncated = ?1, suppressed_count = ?2,
+                "UPDATE scans SET truncated = ?1, suppressed_count = ?2, status = 'completed',
                      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                  WHERE id = ?3",
                 rusqlite::params![truncated, suppressed_count, scan_id],
@@ -348,6 +401,7 @@ async fn save_results(
             Ok(ScanResponse {
                 scan_id,
                 scan_session_id,
+                status: "completed".to_string(),
                 truncated,
                 partial: findings.iter().any(|finding| finding.kind == "rule_error"),
                 suppressed_count,
@@ -361,15 +415,16 @@ async fn save_results(
 /// A saved scan and its findings, in the same shape the scan endpoint returns. `None` if the
 /// scan doesn't exist.
 pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Option<ScanResponse>> {
-    let Some((scan_session_id, truncated, suppressed_count)) = connection
+    let Some((scan_session_id, truncated, suppressed_count, status)) = connection
         .query_row(
-            "SELECT scan_session_id, truncated, suppressed_count FROM scans WHERE id = ?1",
+            "SELECT scan_session_id, truncated, suppressed_count, status FROM scans WHERE id = ?1",
             [scan_id],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, bool>(1)?,
                     row.get::<_, i64>(2)?,
+                    row.get::<_, String>(3)?,
                 ))
             },
         )
@@ -402,6 +457,7 @@ pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Opti
     Ok(Some(ScanResponse {
         scan_id,
         scan_session_id,
+        status,
         truncated,
         partial: findings.iter().any(|finding| finding.kind == "rule_error"),
         suppressed_count,

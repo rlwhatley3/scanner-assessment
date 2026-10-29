@@ -303,3 +303,93 @@ async fn a_saved_scan_reads_back_as_it_was_returned() {
     let (status, _) = get(&app, "/api/scan-sessions/1/scans/999".to_owned()).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+async fn scan_status(db: &Db, scan_id: i64) -> Option<String> {
+    db.call(move |connection| {
+        connection
+            .query_row("SELECT status FROM scans WHERE id = ?1", [scan_id], |row| {
+                row.get(0)
+            })
+            .or_else(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                error => Err(error),
+            })
+    })
+    .await
+    .expect("status should read")
+}
+
+/// Waits until scan `scan_id` has `status`. Each read is a database round trip, which gives
+/// spawned tasks time to run.
+async fn wait_for_status(db: &Db, scan_id: i64, status: &str) {
+    for _ in 0..10_000 {
+        if scan_status(db, scan_id).await.as_deref() == Some(status) {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("scan {scan_id} never became {status}");
+}
+
+#[tokio::test]
+async fn a_finished_scan_is_completed() {
+    let (app, db) = app().await;
+    let (status, body) = post_scan(&app, 1, json!({ "text": "nothing here" })).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["status"], "completed");
+    let scan_id = body["scanId"].as_i64().expect("scan should have an id");
+    assert_eq!(
+        scan_status(&db, scan_id).await.as_deref(),
+        Some("completed")
+    );
+
+    let (_, session) = get(&app, "/api/scan-sessions/1".to_string()).await;
+    assert_eq!(session["scans"][0]["status"], "completed");
+}
+
+#[tokio::test]
+async fn a_scan_whose_request_ends_before_it_finishes_is_interrupted_not_clean() {
+    let (app, db) = app().await;
+    let state = routes::AppState::new(db.clone(), secrets_scanner_api::fingerprint_key::generate());
+    // Every permit is taken, so the scan waits before the engine runs, the way a slow scan
+    // waits for the engine.
+    let permits = state
+        .scan_permits
+        .clone()
+        .acquire_many_owned(routes::MAX_CONCURRENT_SCANS as u32)
+        .await
+        .expect("permits should be free");
+    let scan_state = state.clone();
+    let request = tokio::spawn(async move {
+        routes::scans::scan_in_session(&scan_state, 1, format!("aws = {AWS_KEY}")).await
+    });
+    wait_for_status(&db, 1, "running").await;
+
+    // The caller disconnects: the request's future is dropped mid-scan.
+    request.abort();
+    let _ = request.await;
+    wait_for_status(&db, 1, "interrupted").await;
+    drop(permits);
+
+    let saved = db
+        .call(|connection| routes::scans::load_scan(connection, 1))
+        .await
+        .expect("scan should read")
+        .expect("scan should still exist");
+    assert_eq!(saved.status, "interrupted");
+    assert!(saved.findings.is_empty());
+    let (_, session) = get(&app, "/api/scan-sessions/1".to_string()).await;
+    assert_eq!(session["scans"][0]["status"], "interrupted");
+}
+
+#[tokio::test]
+async fn a_rejected_scan_is_removed_rather_than_marked_interrupted() {
+    let (app, db) = app().await;
+    let (status, _) = post_scan(&app, 1, json!({ "text": "   " })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Nothing is left to mark: the row is gone, so the guard has nothing to do.
+    for _ in 0..100 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM scans").await, 0);
+}
