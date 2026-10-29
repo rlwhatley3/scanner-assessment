@@ -1,3 +1,4 @@
+use argon2::{Algorithm, Argon2, Params, Version};
 use secrets_scanner_engine::{
     FindingKind, FingerprintKey, Rule, RuleDefinition, RuleSet, ScanOptions, ScanResult,
     default_rule_set, scan, scan_with_options,
@@ -35,14 +36,30 @@ fn fingerprints(result: &ScanResult) -> Vec<String> {
 }
 
 #[test]
-fn a_fingerprint_is_hmac_sha256() {
-    // RFC 4231 test case 1. HMAC pads a short key with zeros, so twenty 0x0b bytes followed by
-    // twelve zero bytes is the same key.
-    let mut bytes = [0; 32];
-    bytes[..20].fill(0x0b);
+fn a_fingerprint_is_keyed_argon2id() {
+    let key = [0x0b; 32];
+    let mut expected = [0; 32];
+    Argon2::new_with_secret(
+        &key,
+        Algorithm::Argon2id,
+        Version::V0x13,
+        Params::new(4 * 1024, 3, 1, Some(32)).expect("parameters are valid"),
+    )
+    .expect("the key is a valid secret")
+    .hash_password_into(
+        b"Hi There",
+        b"secrets-scanner/fingerprint/v1",
+        &mut expected,
+    )
+    .expect("the value hashes");
+    let expected: String = expected.iter().map(|byte| format!("{byte:02x}")).collect();
+
+    let fingerprint = FingerprintKey::new(key).fingerprint(b"Hi There");
+    assert_eq!(fingerprint, expected);
+    // Pinned: a change here ends every stored suppression, so it must be deliberate.
     assert_eq!(
-        FingerprintKey::new(bytes).fingerprint(b"Hi There"),
-        "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+        fingerprint,
+        "2ff30f58c77f4f4336c702e82ce812747e56ede9dc76a1049cd9b91dc8443cba"
     );
 }
 

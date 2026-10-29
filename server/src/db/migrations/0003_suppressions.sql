@@ -1,8 +1,9 @@
 -- A suppression marks one value found by one rule as known to be safe, in one scan session: later
 -- scans in that session don't report it. The value itself is never stored: a scan recognizes it
--- by its fingerprint, an HMAC-SHA256 of the matched value keyed with a local secret that lives in
--- its own file, not in this database (see crate::fingerprint_key). A plain hash of a short
--- password could be brute-forced; without the key, a fingerprint says nothing about the value.
+-- by its fingerprint, a slow Argon2id hash of the matched value keyed with a local secret that
+-- lives in its own file, not in this database (see crate::fingerprint_key). A plain hash of a
+-- short password could be brute-forced. Without the key, a fingerprint says nothing about the
+-- value; with it, each guess still costs milliseconds and megabytes.
 
 CREATE TABLE suppressions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

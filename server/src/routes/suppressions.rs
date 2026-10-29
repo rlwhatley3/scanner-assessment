@@ -67,7 +67,7 @@ pub async fn list(
                    it expires or is removed. Later scans in the session don't report that rule \
                    finding that value, and count it in suppressedCount instead. A changed value \
                    is reported, and other sessions are never affected. The value is recognized \
-                   by an HMAC-SHA256 fingerprint keyed with a local secret, never stored itself. \
+                   by a slow, keyed Argon2id fingerprint; the value itself is never stored. \
                    Scans already saved keep their findings.",
     params(("scan_session_id" = i64, Path, description = "Scan session id")),
     request_body = CreateSuppression,

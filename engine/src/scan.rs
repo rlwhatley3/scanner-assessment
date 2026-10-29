@@ -166,7 +166,7 @@ pub struct Finding {
     pub violation: Violation,
     /// A one-line human-readable summary.
     pub violation_pretty: String,
-    /// HMAC-SHA256 of the matched value under the caller's [`FingerprintKey`], so a later scan
+    /// Keyed Argon2id of the matched value under the caller's [`FingerprintKey`], so a later scan
     /// can recognize the same value without anyone storing it. Absent for rule errors and when
     /// the caller passed no key. Kept out of `violation`, so it is never shown as a detail.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -455,6 +455,8 @@ pub fn scan_with_options(
     let groups = overlap_groups(&candidates);
     let index = LineIndex::new(text);
     let mut findings = Vec::new();
+    // A fingerprint is deliberately slow, so a value found more than once is hashed once.
+    let mut fingerprints: HashMap<&str, String> = HashMap::new();
     for (candidate, overlap_group) in candidates.iter().zip(groups) {
         let details = match_details(candidate, &index, overlap_group);
         let pretty = format!(
@@ -480,9 +482,13 @@ pub fn scan_with_options(
             kind: FindingKind::Match,
             violation: Violation::Match(details),
             violation_pretty: pretty,
-            fingerprint: options
-                .fingerprint_key
-                .map(|key| key.fingerprint(&text.as_bytes()[candidate.start..candidate.end])),
+            fingerprint: options.fingerprint_key.map(|key| {
+                let value = &text[candidate.start..candidate.end];
+                fingerprints
+                    .entry(value)
+                    .or_insert_with(|| key.fingerprint(value.as_bytes()))
+                    .clone()
+            }),
         });
     }
     for error in rule_errors {

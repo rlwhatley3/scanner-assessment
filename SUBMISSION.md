@@ -106,7 +106,9 @@ Every table also carries `created_at` and `updated_at`.
 
 A scan session uses one rule set version and has many scans. Fixing an issue and rescanning creates a new scan in the same session, so all scans stay tied to the session. Scan sessions, scans, and findings are never deleted: together they record what was scanned with which rule set version, so they can be created and read but not removed. A scan's id doubles as its log id: the engine tags its log events with it. A rule that fails to run is recorded as a finding of kind `rule_error` on that rule, so a scan is partial when it has one, and clean when it has no findings at all.
 
-Never stored: the pasted text, matched values, or a hash of the input. A hash was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
+Never stored: the pasted text, matched values, or a plain hash of either. A hash of the whole input was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
+
+*Changed in Phase 3:* each match's value now gets a fingerprint, so a suppression can recognize the same value in a later scan of its session. It is a keyed, deliberately slow hash (Argon2id, with a secret key kept in its own file outside the database), never the value. A hash can't be worked backwards; the only way to a value is to hash guesses and compare. Without the key, guesses can't be checked at all. With it, each guess costs milliseconds and megabytes instead of nanoseconds, so short passwords can't be found by brute force. See [Fingerprints and suppressions](engine/README.md#fingerprints-and-suppressions).
 
 **A finding contains**
 

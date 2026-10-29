@@ -282,8 +282,12 @@ let result = scan_with_options(scan_id, text, &rule_set, options)?;
 // result.findings[i].fingerprint: Some("…64 hex characters…") for every match
 ```
 
-- **A fingerprint is HMAC-SHA256 of the matched value** (the finding's `location` range) under a 32-byte key, as 64 hex characters. It sits on `Finding`, not in `violation`, so it is never shown as a detail. Rule errors, and scans without a key, have none.
-- **Keyed, not a plain hash:** a SHA-256 of a short password can be reversed by trying guesses. Without the key, a fingerprint says nothing about the value.
+- **A fingerprint is Argon2id of the matched value** (the finding's `location` range), with a 32-byte key as Argon2's secret input and a fixed salt, as 64 hex characters: 4 MiB of memory and 3 passes. It sits on `Finding`, not in `violation`, so it is never shown as a detail. Rule errors, and scans without a key, have none.
+- **It can't be reversed, only guessed at.** A hash has no inverse. The only way back to a value is to hash guesses and compare.
+- **Keyed:** without the key, guesses can't even be tested, so a copy of the stored fingerprints alone says nothing about the values.
+- **Slow:** with the key, each guess still costs about 4.5 ms and 4 MiB, instead of the nanoseconds a fast hash (SHA-256, HMAC) takes, so trying billions of short passwords is out of reach. Random tokens (AWS keys, GitHub tokens) were never guessable either way. A value found more than once in a scan is hashed once, so a scan adds at most about a second (200 distinct values).
+- **Trade-off:** the cost is below OWASP's minimum for password storage (7 MiB and 5 passes, about 13 ms here), to keep scans fast. Password storage relies on the hash alone; here the key comes first and the slow hash is a second layer. Changing the parameters ends every stored suppression, so a test pins them.
+- **Equal values are visible:** two findings of the same value have the same fingerprint, so a reader of the database can tell they match, but not what the value is.
 - **Computed in the engine:** it is the only place that knows exactly which bytes are the value, and the text is gone once the scan returns, so a fingerprint can't be added later. Doing it here also gives a future CLI the same fingerprints as the API. The engine still does no I/O: the caller generates the key, keeps it, and passes it in.
 - **Exact:** one changed character, or the same value reformatted (a card number with spaces instead of dashes), is a different fingerprint. A suppression can only fail toward flagging a value again, never toward hiding a different one.
 
