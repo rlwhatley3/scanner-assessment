@@ -184,6 +184,42 @@ export default function GuideView() {
           </p>
         </section>
 
+        <section id="mcp" className="guide-section">
+          <h3>Use the scanner from an AI assistant</h3>
+          <p>
+            AI assistants like Claude Code can scan text and manage rules for you through MCP, a
+            standard way for assistants to use other apps. The scanner offers it while it's running,
+            to apps on this computer only.
+          </p>
+          <dl className="guide-tasks">
+            <dt>Connect Claude Code</dt>
+            <dd>
+              With the scanner running, run this in a terminal:
+              <pre className="guide-command">
+                claude mcp add --transport http secrets-scanner http://127.0.0.1:3001/mcp
+              </pre>
+            </dd>
+            <dt>Connect another app</dt>
+            <dd>
+              In the app's MCP settings, add a server named <b>secrets-scanner</b> with the address{" "}
+              <code>http://127.0.0.1:3001/mcp</code> (type HTTP, sometimes called streamable HTTP).
+            </dd>
+            <dt>Check that it works</dt>
+            <dd>
+              Ask the assistant “list the scanner's rule sets”. In Claude Code,{" "}
+              <code>claude mcp list</code> should show <b>secrets-scanner</b> as connected.
+            </dd>
+            <dt>It won't connect</dt>
+            <dd>
+              Make sure the scanner is running and the app is on this computer. If you started the
+              scanner with a different <code>API_PORT</code>, use that number instead of 3001.
+            </dd>
+          </dl>
+          <p className="muted small">
+            See <Link to="/mcp-docs">MCP docs</Link> for every tool the assistant can use.
+          </p>
+        </section>
+
         <section id="words" className="guide-section">
           <h3>Words you'll see</h3>
           <dl className="guide-terms">
