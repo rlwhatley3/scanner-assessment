@@ -1,15 +1,19 @@
 use crate::db::Db;
 use secrets_scanner_engine::{
-    DetectionType, RuleDefinition, default_rule_set, value_classifier_setting,
+    DetectionType, RuleDefinition, default_rule_set, secret_detector_rule, value_classifier_setting,
 };
 
 /// The name the built-in rules are seeded under. Users can rename it.
 pub const BUILT_IN_RULE_SET_NAME: &str = "Built-in rules";
 
 /// The rules a new database starts with: the engine's built-in rule set, with the value
-/// classifier turned on for the likely-credential rules. Those match by randomness or password
-/// shape, so they're the ones that catch hashes and IDs; the API loads the classifier at startup.
+/// classifier turned on for the likely-credential rules, then the secret detector rule. The
+/// likely-credential rules match by randomness or password shape, so they're the ones that catch
+/// hashes and IDs. The detector flags secrets no pattern describes, and the classifier lowers
+/// the confidence of what it flags that isn't a credential. The API loads both models at startup.
 pub fn built_in_rules() -> Vec<RuleDefinition> {
+    let mut detector = secret_detector_rule();
+    detector.value_classifier = Some(value_classifier_setting());
     default_rule_set()
         .rules
         .into_iter()
@@ -20,6 +24,7 @@ pub fn built_in_rules() -> Vec<RuleDefinition> {
             }
             definition
         })
+        .chain([detector])
         .collect()
 }
 

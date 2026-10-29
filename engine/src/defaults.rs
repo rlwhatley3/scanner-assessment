@@ -57,6 +57,11 @@ pub fn secret_detector_rule() -> RuleDefinition {
             sha256: Some(SECRET_DETECTOR_SHA256.into()),
         }),
         threshold: Some(50),
+        remediation: Some(
+            "If this is a real secret, rotate it and load it from a secret manager or environment \
+             variable instead of the file."
+                .into(),
+        ),
         ..RuleDefinition::default()
     }
 }

@@ -16,6 +16,7 @@ import { DETECTION_LABELS, SEVERITY_LABELS } from "../severity.tsx";
 import { useLoad } from "../useLoad.ts";
 import ChecksumFields from "./ChecksumFields.tsx";
 import { type ChecksumForm, checksumFormFrom, checksumFrom } from "./checksumForm.ts";
+import { offersDetectionType } from "./detectionTypes.ts";
 import PasswordShapeFields, {
   type PasswordShapeForm,
   passwordShapeFormFrom,
@@ -359,11 +360,15 @@ export default function RuleForm({ rule, onSaved, onDeleted, onDirtyChange }: Ru
                   onChange={(event) => update("detectionType", event.target.value as DetectionType)}
                 >
                   <option value="">Choose…</option>
-                  {Object.entries(DETECTION_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
+                  {Object.entries(DETECTION_LABELS)
+                    .filter(([value]) =>
+                      offersDetectionType(value as DetectionType, models.data, form.detectionType),
+                    )
+                    .map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                 </select>
               </Field>
               <Field
