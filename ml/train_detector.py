@@ -189,6 +189,40 @@ def evaluate(model: SecretDetector, docs: list[Doc], name: str, kind_of=lambda k
             print(f"    non-secrets planted or labeled: {decoys}", flush=True)
 
 
+def mine_hard_negatives(miner_path: Path, docs: list[Doc], seed: int, per_repo: int = 200) -> list[Doc]:
+    """Pieces of the training files around text an earlier model flags but CredData doesn't
+    label: findings at the default threshold at least one line away from any labeled line.
+    CredData labels the lines scanners flagged, so these are almost all false positives in
+    ordinary code, the commonest error on real repositories. At most `per_repo` per repository,
+    so no repository dominates; credentials inside a piece keep their labels."""
+    miner = SecretDetector()
+    load_onnx_weights(miner, miner_path)
+    miner.eval()
+    r = np.random.default_rng(seed)
+    by_repo: dict[str, list[Doc]] = {}
+    for doc in docs:
+        text = doc.text
+        labeled = []
+        for s, e, _ in doc.secrets + doc.decoys:
+            # The labeled lines, widened by one line either side.
+            start = text.rfind(b"\n", 0, max(text.rfind(b"\n", 0, s), 0)) + 1
+            end = text.find(b"\n", text.find(b"\n", e) + 1)
+            labeled.append((start, len(text) if end < 0 else end))
+        for s, e in findings(scores(miner, text), THRESHOLD):
+            if any(ls < e and s < le for ls, le in labeled):
+                continue
+            start = int(max(min(s - r.integers(0, 600), len(text) - 768), 0))
+            by_repo.setdefault(doc.source, []).append(creddata.cut(doc, start, start + max(768, e - start)))
+    pieces = []
+    for repo in sorted(by_repo):
+        found = by_repo[repo]
+        order = r.permutation(len(found))[:per_repo]
+        pieces.extend(found[i] for i in sorted(order))
+    print(f"mined {sum(len(v) for v in by_repo.values()):,} unlabeled findings from {len(by_repo)} repositories; "
+          f"kept {len(pieces):,}", flush=True)
+    return pieces
+
+
 def credata_kind(kind: str) -> str:
     """CredData's categories, grouped for the report: `F:` and `X:` lines by their label, and
     credentials by the first part of their category."""
@@ -280,6 +314,7 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=EPOCHS)
     parser.add_argument("--creddata", type=Path, help="a local CredData checkout to train and evaluate on")
     parser.add_argument("--evaluate", type=Path, help="evaluate this ONNX model instead of training")
+    parser.add_argument("--hard-negatives", type=Path, help="an earlier ONNX model whose unlabeled CredData findings become negatives")
     parser.add_argument("--untrained", action="store_true", help="write the untrained network, to time it")
     args = parser.parse_args()
 
@@ -301,9 +336,14 @@ def main() -> None:
     else:
         train_docs = generate(args.docs, seed=SEED)
         if args.creddata:
-            pieces = creddata.training_pieces(creddata.load(args.creddata, "train"), seed=SEED)
+            real_train = creddata.load(args.creddata, "train")
+            pieces = creddata.training_pieces(real_train, seed=SEED)
             print(f"CredData training pieces: {len(pieces):,}")
             train_docs += pieces
+            if args.hard_negatives:
+                torch.set_num_threads(EVAL_THREADS)
+                train_docs += mine_hard_negatives(args.hard_negatives, real_train, seed=SEED)
+                torch.set_num_threads(THREADS)
         train(model, train_docs, args.epochs)
     evaluate(model, test_docs, "held-out synthetic documents")
     if real_test:

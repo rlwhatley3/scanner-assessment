@@ -64,6 +64,53 @@ def group(text: bytes, start: int, end: int, labeled: str | None) -> str:
     return "other"
 
 
+def repo_counts(docs, all_scores, threshold: int) -> dict[str, np.ndarray]:
+    """Per repository: right findings, all findings, credentials found, all credentials."""
+    counts: dict[str, np.ndarray] = {}
+    for doc, byte_scores in zip(docs, all_scores):
+        spans = findings(byte_scores, threshold)
+        row = counts.setdefault(doc.source, np.zeros(4))
+        row[0] += sum(any(ks < e and s < ke for ks, ke, _ in doc.secrets) for s, e in spans)
+        row[1] += len(spans)
+        row[2] += sum(any(s < ke and ks < e for s, e in spans) for ks, ke, _ in doc.secrets)
+        row[3] += len(doc.secrets)
+    return counts
+
+
+def bootstrap(docs, models: dict[str, list[np.ndarray]], threshold: int, rounds: int = 2000) -> None:
+    """95% intervals for precision, recall and F1, resampling whole repositories with
+    replacement, since errors cluster by repository. The same resamples are used for every
+    model, so the interval for the difference is paired."""
+    counts = {name: repo_counts(docs, s, threshold) for name, s in models.items()}
+    repos = sorted(next(iter(counts.values())))
+    tables = {name: np.array([c[r] for r in repos]) for name, c in counts.items()}
+    rng = np.random.default_rng(0)
+    picks = rng.integers(0, len(repos), size=(rounds, len(repos)))
+
+    def metrics(table: np.ndarray) -> np.ndarray:
+        sums = table[picks].sum(axis=1)
+        precision = sums[:, 0] / np.maximum(sums[:, 1], 1)
+        recall = sums[:, 2] / np.maximum(sums[:, 3], 1)
+        f1 = 2 * precision * recall / np.maximum(precision + recall, 1e-9)
+        return np.stack([precision, recall, f1], axis=1)
+
+    results = {name: metrics(t) for name, t in tables.items()}
+    print(f"\nbootstrap over {len(repos)} repositories, {rounds} rounds, threshold {threshold} (95% intervals)")
+    for name, table in tables.items():
+        whole = table.sum(axis=0)
+        point = [whole[0] / max(whole[1], 1), whole[2] / max(whole[3], 1)]
+        point.append(2 * point[0] * point[1] / max(point[0] + point[1], 1e-9))
+        low, high = np.percentile(results[name], [2.5, 97.5], axis=0)
+        print(f"  {name}: " + ", ".join(f"{m} {p:.3f} [{lo:.3f}, {hi:.3f}]" for m, p, lo, hi in zip(("precision", "recall", "F1"), point, low, high)))
+    if len(results) == 2:
+        a, b = results.values()
+        difference = a - b
+        low, high = np.percentile(difference, [2.5, 97.5], axis=0)
+        better = (difference > 0).mean(axis=0)
+        print("  model minus baseline: " + ", ".join(
+            f"{m} [{lo:+.3f}, {hi:+.3f}] (better in {p:.0%} of rounds)" for m, lo, hi, p in zip(("precision", "recall", "F1"), low, high, better)))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("model", type=Path)
@@ -71,6 +118,7 @@ def main() -> None:
     parser.add_argument("--split", default="test", choices=["test", "validation"])
     parser.add_argument("--threshold", type=int, default=50)
     parser.add_argument("--keep-largest", action="store_true", help="keep the repository that holds most labels")
+    parser.add_argument("--baseline", type=Path, help="another model to compare with, by bootstrapping repositories")
     args = parser.parse_args()
 
     torch.set_num_threads(EVAL_THREADS)
@@ -87,12 +135,18 @@ def main() -> None:
             docs = [doc for doc in docs if doc.source != largest]
             print(f"leaving out {largest}, which holds {counts[largest]} of {sum(counts.values())} credentials")
     print(f"{args.split}: {len({d.source for d in docs})} repositories, {len(docs)} documents")
-    cache = args.model.with_suffix(f".{args.split}.scores.npz")
-    if cache.exists():
-        all_scores = list(np.load(cache).values())
-    else:
-        all_scores = [scores(model, doc.text) for doc in docs]
-        np.savez_compressed(cache, *all_scores)
+    def cached_scores(path: Path) -> list[np.ndarray]:
+        cache = path.with_suffix(f".{args.split}{'.all' if args.keep_largest else ''}.scores.npz")
+        if cache.exists():
+            return list(np.load(cache).values())
+        load_onnx_weights(model, path)
+        result = [scores(model, doc.text) for doc in docs]
+        np.savez_compressed(cache, *result)
+        return result
+
+    all_scores = cached_scores(args.model)
+    if args.baseline:
+        bootstrap(docs, {"model": all_scores, "baseline": cached_scores(args.baseline)}, args.threshold)
 
     print("\nthreshold  precision  recall  findings")
     for threshold in range(30, 95, 5):

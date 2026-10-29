@@ -302,6 +302,13 @@ It was trained on two sources, and each is evaluated on held-out data of its own
   - The shipped model trades some recall for precision against the first CredData model: F1 0.60 against 0.53.
   - Its precision–recall curve is close to the earlier model's, and ahead wherever precision is above about 0.65.
 - **Passwords:** 108 of the 360 test passwords are under 8 bytes, below the engine's minimum finding, so none of those can be found. Of the 252 it could report, it finds 207.
+- **Uncertainty:** errors cluster by repository, so the intervals come from resampling whole repositories.
+  - On the 65 test repositories, the shipped model's precision is 0.523, with a 95% interval of 0.40 to 0.65.
+  - Its gain over the first CredData model is still clear: precision +0.05 to +0.17 higher, F1 +0.02 to +0.12 higher.
+- **Tried and not shipped: hard negatives.** Using the shipped model's unlabeled findings in the training repositories as negatives (v6) gave mixed results:
+  - better on the test repositories: 0.680 / 0.658
+  - worse on validation: 0.554 / 0.601, against 0.702 / 0.694
+  Validation decides, so the shipped model stayed. Some unlabeled CredData text is probably real secrets, which makes those negatives noisy.
 - **Value classifier overlap:** the value classifier splits CredData by its own hash, so most of these test repositories were in its training data. Numbers for the detector and classifier together on these repositories would not be on unseen data.
 
 ### Scan endpoint

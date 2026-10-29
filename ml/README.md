@@ -76,6 +76,8 @@ Training takes about 25 minutes on a laptop CPU (4 threads), then evaluates on t
 - `--evaluate MODEL.onnx` evaluates a written model without training (add `--creddata` to include the held-out repositories).
 - `--docs`, `--epochs` and `--out` are for quick experiments; `--untrained --out PATH` writes the untrained network, for timing.
 - `analyze_detector.py MODEL.onnx --creddata PATH [--split validation]` sweeps thresholds from 30 to 90 and sorts a model's false positives and misses into groups, showing values by shape only.
+  - Add `--baseline OTHER.onnx` for paired confidence intervals that resample whole repositories.
+- `--hard-negatives EARLIER.onnx` adds an earlier model's unlabeled CredData findings as negatives. It didn't help (see [below](#tried-and-not-shipped-mining-hard-negatives)), so the shipped model doesn't use it.
 
 | Detector file | What it does |
 |---|---|
@@ -183,6 +185,35 @@ Each cell is precision / recall.
 - **Recall by kind** on the 65 repositories: private keys 30 of 31, JSON web tokens 15 of 15, secrets 68 of 75, keys 50 of 59, tokens 157 of 190, UUID-shaped secrets 88 of 138, passwords 207 of 360, URL credentials 5 of 19. v4 found more tokens (186) and UUID-shaped secrets (118).
 - **Passwords under 8 bytes can't be found:** 108 of the 360 held-out passwords are shorter than the engine's 8-byte minimum finding, and they are 108 of v5's 153 missed passwords. Of the passwords it could report, v5 finds 207 of 252.
 - **Obfuscated values:** CredData replaced real values with random ones, in training and evaluation alike. If those look unlike real secrets (its replacement passwords are mostly lowercase letters and digits), real code can score lower.
+
+### How sure these numbers are
+
+Errors cluster in a few repositories, so `analyze_detector.py --baseline OTHER.onnx` resamples whole repositories (2,000 rounds) and gives 95% intervals, paired so both models see the same resamples. On the 65 test repositories at threshold 50:
+
+| | Precision | Recall | F1 |
+|---|---|---|---|
+| Shipped (v5) | 0.523 [0.395, 0.646] | 0.693 [0.612, 0.752] | 0.596 [0.489, 0.676] |
+| v4 | 0.405 [0.281, 0.554] | 0.750 [0.646, 0.833] | 0.526 [0.399, 0.633] |
+| v5 minus v4 | +0.054 to +0.169 (better in 100% of rounds) | −0.099 to −0.007 (better in 1%) | +0.020 to +0.120 (better in 100%) |
+
+So v5's precision gain over v4 is real, and so is its recall loss, but any one model's numbers are only known to about ±0.1: a different handful of repositories could move them that much.
+
+### Tried and not shipped: mining hard negatives
+
+The v6 experiment (`train_detector.py --hard-negatives v5.onnx`):
+
+- **What it did:** scored the 234 training repositories with v5 and took its findings in unlabeled text, at least one line from any labeled line, as negatives. That gave 3,865 findings, 2,731 kept with at most 200 per repository, added to v5's training data.
+- **Results** (threshold 50, intervals paired against v5):
+
+  | Held-out set | v6 | v5 | v6 F1 compared with v5 |
+  |---|---|---|---|
+  | Test, the 65 repositories | 0.680 / 0.658 | 0.523 / 0.693 | better in 100% of rounds |
+  | Validation, 37 repositories | 0.554 / 0.601 | 0.702 / 0.694 | worse in 98% of rounds |
+
+  Cells are precision / recall.
+- **Why validation won:** the threshold and the model are chosen on validation, so v5 stays. On validation v6 newly flagged hundreds of 19-digit numbers and 40-character hex strings in two repositories, and lost recall broadly.
+- **The likely cause** is noisy negatives: unlabeled text in CredData includes some real secrets nobody labeled.
+- **What it shows:** the test and validation sets disagreeing this sharply means these held-out sets are too small to rank close models on their own.
 
 ### What it gets wrong on real code
 
