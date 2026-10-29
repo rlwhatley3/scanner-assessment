@@ -7,7 +7,7 @@ async fn seeded_app() -> Router {
     secrets_scanner_api::seed::seed_default_rule_set(&db)
         .await
         .expect("seed should run");
-    secrets_scanner_api::routes::router(db)
+    secrets_scanner_api::routes::router(db, secrets_scanner_api::fingerprint_key::generate())
 }
 
 #[tokio::test]

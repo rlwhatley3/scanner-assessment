@@ -92,7 +92,8 @@ async fn a_reopened_session_lists_each_scan_with_its_findings() {
     secrets_scanner_api::seed::seed_default_rule_set(&db)
         .await
         .expect("seed should run");
-    let app = secrets_scanner_api::routes::router(db);
+    let app =
+        secrets_scanner_api::routes::router(db, secrets_scanner_api::fingerprint_key::generate());
     let (_, session) = send(
         &app,
         "POST",

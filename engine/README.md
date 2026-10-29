@@ -7,7 +7,7 @@ let result = scan(scan_id, text, &rule_set)?;
 // result.findings, result.truncated, result.log
 ```
 
-Rule sets with [model rules](#model-rules) use `scan_with_models` and need the `ml` feature.
+Rule sets with [model rules](#model-rules) use `scan_with_models` and need the `ml` feature. `scan_with_options` takes models and a [fingerprint key](#fingerprints-and-suppressions) together.
 
 ## The rule set contract
 
@@ -271,6 +271,34 @@ What it changes:
 - **Fewer false alarms:** a secret inside a comment is still reported, but it scores as a likely example, since comments are where examples live. Commented-out code that logs a secret drops to low confidence, since it doesn't run, and so does a log message that only mentions a secret-sounding word.
 
 Source code isn't parsed into a syntax tree. That would need a parser per language (e.g. tree-sitter), so code is only scanned as text, with its `//` and `#` comment lines recognized.
+
+## Fingerprints and suppressions
+
+A user can mark a finding's value as known to be safe (a documented example key, a test fixture) so later scans in the same session don't flag it again. That needs a way to recognize the same value later without storing it, so the engine can fingerprint each match:
+
+```rust
+let options = ScanOptions { models: Some(&models), fingerprint_key: Some(&key) };
+let result = scan_with_options(scan_id, text, &rule_set, options)?;
+// result.findings[i].fingerprint: Some("…64 hex characters…") for every match
+```
+
+- **A fingerprint is Argon2id of the matched value** (the finding's `location` range), with a 32-byte key as Argon2's secret input and a fixed salt, as 64 hex characters: 4 MiB of memory and 3 passes. It sits on `Finding`, not in `violation`, so it is never shown as a detail. Rule errors, and scans without a key, have none.
+- **It can't be reversed, only guessed at.** A hash has no inverse. The only way back to a value is to hash guesses and compare.
+- **Keyed:** without the key, guesses can't even be tested, so a copy of the stored fingerprints alone says nothing about the values.
+- **Slow:** with the key, each guess still costs about 4.5 ms and 4 MiB, instead of the nanoseconds a fast hash (SHA-256, HMAC) takes, so trying billions of short passwords is out of reach. Random tokens (AWS keys, GitHub tokens) were never guessable either way. A value found more than once in a scan is hashed once, so a scan adds at most about a second (200 distinct values).
+- **Trade-off:** the cost is below OWASP's minimum for password storage (7 MiB and 5 passes, about 13 ms here), to keep scans fast. Password storage relies on the hash alone; here the key comes first and the slow hash is a second layer. Changing the parameters ends every stored suppression, so a test pins them.
+- **Equal values are visible:** two findings of the same value have the same fingerprint, so a reader of the database can tell they match, but not what the value is.
+- **Computed in the engine:** it is the only place that knows exactly which bytes are the value, and the text is gone once the scan returns, so a fingerprint can't be added later. Doing it here also gives a future CLI the same fingerprints as the API. The engine still does no I/O: the caller generates the key, keeps it, and passes it in.
+- **Exact:** one changed character, or the same value reformatted (a card number with spaces instead of dashes), is a different fingerprint. A suppression can only fail toward flagging a value again, never toward hiding a different one.
+
+**How the API uses it.** A suppression belongs to one scan session, since input is still pasted text with no file path to scope it to. It covers one rule plus one fingerprint, never a whole rule or a line, and needs a reason and an expiry (at most 365 days ahead).
+
+- **Key:** generated once from the OS's random source into `server/data/fingerprint.key` (beside the database, or `FINGERPRINT_KEY_PATH`), readable by its owner only, and git-ignored with the rest of `server/data/`. It is kept out of the SQLite file, so a copy of the database alone has fingerprints that can't be tested against guesses. It is never logged or returned by the API or MCP server. Deleting it is safe: every suppression stops matching and its values are flagged again.
+- **Scanning:** in a scan in the suppression's session, a match whose rule and fingerprint equal an active suppression (not removed, not expired) is not flagged: it is neither saved nor returned. The scan keeps only how many were left out (`scans.suppressed_count`, `suppressedCount` in responses). Every other finding's fingerprint is saved in `findings.fingerprint`, so it can be suppressed later. Scans already saved keep their findings, including the one a suppression was made from.
+- **Never returned:** the API takes a finding id to suppress, so fingerprints never leave the server.
+- **Removing** a suppression sets `removed_at`, so later scans flag its value again, and keeps the row as a record of what was suppressed, why, and until when. An expired one stays on record the same way.
+- **Trade-off:** the 200-finding cap is applied in the engine, before suppressions, so suppressed matches still use up places under the cap.
+- **Endpoints:** `GET`/`POST /api/scan-sessions/{id}/suppressions` and `DELETE /api/scan-sessions/{id}/suppressions/{suppressionId}`, and the MCP tools `list_suppressions`, `create_suppression`, and `remove_suppression`, all through `server/src/store.rs`.
 
 ## Trade-offs
 

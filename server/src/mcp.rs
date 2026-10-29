@@ -1,5 +1,5 @@
 //! An MCP server, mounted on the API at `/mcp`, for reading and writing rules, rule sets and
-//! their versions, scan sessions, and scans. It goes through the same storage rules as the rest of the
+//! their versions, scan sessions, scans, and suppressions. It goes through the same storage rules as the rest of the
 //! API (see `store`), and `run_scan` uses the same path as the scan endpoint, so scan text is
 //! never stored or logged here either.
 
@@ -8,7 +8,7 @@ use crate::routes::models::{self, ModelResponse};
 use crate::routes::scans::{self, ApiError, ScanResponse};
 use crate::store::{
     self, RuleRecord, RuleSetRecord, RuleSetSummary, RuleSetVersionRecord, RuleSetVersionSummary,
-    ScanSessionRecord, ScanSessionSummary, StoreError,
+    ScanSessionRecord, ScanSessionSummary, StoreError, SuppressionRecord,
 };
 use axum::extract::State;
 use rmcp::{
@@ -38,7 +38,11 @@ be archived or restored. A scan session uses one version; each scan in it \
 runs that version's snapshots. Model rules (model_assessment, model_detection) run a model the API \
 has loaded instead of a pattern, and a rule's valueClassifier setting runs one on the rule's own \
 matches; list_models shows which models are available and what each can be used for. Scan text is \
-never stored, and findings never contain matched values. Before writing or changing a rule, read \
+never stored, and findings never contain matched values. A suppression marks one value found by \
+one rule as known to be safe within one scan session, with a reason and an expiry: later scans in \
+that session don't report it (they count it in suppressedCount) until it expires or is removed, \
+and a changed value is always reported. create_suppression, list_suppressions, and \
+remove_suppression manage them. Before writing or changing a rule, read \
 rule_authoring_guide: it explains every mechanism a rule is built from (patterns and their value and \
 key groups, detection types, key names, entropy, checksums, password shape, placeholders, model \
 rules, value classifiers), when to use each and why, and how each built-in rule is assembled from \
@@ -272,6 +276,26 @@ pub struct RunScanParams {
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateSuppressionParams {
+    session_id: i64,
+    /// A match from one of this session's scans (a finding id from run_scan or get_scan). Its
+    /// rule and the fingerprint of its value are what the suppression covers.
+    finding_id: i64,
+    /// Why the value is safe to leave, e.g. "Documented example key from the AWS docs".
+    reason: String,
+    /// An ISO 8601 date or date-time, after now and at most 365 days ahead.
+    expires_at: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SuppressionIdParams {
+    session_id: i64,
+    suppression_id: i64,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GuideParams {
     /// One section of the guide, by id (see the tool description). Omit for the whole guide.
     topic: Option<String>,
@@ -360,6 +384,12 @@ pub struct CreatedVersion {
 #[derive(Serialize, JsonSchema)]
 pub struct SessionList {
     sessions: Vec<ScanSessionSummary>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct SuppressionList {
+    /// Newest first, removed and expired ones included.
+    suppressions: Vec<SuppressionRecord>,
 }
 
 #[derive(Clone)]
@@ -749,8 +779,9 @@ impl ScannerMcp {
     #[tool(
         description = "Scan text with the session's rule set version and save the scan and \
                           its findings to the session. The text is never stored or logged. \
-                          Findings are capped at 200; the output schema explains confidence, \
-                          valueClass, and the other finding fields.",
+                          Findings are capped at 200. A match an active suppression in the \
+                          session covers is left out and counted in suppressedCount. The output \
+                          schema explains confidence, valueClass, and the other finding fields.",
         annotations(destructive_hint = false)
     )]
     async fn run_scan(
@@ -760,6 +791,65 @@ impl ScannerMcp {
         Ok(Json(
             scans::scan_in_session(&self.state, params.session_id, params.text).await?,
         ))
+    }
+
+    #[tool(
+        description = "List a scan session's suppressions, newest first, with each one's \
+                       rule, reason, expiry, creation time, and status (active, expired, or \
+                       removed). Values and fingerprints are never returned.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_suppressions(
+        &self,
+        Parameters(params): Parameters<SessionIdParams>,
+    ) -> Result<Json<SuppressionList>, ToolError> {
+        let suppressions = self
+            .with_db(move |connection| store::list_suppressions(connection, params.session_id))
+            .await?;
+        Ok(Json(SuppressionList { suppressions }))
+    }
+
+    #[tool(
+        description = "Suppress the value of one match in a scan session, with a reason and an \
+                       expiry. Later run_scan calls in that session don't report the same rule \
+                       finding the same value (they count it in suppressedCount) until it \
+                       expires or is removed. It never covers a changed value, another rule, or \
+                       another session. The value is recognized by a keyed fingerprint, never \
+                       stored. findingId comes from run_scan or get_scan.",
+        annotations(destructive_hint = false)
+    )]
+    async fn create_suppression(
+        &self,
+        Parameters(params): Parameters<CreateSuppressionParams>,
+    ) -> Result<Json<SuppressionRecord>, ToolError> {
+        self.with_db(move |connection| {
+            store::create_suppression(
+                connection,
+                params.session_id,
+                params.finding_id,
+                &params.reason,
+                &params.expires_at,
+            )
+        })
+        .await
+        .map(Json)
+    }
+
+    #[tool(
+        description = "Remove a suppression, so later scans in its session report its value \
+                       again. It is kept, marked removed, as a record of what was suppressed and \
+                       why.",
+        annotations(destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn remove_suppression(
+        &self,
+        Parameters(params): Parameters<SuppressionIdParams>,
+    ) -> Result<Json<SuppressionRecord>, ToolError> {
+        self.with_db(move |connection| {
+            store::remove_suppression(connection, params.session_id, params.suppression_id)
+        })
+        .await
+        .map(Json)
     }
 }
 

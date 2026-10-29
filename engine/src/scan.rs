@@ -1,3 +1,4 @@
+use crate::fingerprint::FingerprintKey;
 use crate::format::{self, Format, Structure};
 use crate::location::{LineIndex, Location};
 use crate::models::{
@@ -165,6 +166,11 @@ pub struct Finding {
     pub violation: Violation,
     /// A one-line human-readable summary.
     pub violation_pretty: String,
+    /// Keyed Argon2id of the matched value under the caller's [`FingerprintKey`], so a later scan
+    /// can recognize the same value without anyone storing it. Absent for rule errors and when
+    /// the caller passed no key. Kept out of `violation`, so it is never shown as a detail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
 }
 
 /// A log line about one scan. It never contains the scanned text or a matched value.
@@ -237,10 +243,19 @@ struct Candidate<'r> {
     value_class: Option<ValueClass>,
 }
 
+/// What a scan runs with besides the text and the rules.
+#[derive(Clone, Copy, Default)]
+pub struct ScanOptions<'a> {
+    /// Models for model rules to run. None runs every model rule as a rule error.
+    pub models: Option<&'a Models>,
+    /// Fingerprints each match's value with this key. None leaves findings without one.
+    pub fingerprint_key: Option<&'a FingerprintKey>,
+}
+
 /// Scans `text` with the enabled rules. Rules that fail their checks are skipped and reported
 /// as rule-error findings; the rest still run. Model rules need [`scan_with_models`].
 pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, ScanError> {
-    scan_with_models(scan_id, text, rule_set, &Models::default())
+    scan_with_options(scan_id, text, rule_set, ScanOptions::default())
 }
 
 /// Like [`scan`], with models for model rules to run. A model rule whose model is missing, does
@@ -252,6 +267,23 @@ pub fn scan_with_models(
     rule_set: &RuleSet,
     models: &Models,
 ) -> Result<ScanResult, ScanError> {
+    let options = ScanOptions {
+        models: Some(models),
+        ..ScanOptions::default()
+    };
+    scan_with_options(scan_id, text, rule_set, options)
+}
+
+/// Like [`scan_with_models`], with every option. With a fingerprint key, each match carries a
+/// keyed hash of its value, computed here because this is the only place the value exists.
+pub fn scan_with_options(
+    scan_id: i64,
+    text: &str,
+    rule_set: &RuleSet,
+    options: ScanOptions,
+) -> Result<ScanResult, ScanError> {
+    let no_models = Models::default();
+    let models = options.models.unwrap_or(&no_models);
     if text.trim().is_empty() {
         return Err(ScanError::Empty);
     }
@@ -423,6 +455,8 @@ pub fn scan_with_models(
     let groups = overlap_groups(&candidates);
     let index = LineIndex::new(text);
     let mut findings = Vec::new();
+    // A fingerprint is deliberately slow, so a value found more than once is hashed once.
+    let mut fingerprints: HashMap<&str, String> = HashMap::new();
     for (candidate, overlap_group) in candidates.iter().zip(groups) {
         let details = match_details(candidate, &index, overlap_group);
         let pretty = format!(
@@ -448,6 +482,13 @@ pub fn scan_with_models(
             kind: FindingKind::Match,
             violation: Violation::Match(details),
             violation_pretty: pretty,
+            fingerprint: options.fingerprint_key.map(|key| {
+                let value = &text[candidate.start..candidate.end];
+                fingerprints
+                    .entry(value)
+                    .or_insert_with(|| key.fingerprint(value.as_bytes()))
+                    .clone()
+            }),
         });
     }
     for error in rule_errors {
@@ -467,6 +508,7 @@ pub fn scan_with_models(
             kind: FindingKind::RuleError,
             violation_pretty: format!("{name}: {}", error.message),
             violation: Violation::RuleError(error),
+            fingerprint: None,
         });
     }
 
