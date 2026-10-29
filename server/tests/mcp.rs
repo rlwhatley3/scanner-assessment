@@ -605,10 +605,11 @@ async fn the_rule_authoring_guide_covers_every_mechanism_by_topic() {
 }
 
 #[tokio::test]
-async fn suppresses_a_value_in_its_session_and_removes_it_again() {
+async fn creates_lists_and_removes_suppressions_and_a_suppressed_match_is_not_flagged() {
     let (app, db) = app().await;
     let session = ok(&app, "create_scan_session", json!({"ruleSetVersionId": 1})).await;
     let session_id = session["id"].as_i64().unwrap();
+    let other = ok(&app, "create_scan_session", json!({"ruleSetVersionId": 1})).await;
     let text = format!("aws_access_key_id = {AWS_KEY}\n");
     let scan = ok(
         &app,
@@ -616,7 +617,8 @@ async fn suppresses_a_value_in_its_session_and_removes_it_again() {
         json!({"sessionId": session_id, "text": text}),
     )
     .await;
-    assert_eq!(scan["findings"][0]["suppression"], Value::Null);
+    let finding_id = scan["findings"][0]["id"].clone();
+    assert_eq!(scan["suppressedCount"], 0);
 
     let expires_at: String = db
         .call(|connection| {
@@ -628,38 +630,55 @@ async fn suppresses_a_value_in_its_session_and_removes_it_again() {
         })
         .await
         .unwrap();
+
+    // Create: a reason and an expiry are required.
     let error = err(
         &app,
         "create_suppression",
-        json!({"sessionId": session_id, "findingId": scan["findings"][0]["id"], "reason": "", "expiresAt": expires_at}),
+        json!({"sessionId": session_id, "findingId": finding_id, "reason": "", "expiresAt": expires_at}),
     )
     .await;
     assert!(error.contains("reason"), "{error}");
     let suppression = ok(
         &app,
         "create_suppression",
-        json!({"sessionId": session_id, "findingId": scan["findings"][0]["id"], "reason": "Test fixture", "expiresAt": expires_at}),
+        json!({"sessionId": session_id, "findingId": finding_id, "reason": "Test fixture", "expiresAt": expires_at}),
     )
     .await;
     assert_eq!(suppression["status"], "active");
+    assert_eq!(suppression["ruleName"], "AWS access key");
+    assert!(suppression["createdAt"].is_string());
     assert!(!suppression.to_string().contains("fingerprint"));
 
+    // List.
+    let listed = ok(&app, "list_suppressions", json!({"sessionId": session_id})).await;
+    assert_eq!(listed["suppressions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(listed["suppressions"][0]["id"], suppression["id"]);
+    assert_eq!(listed["suppressions"][0]["reason"], "Test fixture");
+
+    // A suppressed match is not flagged by run_scan or get_scan, but is in another session.
     let later = ok(
         &app,
         "run_scan",
         json!({"sessionId": session_id, "text": text}),
     )
     .await;
-    assert_eq!(later["findings"][0]["suppression"]["id"], suppression["id"]);
-    assert_eq!(
-        later["findings"][0]["suppression"]["reason"],
-        "Test fixture"
-    );
+    assert_eq!(later["findings"], json!([]));
+    assert_eq!(later["suppressedCount"], 1);
     assert!(!later.to_string().contains(AWS_KEY));
+    assert_eq!(
+        ok(&app, "get_scan", json!({"scanId": later["scanId"]})).await,
+        later
+    );
+    let elsewhere = ok(
+        &app,
+        "run_scan",
+        json!({"sessionId": other["id"], "text": text}),
+    )
+    .await;
+    assert_eq!(elsewhere["findings"].as_array().map(Vec::len), Some(1));
 
-    let listed = ok(&app, "list_suppressions", json!({"sessionId": session_id})).await;
-    assert_eq!(listed["suppressions"][0]["id"], suppression["id"]);
-
+    // Remove: the value is flagged again.
     let removed = ok(
         &app,
         "remove_suppression",
@@ -673,5 +692,6 @@ async fn suppresses_a_value_in_its_session_and_removes_it_again() {
         json!({"sessionId": session_id, "text": text}),
     )
     .await;
-    assert_eq!(after["findings"][0]["suppression"], Value::Null);
+    assert_eq!(after["findings"].as_array().map(Vec::len), Some(1));
+    assert_eq!(after["suppressedCount"], 0);
 }

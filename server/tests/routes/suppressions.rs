@@ -75,17 +75,22 @@ async fn scan_and_suppress(app: &Router, db: &Db, text: String) -> (Value, Value
     (scanned, suppression)
 }
 
-fn suppression_ids(scan: &Value) -> Vec<Value> {
+/// The line each of a scan's findings starts on, in order.
+fn finding_lines(scan: &Value) -> Vec<i64> {
     scan["findings"]
         .as_array()
         .expect("findings should be a list")
         .iter()
-        .map(|finding| finding["suppression"]["id"].clone())
+        .map(|finding| {
+            finding["violation"]["location"]["startLine"]
+                .as_i64()
+                .unwrap_or(0)
+        })
         .collect()
 }
 
 #[tokio::test]
-async fn the_same_value_in_a_later_scan_is_marked_suppressed_and_still_counted() {
+async fn the_same_value_in_a_later_scan_in_the_same_session_produces_no_finding() {
     let (app, db) = app().await;
     let (first, suppression) = scan_and_suppress(&app, &db, format!("aws = {AWS_KEY}\n")).await;
     assert_eq!(suppression["scanSessionId"], 1);
@@ -94,46 +99,39 @@ async fn the_same_value_in_a_later_scan_is_marked_suppressed_and_still_counted()
     assert_eq!(suppression["findingId"], first["findings"][0]["id"]);
     assert_eq!(suppression["reason"], REASON);
     assert_eq!(suppression["status"], "active");
+    assert!(suppression["createdAt"].is_string());
 
     // The value moved and the text around it changed; it is the same value.
     let later = scan(&app, 1, format!("# config\nother: {AWS_KEY}\n")).await;
-    assert_eq!(later["findings"].as_array().map(Vec::len), Some(1));
-    let marked = &later["findings"][0]["suppression"];
-    assert_eq!(marked["id"], suppression["id"]);
-    assert_eq!(marked["reason"], REASON);
-    assert_eq!(marked["expiresAt"], suppression["expiresAt"]);
-
-    // The scan it was made from is marked too, and saved scans read back marked.
-    let (_, reread) = send(&app, "GET", "/api/scan-sessions/1/scans/1", None).await;
-    assert_eq!(suppression_ids(&reread), [suppression["id"].clone()]);
+    assert_eq!(later["findings"], json!([]));
+    assert_eq!(later["suppressedCount"], 1);
     let (_, reread) = send(&app, "GET", "/api/scan-sessions/1/scans/2", None).await;
     assert_eq!(reread, later);
 
-    // Suppressed findings still count as matches.
+    // Nothing is saved for it, and the scan it was made from keeps its finding.
+    let (_, original) = send(&app, "GET", "/api/scan-sessions/1/scans/1", None).await;
+    assert_eq!(original["findings"].as_array().map(Vec::len), Some(1));
+    assert_eq!(original["suppressedCount"], 0);
     let (_, session) = send(&app, "GET", "/api/scan-sessions/1", None).await;
     assert_eq!(session["activeSuppressionCount"], 1);
-    for scan in session["scans"].as_array().expect("scans should be a list") {
-        assert_eq!(scan["matchCount"], 1);
-        assert_eq!(scan["suppressedCount"], 1);
-    }
-    let (_, list) = send(&app, "GET", "/api/scan-sessions/1/suppressions", None).await;
-    assert_eq!(list[0]["suppressedCount"], 2);
+    assert_eq!(session["scans"][1]["matchCount"], 0);
+    assert_eq!(session["scans"][1]["suppressedCount"], 1);
+    assert_eq!(session["scans"][1]["findings"], json!([]));
 }
 
 #[tokio::test]
-async fn a_changed_value_is_not_suppressed() {
+async fn a_changed_value_is_flagged() {
     let (app, db) = app().await;
-    let (_, suppression) = scan_and_suppress(&app, &db, format!("aws = {AWS_KEY}\n")).await;
+    scan_and_suppress(&app, &db, format!("aws = {AWS_KEY}\n")).await;
 
     let changed = scan(&app, 1, format!("aws = {OTHER_AWS_KEY}\n")).await;
-    assert_eq!(suppression_ids(&changed), [Value::Null]);
+    assert_eq!(finding_lines(&changed), [1]);
+    assert_eq!(changed["suppressedCount"], 0);
 
-    // Side by side, only the suppressed value is marked.
+    // Side by side, only the changed value is flagged.
     let both = scan(&app, 1, format!("a = {AWS_KEY}\nb = {OTHER_AWS_KEY}\n")).await;
-    assert_eq!(
-        suppression_ids(&both),
-        [suppression["id"].clone(), Value::Null]
-    );
+    assert_eq!(finding_lines(&both), [2]);
+    assert_eq!(both["suppressedCount"], 1);
 }
 
 #[tokio::test]
@@ -142,7 +140,8 @@ async fn another_session_is_unaffected() {
     scan_and_suppress(&app, &db, format!("aws = {AWS_KEY}\n")).await;
 
     let other = scan(&app, 2, format!("aws = {AWS_KEY}\n")).await;
-    assert_eq!(suppression_ids(&other), [Value::Null]);
+    assert_eq!(finding_lines(&other), [1]);
+    assert_eq!(other["suppressedCount"], 0);
     let (_, list) = send(&app, "GET", "/api/scan-sessions/2/suppressions", None).await;
     assert_eq!(list, json!([]));
     let (status, _) = send(&app, "DELETE", "/api/scan-sessions/2/suppressions/1", None).await;
@@ -161,7 +160,7 @@ async fn an_expired_suppression_does_not_apply() {
     .expect("suppression should update");
 
     let later = scan(&app, 1, format!("aws = {AWS_KEY}\n")).await;
-    assert_eq!(suppression_ids(&later), [Value::Null]);
+    assert_eq!(finding_lines(&later), [1]);
     let (_, list) = send(&app, "GET", "/api/scan-sessions/1/suppressions", None).await;
     assert_eq!(list[0]["status"], "expired");
     let (_, session) = send(&app, "GET", "/api/scan-sessions/1", None).await;
@@ -169,12 +168,14 @@ async fn an_expired_suppression_does_not_apply() {
 }
 
 #[tokio::test]
-async fn a_removed_suppression_stops_applying_but_past_scans_keep_it() {
+async fn a_removed_suppression_stops_applying_and_stays_on_record() {
     let (app, db) = app().await;
     let (_, suppression) = scan_and_suppress(&app, &db, format!("aws = {AWS_KEY}\n")).await;
     let id = suppression["id"]
         .as_i64()
         .expect("suppression should have an id");
+    let quiet = scan(&app, 1, format!("aws = {AWS_KEY}\n")).await;
+    assert_eq!(quiet["findings"], json!([]));
 
     let uri = format!("/api/scan-sessions/1/suppressions/{id}");
     let (status, removed) = send(&app, "DELETE", &uri, None).await;
@@ -187,9 +188,23 @@ async fn a_removed_suppression_stops_applying_but_past_scans_keep_it() {
     assert_eq!(again["removedAt"], removed["removedAt"]);
 
     let later = scan(&app, 1, format!("aws = {AWS_KEY}\n")).await;
-    assert_eq!(suppression_ids(&later), [Value::Null]);
-    let (_, first) = send(&app, "GET", "/api/scan-sessions/1/scans/1", None).await;
-    assert_eq!(first["findings"][0]["suppression"]["reason"], REASON);
+    assert_eq!(finding_lines(&later), [1]);
+    let (_, list) = send(&app, "GET", "/api/scan-sessions/1/suppressions", None).await;
+    assert_eq!(list[0]["reason"], REASON);
+    assert_eq!(list[0]["status"], "removed");
+    // A removed suppression's value can be suppressed again.
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/scan-sessions/1/suppressions",
+        Some(json!({
+            "findingId": later["findings"][0]["id"],
+            "reason": REASON,
+            "expiresAt": in_days(&db, 30).await,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
 }
 
 #[tokio::test]
@@ -198,10 +213,10 @@ async fn a_new_key_ends_every_suppression() {
     let app = routes::router(db.clone(), FingerprintKey::new([1; 32]));
     scan_and_suppress(&app, &db, format!("aws = {AWS_KEY}\n")).await;
 
-    // A lost key is replaced by a new one: nothing matches, so the findings come back.
+    // A lost key is replaced by a new one: nothing matches, so the value is flagged again.
     let restarted = routes::router(db.clone(), FingerprintKey::new([2; 32]));
     let later = scan(&restarted, 1, format!("aws = {AWS_KEY}\n")).await;
-    assert_eq!(suppression_ids(&later), [Value::Null]);
+    assert_eq!(finding_lines(&later), [1]);
 }
 
 /// Every value in every row of every table, as text.

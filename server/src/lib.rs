@@ -50,7 +50,6 @@ use routes::{
         suppressions::CreateSuppression,
         store::SuppressionRecord,
         store::SuppressionStatus,
-        store::FindingSuppression,
         mcp::McpDescription
     )),
     tags(

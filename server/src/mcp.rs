@@ -40,8 +40,9 @@ has loaded instead of a pattern, and a rule's valueClassifier setting runs one o
 matches; list_models shows which models are available and what each can be used for. Scan text is \
 never stored, and findings never contain matched values. A suppression marks one value found by \
 one rule as known to be safe within one scan session, with a reason and an expiry: later scans in \
-that session still return and count its findings, marked suppressed, until it expires or is \
-removed, and a changed value is never covered. Before writing or changing a rule, read \
+that session don't report it (they count it in suppressedCount) until it expires or is removed, \
+and a changed value is always reported. create_suppression, list_suppressions, and \
+remove_suppression manage them. Before writing or changing a rule, read \
 rule_authoring_guide: it explains every mechanism a rule is built from (patterns and their value and \
 key groups, detection types, key names, entropy, checksums, password shape, placeholders, model \
 rules, value classifiers), when to use each and why, and how each built-in rule is assembled from \
@@ -778,8 +779,9 @@ impl ScannerMcp {
     #[tool(
         description = "Scan text with the session's rule set version and save the scan and \
                           its findings to the session. The text is never stored or logged. \
-                          Findings are capped at 200; the output schema explains confidence, \
-                          valueClass, and the other finding fields.",
+                          Findings are capped at 200. A match an active suppression in the \
+                          session covers is left out and counted in suppressedCount. The output \
+                          schema explains confidence, valueClass, and the other finding fields.",
         annotations(destructive_hint = false)
     )]
     async fn run_scan(
@@ -793,8 +795,8 @@ impl ScannerMcp {
 
     #[tool(
         description = "List a scan session's suppressions, newest first, with each one's \
-                       status (active, expired, or removed) and how many findings it has \
-                       marked.",
+                       rule, reason, expiry, creation time, and status (active, expired, or \
+                       removed). Values and fingerprints are never returned.",
         annotations(read_only_hint = true)
     )]
     async fn list_suppressions(
@@ -809,11 +811,11 @@ impl ScannerMcp {
 
     #[tool(
         description = "Suppress the value of one match in a scan session, with a reason and an \
-                       expiry. Later scans in that session still return and count a finding of \
-                       the same value from the same rule, marked with the suppression, until it \
+                       expiry. Later run_scan calls in that session don't report the same rule \
+                       finding the same value (they count it in suppressedCount) until it \
                        expires or is removed. It never covers a changed value, another rule, or \
                        another session. The value is recognized by a keyed fingerprint, never \
-                       stored.",
+                       stored. findingId comes from run_scan or get_scan.",
         annotations(destructive_hint = false)
     )]
     async fn create_suppression(
@@ -834,9 +836,9 @@ impl ScannerMcp {
     }
 
     #[tool(
-        description = "Remove a suppression, so later scans in its session stop applying it. \
-                       It is kept, marked removed, so past scans still show why their findings \
-                       were suppressed.",
+        description = "Remove a suppression, so later scans in its session report its value \
+                       again. It is kept, marked removed, as a record of what was suppressed and \
+                       why.",
         annotations(destructive_hint = false, idempotent_hint = true)
     )]
     async fn remove_suppression(

@@ -42,8 +42,9 @@ pub struct CreateSuppression {
     path = "/api/scan-sessions/{scan_session_id}/suppressions",
     tag = "Suppressions",
     summary = "List a scan session's suppressions",
-    description = "Newest first, with each one's status: active, expired, or removed. \
-                   Fingerprints are never returned.",
+    description = "Newest first, with each one's rule, reason, expiry, creation time, and \
+                   status: active, expired, or removed. Values and fingerprints are never \
+                   returned.",
     params(("scan_session_id" = i64, Path, description = "Scan session id")),
     responses((status = 200, body = [SuppressionRecord]), (status = 404, body = ErrorBody))
 )]
@@ -63,12 +64,11 @@ pub async fn list(
     tag = "Suppressions",
     summary = "Suppress a finding's value",
     description = "Marks one value found by one rule as known to be safe in this session, until \
-                   it expires or is removed. Later scans in the session still return and count \
-                   a finding of that value, marked with the suppression; a changed value isn't \
-                   covered, and other sessions are never affected. The value is recognized by \
-                   an HMAC-SHA256 fingerprint keyed with a local secret, never stored itself. \
-                   The finding it was made from, and the same value from the same rule in that \
-                   scan, are marked too.",
+                   it expires or is removed. Later scans in the session don't report that rule \
+                   finding that value, and count it in suppressedCount instead. A changed value \
+                   is reported, and other sessions are never affected. The value is recognized \
+                   by an HMAC-SHA256 fingerprint keyed with a local secret, never stored itself. \
+                   Scans already saved keep their findings.",
     params(("scan_session_id" = i64, Path, description = "Scan session id")),
     request_body = CreateSuppression,
     responses(
@@ -103,9 +103,8 @@ pub async fn create(
     path = "/api/scan-sessions/{scan_session_id}/suppressions/{suppression_id}",
     tag = "Suppressions",
     summary = "Remove a suppression",
-    description = "Later scans stop applying it, so its value's findings come back unmarked. \
-                   The suppression is kept, marked removed, so past scans still show why their \
-                   findings were suppressed.",
+    description = "Later scans in the session report its value again. The suppression is \
+                   kept, marked removed, as a record of what was suppressed, why, and until when.",
     params(
         ("scan_session_id" = i64, Path, description = "Scan session id"),
         ("suppression_id" = i64, Path, description = "Suppression id")
