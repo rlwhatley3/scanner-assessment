@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
-import { createRule, listRules, ruleName } from "../api.ts";
+import { createRule, listRules, listVersions, ruleName } from "../api.ts";
+import { HelpLink } from "../guide/GuideView.tsx";
 import { SeverityIcon } from "../severity.tsx";
 import { useLoad } from "../useLoad.ts";
 import RuleForm from "./RuleForm.tsx";
@@ -9,6 +10,15 @@ export default function RulesView() {
   const { ruleId } = useParams();
   const navigate = useNavigate();
   const rules = useLoad(listRules, []);
+  // Every version, to name the rule sets each rule is in. Reloads with the rules.
+  const versions = useLoad(() => listVersions({ includeArchived: true }), [rules.data]);
+  const setNames = (versionIds: number[]): string[] => [
+    ...new Set(
+      (versions.data ?? [])
+        .filter((version) => versionIds.includes(version.id))
+        .map((version) => version.ruleSetName),
+    ),
+  ];
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirtyRef = useRef(false);
@@ -41,7 +51,9 @@ export default function RulesView() {
     <div className="playground-section master-detail">
       <section className="panel master" aria-label="Rules">
         <div className="master-header">
-          <h2>Rules</h2>
+          <h2>
+            Rules <HelpLink section="rules" label="How rules work" />
+          </h2>
           <button type="button" className="button primary" onClick={newRule} disabled={creating}>
             New rule
           </button>
@@ -52,7 +64,9 @@ export default function RulesView() {
           </p>
         )}
         {rules.data?.length === 0 && (
-          <p className="muted">No rules yet. Create one, then add it to a rule set version.</p>
+          <p className="muted">
+            No rules yet. Create one, then add it to a rule set to scan with it.
+          </p>
         )}
         <ul className="master-list">
           {rules.data?.map((rule) => (
@@ -69,19 +83,8 @@ export default function RulesView() {
                   {ruleName(rule.definition, rule.id)}
                 </span>
                 <span className="badges">
-                  {rule.drafting && <span className="badge">Draft</span>}
-                  {rule.definition.enabled === false && <span className="badge">Disabled</span>}
-                  {rule.definition.checksum && <span className="badge subtle">Checksum</span>}
-                  {rule.definition.passwordShape && (
-                    <span className="badge subtle">Password shape</span>
-                  )}
-                  {rule.versionIds.length > 0 && (
-                    <span className="badge subtle">
-                      {rule.versionIds.length === 1
-                        ? `In version ${rule.versionIds[0]}`
-                        : `In ${rule.versionIds.length} versions`}
-                    </span>
-                  )}
+                  {rule.definition.enabled === false && <span className="badge">Off</span>}
+                  {versions.data && <SetsBadge names={setNames(rule.versionIds)} />}
                 </span>
               </NavLink>
             </li>
@@ -104,10 +107,22 @@ export default function RulesView() {
           />
         ) : (
           <p className="results-placeholder">
-            {ruleId && rules.data ? `Rule ${ruleId} does not exist.` : "Select or create a rule."}
+            {ruleId && rules.data
+              ? `Rule ${ruleId} does not exist.`
+              : "Select a rule to edit it, or create one with New rule."}
           </p>
         )}
       </section>
     </div>
+  );
+}
+
+/** Which rule sets have the rule in any of their versions. */
+function SetsBadge({ names }: { names: string[] }) {
+  if (names.length === 0) return <span className="badge">Not used in scans yet</span>;
+  return (
+    <span className="badge subtle" title={names.join(", ")}>
+      {names.length === 1 ? `Used in ${names[0]}` : `Used in ${names.length} rule sets`}
+    </span>
   );
 }

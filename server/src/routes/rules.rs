@@ -24,6 +24,7 @@ pub fn router() -> Router<AppState> {
         .route("/check", post(check_set))
         .route("/{id}", get(fetch).put(update).delete(remove))
         .route("/{id}/check", post(check))
+        .route("/{id}/try", post(super::scans::try_rule))
 }
 
 /// A rule plus the rule set versions it has been added into.

@@ -352,6 +352,20 @@ export const deleteRule = (id: number) => request<void>("DELETE", `/api/rules/${
 export const checkRule = (id: number, definition: RuleDefinition, signal?: AbortSignal) =>
   request<RuleCheck>("POST", `/api/rules/${id}/check`, { definition }, signal);
 
+/** What one rule finds in sample text. Nothing is saved, so findings have no ids. */
+export interface TryRuleResponse {
+  truncated: boolean;
+  findings: Finding[];
+}
+
+/** Runs a rule definition, saved or not, on sample text. The text goes in the body only. */
+export const tryRule = (
+  id: number,
+  definition: RuleDefinition,
+  text: string,
+  signal?: AbortSignal,
+) => request<TryRuleResponse>("POST", `/api/rules/${id}/try`, { definition, text }, signal);
+
 export const listRuleSets = (includeArchived = false) =>
   request<RuleSet[]>("GET", `/api/rule-sets${includeArchived ? "?includeArchived=true" : ""}`);
 export const getRuleSet = (id: number) => request<RuleSetDetail>("GET", `/api/rule-sets/${id}`);

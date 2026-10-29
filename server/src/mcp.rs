@@ -6,6 +6,9 @@
 use crate::routes::AppState;
 use crate::routes::models::{self, ModelResponse};
 use crate::routes::scans::{self, ApiError, ScanResponse};
+use crate::routes::testing::{
+    self, GenerateTestData, RunTestSuite, TestData, TestDocumentInput, TestRunReport,
+};
 use crate::store::{
     self, RuleRecord, RuleSetRecord, RuleSetSummary, RuleSetVersionRecord, RuleSetVersionSummary,
     ScanSessionRecord, ScanSessionSummary, StoreError, SuppressionRecord,
@@ -42,9 +45,12 @@ never stored, and findings never contain matched values. A suppression marks one
 one rule as known to be safe within one scan session, with a reason and an expiry: later scans in \
 that session don't report it (they count it in suppressedCount) until it expires or is removed, \
 and a changed value is always reported. create_suppression, list_suppressions, and \
-remove_suppression manage them. Before writing or changing a rule, read \
-rule_authoring_guide: it explains every mechanism a rule is built from (patterns and their value and \
-key groups, detection types, key names, entropy, checksums, password shape, placeholders, model \
+remove_suppression manage them. To test a version, generate_test_data builds labeled cases \
+from each rule's own pattern (positives with valid checksums, broken-checksum and placeholder \
+copies, and lookalikes), and run_test_suite scans those and documents of your own in a session \
+and reports each case as caught, missed, a false alarm, or scored as an example or as real, with \
+diagnostics for rule problems. Before writing or changing a rule, read rule_authoring_guide: it \
+explains every mechanism a rule is built from (patterns and their value and key groups, detection types, key names, entropy, checksums, password shape, placeholders, model \
 rules, value classifiers), when to use each and why, and how each built-in rule is assembled from \
 them.";
 
@@ -296,6 +302,30 @@ pub struct SuppressionIdParams {
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GenerateTestDataParams {
+    version_id: i64,
+    /// Any whole number. The same version and seed always give the same data. Defaults to 1.
+    seed: Option<u64>,
+    /// Only these rules' cases. Omit for every enabled pattern rule in the version. The set's
+    /// placeholder rules are always used to make placeholder copies.
+    rule_ids: Option<Vec<i64>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RunTestSuiteParams {
+    /// The scan session to scan in. Its rule set version is the one tested.
+    session_id: i64,
+    /// Regenerate the version's test data and scan it, as generate_test_data returns it for
+    /// this seed and these rules. The text isn't sent back and forth.
+    generated: Option<GenerateTestData>,
+    /// Documents of your own, such as realistic config files, READMEs, or code, with their
+    /// cases labeled by exact value. At most 20 documents in a run, generated ones included.
+    documents: Option<Vec<TestDocumentInput>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GuideParams {
     /// One section of the guide, by id (see the tool description). Omit for the whole guide.
     topic: Option<String>,
@@ -438,8 +468,8 @@ impl ScannerMcp {
     #[tool(
         description = "How to build rules: every mechanism a rule definition can use, when to use \
                        it, and why, with recipes for each kind of built-in rule. Read it before \
-                       creating or changing rules. Sections: overview, workflow, detection-types, \
-                       patterns, key-names, entropy, checksums, password-shape, placeholders, \
+                       creating or changing rules. Sections: overview, workflow, testing, \
+                       detection-types, patterns, key-names, entropy, checksums, password-shape, placeholders, \
                        models, scoring, parsing, validation, recipes, pitfalls. Omit topic for \
                        the whole guide.",
         annotations(read_only_hint = true)
@@ -790,6 +820,69 @@ impl ScannerMcp {
     ) -> Result<Json<ScanResponse>, ToolError> {
         Ok(Json(
             scans::scan_in_session(&self.state, params.session_id, params.text).await?,
+        ))
+    }
+
+    #[tool(
+        description = "Generate labeled test data for a rule set version, built from each \
+                       enabled pattern rule's own pattern and checked against the rule: a \
+                       positive (with a valid checksum when the rule has one: Luhn, CRC32 in \
+                       base62, base36, or hex, or Base58Check), a broken-checksum copy, a copy \
+                       with a value from the set's placeholder rules inside it, and lookalikes \
+                       (prefix changed, one character short, too little randomness). Likely \
+                       credentials with key names also get assignments in .env, YAML, and JSON \
+                       files, and one more file holds ordinary values that aren't secrets. Each \
+                       case has an id, its rule, what it should get (secret, example, or \
+                       not_secret), its value, and its byte range. skipped says which cases \
+                       couldn't be made and why, which can point at a rule problem. The same \
+                       version and seed always give the same data; every value is made up, and \
+                       nothing is stored. Saves nothing.",
+        annotations(read_only_hint = true)
+    )]
+    async fn generate_test_data(
+        &self,
+        Parameters(params): Parameters<GenerateTestDataParams>,
+    ) -> Result<Json<TestData>, ToolError> {
+        let request = GenerateTestData {
+            seed: params.seed,
+            rule_ids: params.rule_ids,
+        };
+        Ok(Json(
+            testing::test_data(&self.state, params.version_id, request).await?,
+        ))
+    }
+
+    #[tool(
+        description = "Test a scan session's rule set version against labeled documents and \
+                       report expected versus actual. Pass generated to scan the version's \
+                       generated test data (see generate_test_data) without sending its text, \
+                       documents to scan realistic files of your own with each case labeled by \
+                       its exact value, or both. Each document is saved as a scan in the \
+                       session, like run_scan: the text is never stored or logged, and the \
+                       session's suppressions apply. Each case comes back as caught, \
+                       caught_as_example, missed, flagged_as_example, scored_as_real, \
+                       not_reported, ignored, or false_alarm, with every overlapping finding's \
+                       rule, confidence, placeholderScore, checksumValid, and valueClass. \
+                       Findings on no case are listed as unlabeled. diagnostics name rule \
+                       problems the run showed: key names reaching parsed pairs \
+                       (parsed_pair_only), a pattern with no value group (no_value_group), \
+                       examples an overlapping rule scored as real (example_scored_as_real), \
+                       false alarms a value classifier only lowered to 30 \
+                       (classifier_only_lowered), a model hash that isn't loaded \
+                       (model_unavailable), a prefix the pattern doesn't require \
+                       (prefix_not_enforced), and suppressed or truncated scans.",
+        annotations(destructive_hint = false)
+    )]
+    async fn run_test_suite(
+        &self,
+        Parameters(params): Parameters<RunTestSuiteParams>,
+    ) -> Result<Json<TestRunReport>, ToolError> {
+        let request = RunTestSuite {
+            generated: params.generated,
+            documents: params.documents,
+        };
+        Ok(Json(
+            testing::run_test_suite(&self.state, params.session_id, request).await?,
         ))
     }
 

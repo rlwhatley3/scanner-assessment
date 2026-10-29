@@ -1,90 +1,84 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  createSession,
-  getRuleSet,
-  listRuleSets,
-  type RuleSetVersionDetail,
-  versionLabel,
-} from "../api.ts";
+import { getRuleSet, listRuleSets, type RuleSetVersionDetail, versionLabel } from "../api.ts";
+import { HelpLink } from "../guide/GuideView.tsx";
 import { useActiveSession } from "../session.tsx";
 import { useLoad } from "../useLoad.ts";
 
 interface SessionBarProps {
   visible: boolean;
   version: RuleSetVersionDetail | null;
-  /** True while a scan is running, so the session cannot change under it. */
+  /** True while a scan is running, so the rule set cannot change under it. */
   locked: boolean;
-  onLeave: () => void;
-  /** Suppressions that apply to the next scan; null until loaded. */
+  /** Closes the session so the next scan can use another rule set; the text stays. */
+  onChangeRuleSet: () => void;
+  /** Values marked safe that apply to the next scan; null until loaded. */
   activeSuppressions: number | null;
   showSuppressions: boolean;
   onToggleSuppressions: () => void;
 }
 
-/** Shows the active scan session, or lets the user start one on a rule set's version. */
+/** What the next scan checks with: the open session's version, or a version to start one on. */
 export default function SessionBar({
   visible,
   version,
   locked,
-  onLeave,
+  onChangeRuleSet,
   activeSuppressions,
   showSuppressions,
   onToggleSuppressions,
 }: SessionBarProps) {
-  const { session, setSession } = useActiveSession();
+  const { session, versionChoice, setVersionChoice } = useActiveSession();
   const ruleSets = useLoad(() => listRuleSets(), [visible, session === null]);
+  // Only sets with a version that isn't archived can start a session.
+  const sets = (ruleSets.data ?? []).filter((candidate) => candidate.latestVersionId !== null);
   const [ruleSetId, setRuleSetId] = useState<number | null>(null);
   const ruleSet = useLoad(
     () => (ruleSetId === null ? Promise.resolve(null) : getRuleSet(ruleSetId)),
     [ruleSetId, visible],
   );
-  const [choice, setChoice] = useState<number | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Only sets with a version that isn't archived can start a session.
-  const sets = (ruleSets.data ?? []).filter((candidate) => candidate.latestVersionId !== null);
   const versions = (ruleSet.data?.id === ruleSetId ? ruleSet.data.versions : []).filter(
     (candidate) => !candidate.archived,
   );
 
-  // Default to the first set, then to its newest version.
+  // Follow the chosen version's set (e.g. after "Scan with this version"), else the first set.
   useEffect(() => {
-    if (!sets.some((candidate) => candidate.id === ruleSetId)) setRuleSetId(sets[0]?.id ?? null);
-  }, [sets, ruleSetId]);
+    if (session || ruleSets.data === null) return;
+    const chosen = version && version.id === versionChoice ? version.ruleSetId : null;
+    const wanted = chosen ?? (sets.some((set) => set.id === ruleSetId) ? ruleSetId : null);
+    setRuleSetId(wanted ?? sets[0]?.id ?? null);
+  }, [session, ruleSets.data, sets, version, versionChoice, ruleSetId]);
+  // Default to the set's newest version. A choice from another set is kept while its version
+  // loads, since the effect above then switches to that set.
   useEffect(() => {
-    if (!versions.some((candidate) => candidate.id === choice)) {
-      setChoice(versions.at(-1)?.id ?? null);
-    }
-  }, [versions, choice]);
+    if (session || ruleSet.data?.id !== ruleSetId) return;
+    if (versions.some((candidate) => candidate.id === versionChoice)) return;
+    const otherSet =
+      versionChoice !== null && (version?.id !== versionChoice || version.ruleSetId !== ruleSetId);
+    if (!otherSet) setVersionChoice(versions.at(-1)?.id ?? null);
+  }, [session, ruleSet.data, ruleSetId, versions, versionChoice, version, setVersionChoice]);
 
-  async function start() {
-    if (choice === null) return;
-    setStarting(true);
-    setError(null);
-    try {
-      setSession(await createSession(choice));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not start the session.");
-    } finally {
-      setStarting(false);
-    }
-  }
+  const enabled = version?.rules.filter((rule) => rule.definition.enabled !== false).length;
+  const ruleCount = enabled !== undefined && (
+    <span className="muted">
+      {enabled} {enabled === 1 ? "rule" : "rules"} enabled
+    </span>
+  );
 
   if (session) {
-    const enabled = version?.rules.filter((rule) => rule.definition.enabled !== false).length;
     return (
       <div className="session-bar panel">
-        <span>
-          <b>Scan session {session.id}</b> ·{" "}
-          <Link
-            to={`/playground/rule-sets/${session.ruleSetId}/versions/${session.ruleSetVersionId}`}
-          >
-            {versionLabel({ ruleSetName: session.ruleSetName, number: session.versionNumber })}
-          </Link>
-          {enabled !== undefined && ` · ${enabled} ${enabled === 1 ? "rule" : "rules"} enabled`}
-          {" · "}
+        <span className="session-bar-summary">
+          <span>
+            Checking with{" "}
+            <Link
+              to={`/playground/rule-sets/${session.ruleSetId}/versions/${session.ruleSetVersionId}`}
+            >
+              {versionLabel({ ruleSetName: session.ruleSetName, number: session.versionNumber })}
+            </Link>
+          </span>
+          {ruleCount}
+          <span className="muted">Session {session.id}</span>
           <button
             type="button"
             className="link-button"
@@ -92,86 +86,84 @@ export default function SessionBar({
             onClick={onToggleSuppressions}
           >
             {activeSuppressions === null
-              ? "Suppressions"
-              : `${activeSuppressions} active ${
-                  activeSuppressions === 1 ? "suppression" : "suppressions"
-                }`}
+              ? "Values marked safe"
+              : `${activeSuppressions} ${activeSuppressions === 1 ? "value" : "values"} marked safe`}
           </button>
         </span>
-        <button type="button" className="button" onClick={onLeave} disabled={locked}>
-          Close session
-        </button>
+        <span className="session-bar-summary">
+          <button type="button" className="button" onClick={onChangeRuleSet} disabled={locked}>
+            Change rule set
+          </button>
+          <HelpLink section="scan" label="How scanning works" />
+        </span>
       </div>
     );
   }
 
+  if (ruleSets.error) {
+    return (
+      <p className="banner error" role="alert">
+        {ruleSets.error}{" "}
+        <button type="button" className="link-button" onClick={ruleSets.reload}>
+          Retry
+        </button>
+      </p>
+    );
+  }
+
+  if (sets.length === 0 && !ruleSets.loading) {
+    return (
+      <p className="banner warning" role="status">
+        No rule set has a version to scan with yet. Write some{" "}
+        <Link to="/playground/rules">rules</Link>, then save them as a version in{" "}
+        <Link to="/playground/rule-sets">Rule sets</Link>.
+      </p>
+    );
+  }
+
   return (
-    <section className="panel playground-empty">
-      <h2>Start a scan session</h2>
-      {ruleSets.error ? (
-        <p className="banner error" role="alert">
-          {ruleSets.error}{" "}
-          <button type="button" className="link-button" onClick={ruleSets.reload}>
-            Retry
-          </button>
-        </p>
-      ) : sets.length === 0 && !ruleSets.loading ? (
-        <p>
-          No rule set has a version to scan with yet. Write some{" "}
-          <Link to="/playground/rules">rules</Link>, then save them as a version of a rule set in{" "}
-          <Link to="/playground/rule-sets">Rule sets</Link>.
-        </p>
-      ) : (
-        <>
-          <p>
-            A session scans with one version of a rule set and keeps every scan's results. You can
-            also <Link to="/playground/sessions">reopen a past session</Link>.
-          </p>
-          <div className="inline-form">
-            <label>
-              Rule set{" "}
-              <select
-                value={ruleSetId ?? ""}
-                onChange={(event) => setRuleSetId(Number(event.target.value))}
-              >
-                {sets.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Version{" "}
-              <select
-                value={choice ?? ""}
-                onChange={(event) => setChoice(Number(event.target.value))}
-              >
-                {[...versions].reverse().map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    v{candidate.number}
-                    {candidate.id === versions.at(-1)?.id ? " (latest)" : ""} ·{" "}
-                    {candidate.ruleCount} {candidate.ruleCount === 1 ? "rule" : "rules"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="button primary"
-              onClick={start}
-              disabled={choice === null || starting}
-            >
-              Start session
-            </button>
-          </div>
-        </>
-      )}
-      {error && (
-        <p className="banner error" role="alert">
-          {error}
-        </p>
-      )}
-    </section>
+    <div className="session-bar panel">
+      <span className="session-bar-summary">
+        <label>
+          Checking with{" "}
+          <select
+            value={ruleSetId ?? ""}
+            disabled={locked}
+            onChange={(event) => {
+              setRuleSetId(Number(event.target.value));
+              setVersionChoice(null);
+            }}
+          >
+            {sets.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="visually-hidden">Version</span>
+          <select
+            value={versionChoice ?? ""}
+            disabled={locked}
+            onChange={(event) => setVersionChoice(Number(event.target.value))}
+          >
+            {[...versions].reverse().map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                v{candidate.number}
+                {candidate.id === versions.at(-1)?.id ? " (latest)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        {ruleCount}
+      </span>
+      <span className="session-bar-summary">
+        <Link className="link-button" to="/playground/sessions">
+          Continue a past session
+        </Link>
+        <HelpLink section="scan" label="How scanning works" />
+      </span>
+    </div>
   );
 }
