@@ -581,11 +581,8 @@ impl Planted {
 
     /// How much of the value's end holds a checksum.
     fn tail(&self, rule: &CompiledRule) -> usize {
-        match rule.checksum {
-            Some(Checksum::Crc32(checksum)) => checksum.length,
-            Some(Checksum::Luhn) => 1,
-            _ => 0,
-        }
+        rule.checksum
+            .map_or(0, |checksum| checksum.tail(self.value()))
     }
 }
 

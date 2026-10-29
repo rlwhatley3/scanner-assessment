@@ -143,8 +143,28 @@ export interface PasswordShape {
   minScore: number;
 }
 
+/** A Microsoft identifiable key: base64 whose last 4 bytes are a Marvin32 hash of the rest. */
+export interface Marvin32Checksum {
+  algorithm: "marvin32";
+  /** The key kind's 8-character seed name, such as `Default0` for Azure Storage. */
+  seed: string;
+}
+
 /** How a token format's built-in check works, so the engine can test each match offline. */
-export type Checksum = Crc32Checksum | { algorithm: "luhn" } | { algorithm: "base58check" };
+export type Checksum =
+  | Crc32Checksum
+  | Marvin32Checksum
+  | {
+      algorithm:
+        | "luhn"
+        | "base58check"
+        | "bech32"
+        | "bech32m"
+        | "bip39"
+        | "verhoeff"
+        | "mod11"
+        | "mod97";
+    };
 
 /** Unset fields may be missing or null (the built-in rules are seeded with explicit nulls). */
 export interface RuleDefinition {

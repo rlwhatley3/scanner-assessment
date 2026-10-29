@@ -5,6 +5,7 @@ import {
   CRC32_MIN_LENGTH,
   CRC32_PRESETS,
   ENCODING_LABELS,
+  MARVIN32_PRESETS,
 } from "../checksum.ts";
 
 /** The checksum part of the rule form, as the inputs hold it. */
@@ -13,6 +14,7 @@ export interface ChecksumForm {
   encoding: ChecksumEncoding;
   prefixLength: string;
   length: string;
+  seed: string;
 }
 
 const GITHUB_SETUP = CRC32_PRESETS[0].setup;
@@ -24,6 +26,7 @@ export function checksumFormFrom(checksum: Checksum | null | undefined): Checksu
     encoding: crc32.encoding,
     prefixLength: String(crc32.prefixLength),
     length: String(crc32.length),
+    seed: checksum?.algorithm === "marvin32" ? checksum.seed : MARVIN32_PRESETS[0].seed,
   };
 }
 
@@ -39,6 +42,8 @@ export function checksumFrom(form: ChecksumForm): Checksum | undefined {
         prefixLength: Number(form.prefixLength),
         length: Number(form.length),
       };
+    case "marvin32":
+      return { algorithm: "marvin32", seed: form.seed };
     default:
       return { algorithm: form.algorithm };
   }
@@ -152,6 +157,42 @@ export default function ChecksumFields({ value, onChange, errors }: ChecksumFiel
                 Characters at the end that hold it: {CRC32_MIN_LENGTH[value.encoding]}–
                 {CRC32_MAX_LENGTH} for this digit style.
               </span>
+            </label>
+          </div>
+        </>
+      )}
+
+      {value.algorithm === "marvin32" && (
+        <>
+          <p className="field-hint">
+            Each kind of Azure key is checked with its own seed. Pick the service this rule's keys
+            come from.
+          </p>
+          <div className="field-row">
+            <label className="field">
+              <span className="field-label">Key kind</span>
+              <select
+                value={MARVIN32_PRESETS.some(({ seed }) => seed === value.seed) ? value.seed : ""}
+                onChange={(event) => {
+                  if (event.target.value) set({ seed: event.target.value });
+                }}
+              >
+                <option value="">Custom</option>
+                {MARVIN32_PRESETS.map((option) => (
+                  <option key={option.seed} value={option.seed}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Seed</span>
+              <input
+                value={value.seed}
+                maxLength={8}
+                onChange={(event) => set({ seed: event.target.value })}
+              />
+              <span className="field-hint">Exactly 8 characters, e.g. Default0.</span>
             </label>
           </div>
         </>

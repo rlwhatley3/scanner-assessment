@@ -227,10 +227,17 @@ fn a_checksum_too_short_or_too_long_for_its_value_is_out_of_range() {
 }
 
 #[test]
-fn luhn_and_base58check_setups_need_no_other_fields() {
+fn setups_without_options_need_no_other_fields() {
     for checksum in [
         r#"{"algorithm": "luhn"}"#,
         r#"{"algorithm": "base58check"}"#,
+        r#"{"algorithm": "bech32"}"#,
+        r#"{"algorithm": "bech32m"}"#,
+        r#"{"algorithm": "bip39"}"#,
+        r#"{"algorithm": "verhoeff"}"#,
+        r#"{"algorithm": "mod11"}"#,
+        r#"{"algorithm": "mod97"}"#,
+        r#"{"algorithm": "marvin32", "seed": "Default0"}"#,
     ] {
         let json =
             format!(r#"{{"rules": [{{"id": 1, "definition": {{"checksum": {checksum}}}}}]}}"#);

@@ -197,6 +197,13 @@ A rule picks a checksum `algorithm` in its `checksum` field:
 | `crc32` | `encoding`, `prefixLength`, `length` (below) | Tokens that end in a CRC32 of the rest: GitHub, npm, GitLab, and in-house formats |
 | `luhn` | none | The mod-10 check digit on payment card numbers. Whitespace (including a line break) and dashes between digit groups are ignored |
 | `base58check` | none | Base58 with a 4-byte double-SHA-256 checksum, as in Bitcoin private keys (WIF) |
+| `bech32` | none | `hrp` + `1` + data + a 6-character checksum (BIP-173), as in age secret keys and Nostr private keys. All upper or all lower case |
+| `bech32m` | none | Bech32 with the BIP-350 constant, as in Taproot addresses |
+| `bip39` | none | 12, 15, 18, 21, or 24 words from the BIP-39 English list, the last carrying a SHA-256 checksum of the rest |
+| `marvin32` | `seed` (8 ASCII characters, such as `Default0`) | Microsoft identifiable keys: base64 whose last 4 bytes are the Marvin32 of the rest, seeded per key kind |
+| `verhoeff` | none | The Verhoeff check digit, as in Aadhaar numbers. Whitespace and dashes are ignored |
+| `mod11` | none | A check digit with weights 1, 2, 3, ... from the right and `X` for 10, as in ISBN-10 and UK NHS numbers. Whitespace and dashes are ignored |
+| `mod97` | none | ISO 7064 MOD 97-10 as in IBANs: the first four characters move to the end, letters count as 10 to 35, and the result is 1 mod 97. Whitespace is ignored |
 
 A `crc32` token is read as `prefix + covered part + checksum`:
 
@@ -219,6 +226,8 @@ A `crc32` token is read as `prefix + covered part + checksum`:
 | GitLab personal access token (routable `glpat-`) | `crc32`, `base36`, prefix 0 (the CRC covers the whole token before it), length 7 | [GitLab's routable tokens design](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/cells/routable_tokens/) |
 | Payment card number | `luhn` | ISO/IEC 7812 |
 | Bitcoin private key (WIF) | `base58check` | [Bitcoin wiki: Wallet Import Format](https://en.bitcoin.it/wiki/Wallet_import_format) |
+
+The algorithms without a built-in rule are checked against their published test vectors: BIP-173 and BIP-350 for Bech32 and Bech32m, the BIP-39 reference phrases, and Microsoft's [security-utilities](https://github.com/microsoft/security-utilities) Marvin32 vectors; the BIP-39 word list is the official English list (SHA-256 `2f5eed53…dbda`).
 
 **Custom setups:** a rule for an in-house token format describes its own, e.g. `acme_` followed by the covered part and an 8-digit hex CRC32 is `{ "algorithm": "crc32", "encoding": "hex", "prefixLength": 5, "length": 8 }`. A length too short to hold the full value, or longer than 16, is a rule error on the `checksum` field.
 
@@ -304,7 +313,7 @@ let result = scan_with_options(scan_id, text, &rule_set, options)?;
 
 `generate_test_data(rule_set, rule_ids, seed)` builds labeled test data for the enabled pattern rules: for each rule, a positive that the rule finds (with a valid checksum when it has one), a copy with a broken checksum, a copy with a value from the set's placeholder rules inside it, and lookalikes it shouldn't find (prefix changed, one character short, too little randomness). Likely-credential rules with key names also get assignments in `.env`, YAML, and JSON files, plus the same value under a neutral name. A last file holds ordinary values that aren't secrets. Each case has an id, its rule, its kind, what it should get (`secret`, `example`, or `not_secret`), and its byte range.
 
-- **From the rule's own pattern:** generation walks the pattern's syntax tree (`regex-syntax`) and writes a random match, preferring letters and digits so values look like tokens, short runs of spacing, the rule's prefix at the start, and key names in the `key` group. A checksum is then computed into the value (`Checksum::repair`: CRC32 in any encoding, Luhn, Base58Check).
+- **From the rule's own pattern:** generation walks the pattern's syntax tree (`regex-syntax`) and writes a random match, preferring letters and digits so values look like tokens, short runs of spacing, the rule's prefix at the start, and key names in the `key` group. A checksum is then computed into the value (`Checksum::repair`, for every algorithm; BIP-39 also swaps any word not in its list for one that is).
 - **Checked, not assumed:** every case is checked against the compiled rule the way a scan finds values, pattern matches and parsed pairs alike, and kept only if the rule finds a positive and doesn't find a lookalike. Cases are then laid out into documents and checked again in place, so a multi-line match can't run from one case into the next. A case that can't be made is listed in `skipped` with the reason, which can point at a rule problem, such as a pattern that doesn't require its declared prefix.
 - **Deterministic:** a small seeded generator (SplitMix64) with one stream per rule, so the same rule set and seed always give the same data, and adding a rule doesn't change the others' data. That is why the API never stores generated text: a test run regenerates it.
 
