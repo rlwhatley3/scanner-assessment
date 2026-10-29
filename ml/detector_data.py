@@ -986,6 +986,39 @@ def decoy_block(r: random.Random, w: Writer, fmt: str) -> None:
         w.line(*bare_digest(r))
 
 
+def lookalike(r: random.Random) -> list[Piece]:
+    """Text the detector flagged wrongly in real code: pieces of long encoded blobs, assembly
+    public key tokens, lockfile checksums, password hashes, SQL column lists, format strings and
+    regular expressions, percent-encoded paths, and IDs from documentation."""
+    q = r.choice(['"', "'"])
+    return r.choice([
+        lambda: [f"{r.choice(['cert', 'der', 'blob', 'payload', 'fixture', 'data', 'ca_bundle', 'proto'])} = {q}",
+                 Val(r.choice(["LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t", "MII", "eyJ", "AAAA", "UEsDB", "H4sI", ""]) + b64(r, r.randint(150, 1500)), "inline_blob", False), q],
+        lambda: [f"    {q}", Val(b64(r, r.randint(48, 400)), "inline_blob", False), f"{q} +"],
+        lambda: [f"{r.choice(['System.Web', 'Microsoft.Build', 'Newtonsoft.Json', 'log4net'])}, Version={r.randint(1, 13)}.0.0.0, Culture=neutral, PublicKeyToken=",
+                 Val(pick(r, HEX, 16), "public_key_token", False)],
+        lambda: [f"  {ident(r, 'pascal')}: ", Val(pick(r, HEX, 40), "lockfile_checksum", False)],
+        lambda: [f"  integrity {r.choice(['sha1', 'sha512'])}-", Val(b64(r, r.choice([20, 64])), "sri", False)],
+        lambda: [f"{r.choice(['password', 'hashed_password', 'pw_hash', 'digest'])}: {q}", Val(r.choice([
+            lambda: f"pbkdf2_sha256${r.choice([36000, 260000, 600000])}${pick(r, ALNUM, 12)}${b64(r, 32)}",
+            lambda: f"$2{r.choice('aby')}${r.randint(10, 13)}${pick(r, ALNUM + './', 53)}",
+            lambda: f"$6${pick(r, ALNUM + './', 16)}${pick(r, ALNUM + './', 86)}",
+            lambda: f"$argon2id$v=19$m=65536,t=3,p=4${b64(r, 16, pad=False)}${b64(r, 32, pad=False)}",
+            lambda: f"{{SSHA}}{b64(r, 24)}",
+        ])(), "password_hash", False), q],
+        lambda: [f"INSERT INTO `{ident(r)}`(" + ",".join(f"`{ident(r)}`" for _ in range(r.randint(4, 9))) + ") VALUES (" + ",".join("?" * 3) + ");"],
+        lambda: [f"const char *{ident(r)} = {q}", Val(r.choice([
+            lambda: "$" + ident(r) + "$" + "*".join(r.choice(["%d", "%u", "%08x", "%s", "%02x"]) for _ in range(r.randint(6, 14))),
+            lambda: "^" + "".join(r.choice(["[a-zA-Z0-9]", "\\d+", "(?:", ")", "|", "[!$&'()*+,;=]", "\\.", "{2,}", "[^/]+", "?"]) for _ in range(r.randint(6, 16))) + "$",
+        ])(), "format_string", False), f"{q};"],
+        lambda: ["See ", Val(f"https://{r.choice(['github.com/acme/app/wiki', 'zh.wikipedia.org/wiki', 'docs.example.cn'])}/" + "".join(f"%{pick(r, 'ABCDEF89', 1)}{pick(r, HEX.upper(), 1)}" for _ in range(r.randint(9, 30))), "url", False)],
+        lambda: [f"{q}arn:aws:{r.choice(['kms', 'ds', 'iam', 'secretsmanager'])}:us-east-2:{r.choice(['111122223333', '123456789012', '444455556666'])}:{r.choice(['key', 'directory', 'role', 'secret'])}/",
+                 Val(r.choice([lambda: rand_uuid(r), lambda: pick(r, ALNUM, 23), lambda: f"{ident(r, 'kebab')}-{pick(r, ALNUM, 6)}"])(), "doc_example_id", False), q],
+        lambda: [f'"{r.choice(["policyStoreId", "selector", "etag", "ResourceId", "versionId", "requestToken", "nextToken"])}": "',
+                 Val(pick(r, ALNUM + "_-", r.randint(20, 48)), "api_identifier", False), '"'],
+    ])()
+
+
 def bare_digest(r: random.Random) -> list[Piece]:
     """A digest or hash with little around it to say what it is."""
     return r.choice([
@@ -1061,8 +1094,10 @@ def body(r: random.Random, w: Writer, fmt: str, secret_rate: float, n_lines: int
                 assignment(r, w, fmt if fmt not in ("html",) else "js", words, value, indent)
         elif roll < secret_rate + 0.3:
             sub = r.random()
-            if sub < 0.2:
+            if sub < 0.12:
                 decoy_block(r, w, fmt)
+            elif sub < 0.2:
+                w.line(indent, *lookalike(r))
             elif sub < 0.28 and fmt in CODE_LANGS:
                 w.line(*call_decoy(r, lang))
             elif sub < 0.38 and fmt in CODE_LANGS:

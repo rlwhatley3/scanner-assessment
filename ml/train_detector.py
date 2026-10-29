@@ -294,7 +294,7 @@ def main() -> None:
         return
 
     test_docs = generate(TEST_DOCS, seed=SEED + 1)
-    real_test = creddata.load(args.creddata, "eval") if args.creddata else []
+    real_test = creddata.load(args.creddata, "test") if args.creddata else []
     if args.evaluate:
         torch.set_num_threads(EVAL_THREADS)
         load_onnx_weights(model, args.evaluate)

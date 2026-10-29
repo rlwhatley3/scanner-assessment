@@ -43,7 +43,7 @@ pub const SECRET_DETECTOR_ONNX: &[u8] = include_bytes!("../models/secret-detecto
 
 /// The SHA-256 of [`SECRET_DETECTOR_ONNX`], which is how a rule names it.
 pub const SECRET_DETECTOR_SHA256: &str =
-    "ac129904f3b08a6fe2c080adcab9c190c7c300cfe24c5473cbad654acdb13561";
+    "c81090bf1ce44926b0bb1d7c675ec95c7cde3e042674a108dd30f7d6764f0292";
 
 /// A model detection rule that runs the secret detector. Like the value classifier's rule, it is
 /// kept out of the built-in rule set; callers that load the detector add it themselves.

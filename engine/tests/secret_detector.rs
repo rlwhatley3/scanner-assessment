@@ -603,13 +603,10 @@ fn the_model_loads_under_the_hash_its_rule_names() {
 #[test]
 fn batch_1() {
     let (missed, wrong) = run("batch 1", BATCH_1_WITH_SECRETS, BATCH_1_WITHOUT_SECRETS);
-    // An EC key indented inside a YAML block scalar, and a three-word password in an email.
+    // A hex key with a `-us6` suffix after `anystring:`, and a three-word password in an email.
     assert_eq!(
         missed,
-        [
-            "indented private key in a YAML block",
-            "temporary password in an email"
-        ]
+        ["mailchimp key in curl", "temporary password in an email"]
     );
     assert!(wrong.is_empty(), "{wrong:?}");
 }
@@ -617,16 +614,16 @@ fn batch_1() {
 #[test]
 fn batch_2() {
     let (missed, wrong) = run("batch 2", BATCH_2_WITH_SECRETS, BATCH_2_WITHOUT_SECRETS);
-    assert!(missed.is_empty(), "{missed:?}");
-    // Flags a `0x` transaction hash.
-    assert_eq!(wrong, ["transaction hash in a log"]);
+    // A 17-character `hex:hex` credential under a name that doesn't sound secret.
+    assert_eq!(missed, ["gem server credentials"]);
+    assert!(wrong.is_empty(), "{wrong:?}");
 }
 
 #[test]
 fn batch_3_held_out() {
     let (missed, wrong) = run("batch 3", BATCH_3_WITH_SECRETS, BATCH_3_WITHOUT_SECRETS);
-    // Passwords with punctuation in a Markdown table and in a connection URL in a crontab.
-    assert_eq!(missed, ["markdown table of logins", "crontab backup job"]);
+    // A password with punctuation in a connection URL in a crontab.
+    assert_eq!(missed, ["crontab backup job"]);
     assert!(wrong.is_empty(), "{wrong:?}");
 }
 

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" font-family="sans-serif" font-size="12">
+<rect width="640" height="360" fill="white"/>
+<line x1="56" x2="490" y1="312.0" y2="312.0" stroke="#e5e5e5"/><text x="48" y="316.0" text-anchor="end" fill="#555">0.0</text>
+<line x1="56" x2="490" y1="254.4" y2="254.4" stroke="#e5e5e5"/><text x="48" y="258.4" text-anchor="end" fill="#555">0.2</text>
+<line x1="56" x2="490" y1="196.8" y2="196.8" stroke="#e5e5e5"/><text x="48" y="200.8" text-anchor="end" fill="#555">0.4</text>
+<line x1="56" x2="490" y1="139.2" y2="139.2" stroke="#e5e5e5"/><text x="48" y="143.2" text-anchor="end" fill="#555">0.6</text>
+<line x1="56" x2="490" y1="81.6" y2="81.6" stroke="#e5e5e5"/><text x="48" y="85.6" text-anchor="end" fill="#555">0.8</text>
+<line x1="56" x2="490" y1="24.0" y2="24.0" stroke="#e5e5e5"/><text x="48" y="28.0" text-anchor="end" fill="#555">1.0</text>
+<text x="56.0" y="330" text-anchor="middle" fill="#555">30</text>
+<text x="128.3" y="330" text-anchor="middle" fill="#555">40</text>
+<text x="200.7" y="330" text-anchor="middle" fill="#555">50</text>
+<text x="273.0" y="330" text-anchor="middle" fill="#555">60</text>
+<text x="345.3" y="330" text-anchor="middle" fill="#555">70</text>
+<text x="417.7" y="330" text-anchor="middle" fill="#555">80</text>
+<text x="490.0" y="330" text-anchor="middle" fill="#555">90</text>
+<line x1="200.7" x2="200.7" y1="24" y2="312" stroke="#999" stroke-dasharray="3 3"/><text x="204.7" y="36" fill="#555">chosen: 50</text>
+<text x="273.0" y="352" text-anchor="middle" fill="#333">threshold</text>
+<polyline fill="none" stroke="#1f6fd1" stroke-width="2"  points="56.0,175.2 92.2,155.6 128.3,135.5 164.5,123.1 200.7,109.8 236.8,104.6 273.0,99.5 309.2,89.1 345.3,86.8 381.5,78.4 417.7,79.6 453.8,79.3 490.0,74.1"/>
+<polyline fill="none" stroke="#d9730d" stroke-width="2"  points="56.0,91.7 92.2,95.4 128.3,100.3 164.5,107.5 200.7,112.1 236.8,117.6 273.0,124.5 309.2,131.7 345.3,139.8 381.5,151.9 417.7,164.5 453.8,183.0 490.0,213.2"/>
+<polyline fill="none" stroke="#1f6fd1" stroke-width="2" stroke-dasharray="6 4" points="56.0,223.6 92.2,205.2 128.3,189.6 164.5,177.2 200.7,161.4 236.8,147.6 273.0,131.1 309.2,120.2 345.3,107.2 381.5,99.5 417.7,93.4 453.8,80.7 490.0,67.2"/>
+<polyline fill="none" stroke="#d9730d" stroke-width="2" stroke-dasharray="6 4" points="56.0,94.6 92.2,98.0 128.3,103.8 164.5,108.4 200.7,112.4 236.8,116.7 273.0,120.5 309.2,125.4 345.3,131.1 381.5,141.8 417.7,152.7 453.8,170.0 490.0,199.1"/>
+<line x1="502" x2="526" y1="44" y2="44" stroke="#1f6fd1" stroke-width="2" /><text x="532" y="48" fill="#333">precision, validation</text>
+<line x1="502" x2="526" y1="64" y2="64" stroke="#d9730d" stroke-width="2" /><text x="532" y="68" fill="#333">recall, validation</text>
+<line x1="502" x2="526" y1="84" y2="84" stroke="#1f6fd1" stroke-width="2" stroke-dasharray="6 4"/><text x="532" y="88" fill="#333">precision, test</text>
+<line x1="502" x2="526" y1="104" y2="104" stroke="#d9730d" stroke-width="2" stroke-dasharray="6 4"/><text x="532" y="108" fill="#333">recall, test</text>
+</svg>

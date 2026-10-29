@@ -32,6 +32,8 @@ from detector_data import Doc
 # Files larger than the engine accepts in one scan are cut down to the text around their labels.
 MAX_SCAN_BYTES = 1_000_000
 AROUND_LABELS = 8_192
+# The most training pieces one repository contributes.
+REPO_CAP = 500
 
 
 @dataclass
@@ -44,9 +46,19 @@ class Row:
     category: str
 
 
+def split_of(repo_id: str) -> str:
+    """Which split a repository belongs to, chosen by a hash of its id: one in five is held out
+    as the test set, and one in eight of the rest is a validation set for choosing settings such
+    as the threshold. The rest is training data."""
+    digest = int(hashlib.sha256(repo_id.encode()).hexdigest(), 16)
+    if digest % 5 == 0:
+        return "test"
+    return "validation" if (digest // 5) % 8 == 0 else "train"
+
+
 def is_eval_repo(repo_id: str) -> bool:
-    """One repository in five is held out for evaluation, chosen by a hash of its id."""
-    return int(hashlib.sha256(repo_id.encode()).hexdigest(), 16) % 5 == 0
+    """Whether a repository is in the held-out test set."""
+    return split_of(repo_id) == "test"
 
 
 def load_meta(root: Path) -> dict[str, list[Row]]:
@@ -147,32 +159,47 @@ def scan_sized(doc: Doc) -> list[Doc]:
 
 
 def load(root: Path, split: str) -> list[Doc]:
-    """The files of the training or evaluation repositories, cut to what a scan would read."""
+    """The files of the `train`, `validation` or `test` repositories, cut to what a scan would
+    read."""
     docs = []
     for path, rows in sorted(load_meta(root).items()):
-        repo = Path(path).parts[1]
-        if is_eval_repo(repo) == (split == "eval"):
+        if split_of(Path(path).parts[1]) == split:
             docs.extend(scan_sized(load_file(root, path, rows)))
     return docs
 
 
 def training_pieces(docs: list[Doc], seed: int, size: int = 768) -> list[Doc]:
-    """Short pieces of the training files for `train_detector.crops` to take windows from: one
-    around every `T` and `X` row and two in five `F` rows (there are three times as many `F`
-    rows as `T`), placed at random, and one random piece for every four files so the model also
-    sees unlabeled code."""
+    """Short pieces of the training files for `train_detector.crops` to take windows from, each
+    around a labeled line at a random offset:
+
+    - one around every `T`, `F` and `X` line, and two more around each password of 8 bytes or
+      more (passwords are the hardest kind; shorter ones are below the engine's minimum finding);
+    - one random piece for every four files, so the model also sees unlabeled code;
+    - at most `REPO_CAP` pieces per repository, keeping credentials first, then `X` and `F`
+      lines, then random pieces, so no repository dominates.
+    """
     r = random.Random(seed)
-    pieces = []
+    by_repo: dict[str, dict[str, list[Doc]]] = {}
     for doc in docs:
-        for s, e, kind in doc.secrets + doc.decoys:
-            if kind.startswith("F:") and r.random() >= 0.4:
-                continue
-            room = max(size - (e - s), 0)
-            start = max(min(s - r.randint(0, room), len(doc.text) - size), 0)
-            pieces.append(cut(doc, start, min(start + max(size, e - s), len(doc.text))))
+        groups = by_repo.setdefault(doc.source, {"T": [], "X": [], "F": [], "random": []})
+        spans = [(s, e, k, "T") for s, e, k in doc.secrets] + [(s, e, k, k[0]) for s, e, k in doc.decoys]
+        for s, e, kind, label in spans:
+            copies = 3 if label == "T" and "Password" in kind and e - s >= 8 else 1
+            for _ in range(copies):
+                room = max(size - (e - s), 0)
+                start = max(min(s - r.randint(0, room), len(doc.text) - size), 0)
+                groups[label].append(cut(doc, start, min(start + max(size, e - s), len(doc.text))))
         if r.random() < 0.25 and len(doc.text) > 0:
             start = r.randint(0, max(len(doc.text) - size, 0))
-            pieces.append(cut(doc, start, start + size))
+            groups["random"].append(cut(doc, start, start + size))
+    pieces = []
+    for repo in sorted(by_repo):
+        groups = by_repo[repo]
+        for group in groups.values():
+            r.shuffle(group)
+        half = REPO_CAP // 2
+        ordered = groups["T"][:half] + groups["X"] + groups["F"] + groups["T"][half:] + groups["random"]
+        pieces.extend(ordered[:REPO_CAP])
     return pieces
 
 
