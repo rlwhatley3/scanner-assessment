@@ -150,6 +150,8 @@ pub struct ScanSummary {
     pub suppressed_count: i64,
     /// Rules that matched so much of the text that they slowed the scan.
     pub slow_rules: Vec<SlowRule>,
+    /// What each rule that ran cost the scan. Empty for a scan that didn't finish.
+    pub rule_timings: Vec<RuleTimingRecord>,
     pub created_at: String,
 }
 
@@ -743,6 +745,7 @@ pub fn get_session(connection: &Connection, session_id: i64) -> StoreResult<Scan
                 suppressed_count: row.get(5)?,
                 status: row.get(6)?,
                 slow_rules: slow_rules(&timings, row.get(8)?),
+                rule_timings: timings,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;

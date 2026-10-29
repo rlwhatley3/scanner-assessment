@@ -462,6 +462,7 @@ async fn a_rule_matching_almost_everything_is_named_with_the_scan_and_kept_with_
     let (_, session) = get(&app, "/api/scan-sessions/1".to_owned()).await;
     assert_eq!(session["scans"][0]["slowRules"], json!([]));
     assert_eq!(session["scans"][1]["slowRules"], scanned["slowRules"]);
+    assert_eq!(session["scans"][1]["ruleTimings"], scanned["ruleTimings"]);
     let text_bytes = count(&db, "SELECT text_bytes FROM scans ORDER BY id DESC LIMIT 1").await;
     assert_eq!(text_bytes, i64::try_from(text.len()).unwrap());
 }
