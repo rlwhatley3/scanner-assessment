@@ -371,18 +371,21 @@ pub fn scan_with_options(
     candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.rule.id));
     // A value found both by a rule's pattern and by parsing is one finding.
     candidates.dedup_by(|a, b| (a.rule.id, a.start, a.end) == (b.rule.id, b.start, b.end));
-    // Shape-only rules are a fallback, so they don't repeat a value another rule reported.
-    let reported: Vec<(usize, usize)> = candidates
-        .iter()
-        .filter(|candidate| !candidate.rule.is_shape_fallback())
-        .map(|candidate| (candidate.start, candidate.end))
-        .collect();
-    candidates.retain(|candidate| {
-        !candidate.rule.is_shape_fallback()
-            || !reported
-                .iter()
-                .any(|&(start, end)| start < candidate.end && candidate.start < end)
-    });
+    // Shape-only rules and detection models are fallbacks, so they don't repeat a value a rule
+    // ranked ahead of them reported.
+    for rank in [1, 2] {
+        let reported: Vec<(usize, usize)> = candidates
+            .iter()
+            .filter(|candidate| candidate.rule.fallback_rank() < rank)
+            .map(|candidate| (candidate.start, candidate.end))
+            .collect();
+        candidates.retain(|candidate| {
+            candidate.rule.fallback_rank() != rank
+                || !reported
+                    .iter()
+                    .any(|&(start, end)| start < candidate.end && candidate.start < end)
+        });
+    }
     for candidate in &mut candidates {
         candidate.placeholder_hit = placeholder_ranges
             .iter()
