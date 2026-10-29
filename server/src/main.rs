@@ -1,4 +1,4 @@
-use secrets_scanner_api::{ApiDoc, db, fingerprint_key, routes, seed};
+use secrets_scanner_api::{ApiDoc, db, fingerprint_key, routes, seed, store};
 use std::net::{IpAddr, SocketAddr};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -16,6 +16,14 @@ async fn main() {
     seed::seed_default_rule_set(&db)
         .await
         .expect("failed to seed the built-in rule set");
+    // No scan runs before the server starts, so any still running was cut off when it stopped.
+    let interrupted = db
+        .call(|connection| store::interrupt_running_scans(connection, None))
+        .await
+        .expect("failed to mark interrupted scans");
+    if interrupted > 0 {
+        println!("Marked {interrupted} scans left running by the last server as interrupted");
+    }
 
     let app = routes::router(db, fingerprint_key)
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))
