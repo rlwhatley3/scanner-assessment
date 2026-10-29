@@ -31,8 +31,9 @@ export default function SuppressForm({ onSubmit, onCancel }: SuppressFormProps) 
   return (
     <form className="suppress-form" onSubmit={submit}>
       <p className="muted small suppress-note">
-        Covers this exact value from this rule, in this session only. If the value changes, or the
-        suppression expires or is removed, the finding comes back. Never type the value itself here.
+        Later scans in this session won't flag this exact value from this rule. If the value
+        changes, or the suppression expires or is removed, it is flagged again. Other sessions are
+        not affected. Never type the value itself here.
       </p>
       <label htmlFor={`${id}-reason`}>Why is it safe?</label>
       <textarea

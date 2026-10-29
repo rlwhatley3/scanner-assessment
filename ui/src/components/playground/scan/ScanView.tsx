@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   createSuppression,
-  getScan,
   getVersion,
   listSuppressions,
   MAX_FINDINGS,
@@ -171,7 +170,6 @@ export default function ScanView({ visible }: { visible: boolean }) {
       const response = await runScan(session.id, text, controller.signal);
       if (token !== scanTokenRef.current) return; // A newer scan or a cancel replaced this one.
       setPhase({ kind: "scanned", result: response });
-      suppressions.reload(); // Their marked counts changed.
     } catch (error) {
       if (token !== scanTokenRef.current) return;
       setPhase({ kind: "editing" });
@@ -192,18 +190,14 @@ export default function ScanView({ visible }: { visible: boolean }) {
     setNotice({ tone: "info", message: "Scan cancelled. Your text is unchanged." });
   }
 
-  /** Suppresses a finding's value, then rereads the scan, which the API marked to match. */
+  /** Suppresses a finding's value. This scan keeps the finding; later scans leave it out. */
   async function suppress(finding: SavedMatch, reason: string, expiresAt: string) {
-    if (!session || !result) return;
-    const token = scanTokenRef.current;
+    if (!session) return;
     await createSuppression(session.id, { findingId: finding.id, reason, expiresAt });
     suppressions.reload();
-    const reread = await getScan(session.id, result.scanId);
-    if (token !== scanTokenRef.current) return;
-    setPhase({ kind: "scanned", result: reread });
     setNotice({
       tone: "info",
-      message: "Suppressed. Later scans in this session mark this value too, until it expires.",
+      message: "Suppressed. Later scans in this session won't flag this value until it expires.",
     });
   }
 
@@ -348,6 +342,19 @@ export default function ScanView({ visible }: { visible: boolean }) {
                     saved. A rule may be too broad.
                   </p>
                 )}
+                {result.suppressedCount > 0 && (
+                  <p className="banner info" role="status">
+                    {result.suppressedCount} suppressed{" "}
+                    {result.suppressedCount === 1 ? "value was" : "values were"} not flagged.{" "}
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => setShowSuppressions(true)}
+                    >
+                      See this session's suppressions
+                    </button>
+                  </p>
+                )}
                 {matches.length === 0 ? (
                   ruleErrors.length === 0 && (
                     <p className="banner success" role="status">
@@ -359,6 +366,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
                     findings={matches}
                     selected={selected}
                     onSelect={selectFinding}
+                    suppressions={suppressions.data ?? []}
                     onSuppress={suppress}
                   />
                 )}

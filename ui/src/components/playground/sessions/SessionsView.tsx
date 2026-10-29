@@ -123,7 +123,7 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
         <span className={`outcome ${outcome.toLowerCase()}`}>{outcome}</span>
         {scan.truncated && <span className="badge">Cut off at 200</span>}
         {scan.suppressedCount > 0 && (
-          <span className="badge subtle">{scan.suppressedCount} suppressed</span>
+          <span className="badge subtle">{scan.suppressedCount} suppressed, not flagged</span>
         )}
       </h3>
       {ruleErrors.length > 0 && (
@@ -144,14 +144,13 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
               <th>Severity</th>
               <th>Location</th>
               <th>Preview</th>
-              <th>Suppressed</th>
             </tr>
           </thead>
           <tbody>
             {matches.map((finding) => {
               const { violation } = finding;
               return (
-                <tr key={finding.id} className={finding.suppression ? "muted" : ""}>
+                <tr key={finding.id}>
                   <td>{violation.ruleName}</td>
                   <td>
                     <SeverityIcon tone={violation.severity} /> {SEVERITY_LABELS[violation.severity]}
@@ -160,11 +159,6 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
                     {violation.location.startLine}:{violation.location.startColumn}
                   </td>
                   <td>{violation.redactedPreview && <code>{violation.redactedPreview}</code>}</td>
-                  <td>
-                    {finding.suppression
-                      ? `${finding.suppression.reason} (suppression ${finding.suppression.id})`
-                      : "—"}
-                  </td>
                 </tr>
               );
             })}

@@ -813,21 +813,7 @@ a.button {
   }
 }
 
-/* Suppressed findings stay listed and counted, drawn in a muted tone. */
-.playground {
-  --tone-suppressed: #667085;
-  --tone-suppressed-bg: #f2f4f7;
-}
-
-.tone-suppressed {
-  --tone: var(--tone-suppressed);
-  --tone-bg: var(--tone-suppressed-bg);
-}
-
-.scan-highlight.tone-suppressed {
-  border-bottom-style: dashed;
-}
-
+/* Suppressing a finding's value. */
 .finding-suppression {
   color: var(--ink-soft);
   font-size: var(--font-small);
@@ -852,16 +838,6 @@ a.button {
   textarea,
   input {
     font: inherit;
-  }
-}
-
-.suppressed-group {
-  margin-top: 0.75rem;
-
-  summary {
-    color: var(--muted);
-    font-weight: 600;
-    cursor: pointer;
   }
 }
 

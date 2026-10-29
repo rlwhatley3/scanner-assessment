@@ -1,4 +1,4 @@
-import type { FindingSuppression, MatchFinding, Severity } from "../api.ts";
+import type { MatchFinding, Severity } from "../api.ts";
 
 /** One highlighted range of the scan text, covering one finding or an overlapping set. */
 export interface Highlight {
@@ -7,15 +7,9 @@ export interface Highlight {
   end: number;
   /** Indices into the findings array passed to `buildHighlights`. */
   findings: number[];
-  /** A single finding's severity, "overlap" when several findings share the range, or
-   * "suppressed" when a suppression covers every finding in it. */
-  tone: HighlightTone;
+  /** A single finding's severity, or "overlap" when several findings share the range. */
+  tone: Severity | "overlap";
 }
-
-export type HighlightTone = Severity | "overlap" | "suppressed";
-
-/** A match, with the suppression that covered it when it has one. */
-type HighlightedFinding = MatchFinding & { suppression?: FindingSuppression | null };
 
 export type Segment = { text: string; highlight: Highlight | null };
 
@@ -46,7 +40,7 @@ export function byteOffsetsToIndices(text: string, byteOffsets: number[]): Map<n
  * Turns match findings into non-overlapping highlights. Findings that share an engine overlap
  * group become one highlight; any ranges that still overlap are merged as a safety net.
  */
-export function buildHighlights(text: string, findings: HighlightedFinding[]): Highlight[] {
+export function buildHighlights(text: string, findings: MatchFinding[]): Highlight[] {
   const indices = byteOffsetsToIndices(
     text,
     findings.flatMap((finding) => [
@@ -87,11 +81,7 @@ export function buildHighlights(text: string, findings: HighlightedFinding[]): H
   }
   for (const highlight of merged) {
     highlight.findings.sort((a, b) => a - b);
-    if (highlight.findings.every((index) => findings[index].suppression)) {
-      highlight.tone = "suppressed";
-    } else if (highlight.findings.length > 1) {
-      highlight.tone = "overlap";
-    }
+    if (highlight.findings.length > 1) highlight.tone = "overlap";
   }
   return merged;
 }

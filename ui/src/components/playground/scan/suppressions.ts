@@ -1,20 +1,8 @@
-import type { SavedMatch } from "../api.ts";
-
 /** How far ahead a suppression can expire; the API rejects anything later. */
 export const MAX_SUPPRESSION_DAYS = 365;
 
 /** How long a new suppression lasts unless the user picks another date. */
 export const DEFAULT_SUPPRESSION_DAYS = 30;
-
-/** Indices of the open and the suppressed matches, each in the order given. */
-export function splitSuppressed(findings: SavedMatch[]): { open: number[]; suppressed: number[] } {
-  const open: number[] = [];
-  const suppressed: number[] = [];
-  findings.forEach((finding, index) => {
-    (finding.suppression ? suppressed : open).push(index);
-  });
-  return { open, suppressed };
-}
 
 /** A local calendar date as `YYYY-MM-DD`, the format a date input uses. */
 function localDate(date: Date): string {

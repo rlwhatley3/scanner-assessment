@@ -1,5 +1,4 @@
 import type { DetectionType, Severity } from "./api.ts";
-import type { HighlightTone } from "./scan/highlights.ts";
 
 export const SEVERITY_LABELS: Record<Severity, string> = {
   high: "High",
@@ -19,15 +18,14 @@ export const DETECTION_LABELS: Record<DetectionType, string> = {
 };
 
 // A distinct shape per tone, so severity never depends on color alone.
-const ICONS: Record<HighlightTone, string> = {
+const ICONS: Record<Severity | "overlap", string> = {
   high: "▲",
   medium: "◆",
   low: "●",
   overlap: "◎",
-  suppressed: "○",
 };
 
-export function SeverityIcon({ tone }: { tone: HighlightTone }) {
+export function SeverityIcon({ tone }: { tone: Severity | "overlap" }) {
   return (
     <span className={`severity-icon tone-${tone}`} aria-hidden="true">
       {ICONS[tone]}

@@ -94,24 +94,6 @@ describe("buildHighlights", () => {
     assert.equal(highlights[0].end, 8);
   });
 
-  it("draws a highlight whose findings are all suppressed in the suppressed tone", () => {
-    const suppression = { id: 1, reason: "Doc example", expiresAt: "" };
-    const highlights = buildHighlights("aaaa bbbb cccc", [
-      { ...match(0, 4), suppression },
-      match(5, 9, "low"),
-      { ...match(10, 14), suppression },
-      { ...match(10, 14), suppression: null },
-    ]);
-    assert.deepEqual(
-      highlights.map(({ findings, tone }) => ({ findings, tone })),
-      [
-        { findings: [0], tone: "suppressed" },
-        { findings: [1], tone: "low" },
-        { findings: [2, 3], tone: "overlap" },
-      ],
-    );
-  });
-
   it("skips empty ranges", () => {
     assert.deepEqual(buildHighlights("abc", [match(1, 1)]), []);
   });

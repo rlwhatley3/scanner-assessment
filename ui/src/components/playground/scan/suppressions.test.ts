@@ -1,50 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { SavedMatch } from "../api.ts";
-import { expiryBounds, expiryFromDate, splitSuppressed } from "./suppressions.ts";
-
-function match(id: number, suppressed: boolean): SavedMatch {
-  return {
-    id,
-    ruleId: 1,
-    kind: "match",
-    violationPretty: "",
-    suppression: suppressed ? { id: 9, reason: "Doc example", expiresAt: "" } : null,
-    violation: {
-      ruleName: "Test rule",
-      detectionType: "direct_credential",
-      severity: "high",
-      confidence: 90,
-      placeholderScore: 0,
-      location: {
-        startByte: 0,
-        endByte: 1,
-        startLine: 1,
-        startColumn: 1,
-        endLine: 1,
-        endColumn: 2,
-      },
-      redactedPreview: null,
-      whyFlagged: "",
-      remediation: "",
-      overlapGroup: null,
-      inComment: false,
-      checksumValid: null,
-    },
-  };
-}
-
-describe("splitSuppressed", () => {
-  it("keeps every finding, split by whether a suppression covers it", () => {
-    const findings = [match(1, false), match(2, true), match(3, false), match(4, true)];
-    assert.deepEqual(splitSuppressed(findings), { open: [0, 2], suppressed: [1, 3] });
-  });
-
-  it("treats findings saved before suppressions as open", () => {
-    const { suppression: _, ...older } = match(1, false);
-    assert.deepEqual(splitSuppressed([older]), { open: [0], suppressed: [] });
-  });
-});
+import { expiryBounds, expiryFromDate } from "./suppressions.ts";
 
 describe("expiryBounds", () => {
   it("runs from tomorrow to a day inside the 365-day limit, starting 30 days out", () => {

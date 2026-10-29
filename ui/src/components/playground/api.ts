@@ -90,26 +90,14 @@ export type Finding =
 export type MatchFinding = Extract<Finding, { kind: "match" }>;
 
 /** A finding as stored and returned by the API. */
-export type SavedFinding = Finding & {
-  id: number;
-  /** The session's suppression that applied when the scan ran. A suppressed finding is still
-   * returned and counted; it is only marked. Missing on findings saved before suppressions. */
-  suppression?: FindingSuppression | null;
-};
+export type SavedFinding = Finding & { id: number };
 
-/** A saved match, which a suppression may have marked. */
+/** A saved match. */
 export type SavedMatch = Extract<SavedFinding, { kind: "match" }>;
 
-/** What a finding records about the suppression that covered its value. */
-export interface FindingSuppression {
-  id: number;
-  reason: string;
-  expiresAt: string;
-}
-
 /** One value found by one rule, marked as known to be safe within one scan session. Later scans
- * in the session mark the same value's findings until it expires or is removed. The value and
- * its fingerprint never reach the UI. */
+ * in the session don't report it until it expires or is removed. The value and its fingerprint
+ * never reach the UI. */
 export interface Suppression {
   id: number;
   scanSessionId: number;
@@ -122,8 +110,6 @@ export interface Suppression {
   expiresAt: string;
   removedAt: string | null;
   status: "active" | "expired" | "removed";
-  /** Findings it has marked, in any scan of the session. */
-  suppressedCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -136,6 +122,8 @@ export interface ScanResponse {
   truncated: boolean;
   /** True when at least one rule could not run. */
   partial: boolean;
+  /** Matches left out because an active suppression in the session covers their value. */
+  suppressedCount: number;
 }
 
 export type ChecksumEncoding = "base62" | "base36" | "hex";
@@ -276,9 +264,9 @@ export interface StoredScan {
   truncated: boolean;
   /** True when at least one rule could not run. */
   partial: boolean;
-  /** Matches only, suppressed ones included; rule errors are counted by `partial`. */
+  /** Matches only; rule errors are counted by `partial`. */
   matchCount: number;
-  /** Matches a suppression covered when the scan ran. */
+  /** Matches left out because an active suppression covered their value. */
   suppressedCount: number;
   createdAt: string;
   findings: SavedFinding[];

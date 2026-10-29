@@ -13,7 +13,8 @@ const STATUS_LABELS: Record<Suppression["status"], string> = {
   removed: "Removed",
 };
 
-/** A session's suppressions, newest first, with a way to remove the active ones. */
+/** A session's suppressions, newest first, with a way to remove the active ones. Never shows a
+ * value. */
 export default function SuppressionsPanel({ sessionId, suppressions }: SuppressionsPanelProps) {
   const [removing, setRemoving] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +37,8 @@ export default function SuppressionsPanel({ sessionId, suppressions }: Suppressi
     <section className="suppressions" aria-label="Suppressions">
       <h3>Suppressions</h3>
       <p className="muted small">
-        Each one covers one value found by one rule in this session. Removing one keeps it on
-        record, so past scans still show why their findings were suppressed.
+        Each one stops this session's scans from flagging one value found by one rule. Remove one to
+        have its value flagged again; it stays on record here.
       </p>
       {(error ?? suppressions.error) && (
         <p className="banner error" role="alert">
@@ -54,7 +55,7 @@ export default function SuppressionsPanel({ sessionId, suppressions }: Suppressi
               <th>Reason</th>
               <th>Status</th>
               <th>Expires</th>
-              <th>Marked</th>
+              <th>Created</th>
               <th />
             </tr>
           </thead>
@@ -72,10 +73,7 @@ export default function SuppressionsPanel({ sessionId, suppressions }: Suppressi
                   </span>
                 </td>
                 <td>{formatDate(suppression.expiresAt)}</td>
-                <td>
-                  {suppression.suppressedCount}{" "}
-                  {suppression.suppressedCount === 1 ? "finding" : "findings"}
-                </td>
+                <td>{formatDate(suppression.createdAt)}</td>
                 <td>
                   {suppression.status === "active" && (
                     <button
