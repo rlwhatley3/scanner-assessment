@@ -124,7 +124,17 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
     (finding): finding is SavedMatch => finding.kind === "match",
   );
   const ruleErrors = scan.findings.filter((finding) => finding.kind === "rule_error");
-  const outcome = ruleErrors.length > 0 ? "Partial" : matches.length === 0 ? "Clean" : "Findings";
+  // A scan that never finished has no saved findings, which must not read as clean.
+  const finished = scan.status === "completed";
+  const outcome = !finished
+    ? scan.status === "running"
+      ? "Running"
+      : "Interrupted"
+    : ruleErrors.length > 0
+      ? "Partial"
+      : matches.length === 0
+        ? "Clean"
+        : "Findings";
 
   return (
     <article className="scan-summary">
@@ -136,6 +146,13 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
           <span className="badge subtle">{scan.suppressedCount} marked safe, not flagged</span>
         )}
       </h3>
+      {!finished && (
+        <p className="banner warning">
+          {scan.status === "running"
+            ? "This scan hasn't finished, so its results aren't here yet."
+            : "This scan stopped before it finished, so its results weren't saved. It doesn't mean the text was clean. Scan the text again to check it."}
+        </p>
+      )}
       {ruleErrors.length > 0 && (
         <ul className="banner warning">
           {ruleErrors.map((finding) => (

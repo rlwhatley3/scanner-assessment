@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { formatDate, type SavedMatch, type Severity, type Suppression } from "../api.ts";
 import { DETECTION_LABELS, SEVERITY_LABELS, SEVERITY_ORDER, SeverityIcon } from "../severity.tsx";
+import { likelyRealOrder, looksLikeExample } from "./order.ts";
 import SuppressForm from "./SuppressForm.tsx";
 
 interface FindingsListProps {
@@ -12,6 +13,14 @@ interface FindingsListProps {
   /** Marks a finding's value as safe in the session. Without it, findings can't be marked. */
   onSuppress?: (finding: SavedMatch, reason: string, expiresAt: string) => Promise<void>;
 }
+
+type SortOrder = "text" | "severity" | "likely_real";
+
+const SORT_LABELS: Record<SortOrder, string> = {
+  text: "Text order",
+  severity: "Severity",
+  likely_real: "Likely real first",
+};
 
 const VALUE_LABELS = {
   credential: "credential",
@@ -32,18 +41,14 @@ function formatLocation({ location }: SavedMatch["violation"]): string {
 /** How likely the match is a real secret, in plain words, from its scores and any model's or
  * value classifier's verdict. */
 export function likelihood(details: SavedMatch["violation"]): string {
-  const example =
-    (details.placeholderScore ?? 0) >= 50 ||
-    details.valueClass?.label === "placeholder" ||
-    details.modelAssessments?.some((assessment) => assessment.verdict === "likely_example");
-  if (example) return "Looks like an example value";
+  if (looksLikeExample(details)) return "Looks like an example value";
   if (details.valueClass?.label === "non_secret") return "Might not be a secret";
   if (details.confidence >= 80) return "Very likely real";
   if (details.confidence >= 50) return "Probably real";
   return "Might be real";
 }
 
-/** Matches in text order by default, or by severity. Clicking one selects its highlight, and a
+/** Matches in text order by default, or by severity or how likely each is real. Clicking one selects its highlight, and a
  * selected one can be marked as safe. */
 export default function FindingsList({
   findings,
@@ -52,7 +57,7 @@ export default function FindingsList({
   suppressions = [],
   onSuppress,
 }: FindingsListProps) {
-  const [sortBySeverity, setSortBySeverity] = useState(false);
+  const [sortOrder, setSortOrder] = useState<SortOrder>("text");
   const [suppressing, setSuppressing] = useState<number | null>(null);
   const [technical, setTechnical] = useState<number | null>(null);
   const activeByFinding = useMemo(
@@ -79,14 +84,15 @@ export default function FindingsList({
   }, [findings]);
 
   const order = useMemo(() => {
+    if (sortOrder === "likely_real") return likelyRealOrder(findings);
     const indices = findings.map((_, index) => index);
-    if (!sortBySeverity) return indices;
+    if (sortOrder === "text") return indices;
     return indices.sort(
       (a, b) =>
         SEVERITY_ORDER[findings[a].violation.severity] -
           SEVERITY_ORDER[findings[b].violation.severity] || a - b,
     );
-  }, [findings, sortBySeverity]);
+  }, [findings, sortOrder]);
 
   return (
     <section className="findings" aria-label="Findings">
@@ -96,12 +102,17 @@ export default function FindingsList({
           {bySeverity && <span className="findings-breakdown">: {bySeverity}</span>}
         </h2>
         <label className="findings-sort">
-          <input
-            type="checkbox"
-            checked={sortBySeverity}
-            onChange={(event) => setSortBySeverity(event.target.checked)}
-          />
-          Sort by severity
+          Sort by
+          <select
+            value={sortOrder}
+            onChange={(event) => setSortOrder(event.target.value as SortOrder)}
+          >
+            {Object.entries(SORT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
       </header>
       <ol className="findings-list">

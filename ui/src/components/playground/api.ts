@@ -114,9 +114,16 @@ export interface Suppression {
   updatedAt: string;
 }
 
+/**
+ * `completed` once a scan's findings are saved. `interrupted` when it ended before they were
+ * (cancelled, cut off, or the server stopped), so they are missing. `running` until then.
+ */
+export type ScanStatus = "running" | "completed" | "interrupted";
+
 export interface ScanResponse {
   scanId: number;
   scanSessionId: number;
+  status: ScanStatus;
   findings: SavedFinding[];
   /** True when there were more findings than the cap and the rest were not saved. */
   truncated: boolean;
@@ -312,6 +319,7 @@ export interface ScanSession {
 
 export interface StoredScan {
   id: number;
+  status: ScanStatus;
   truncated: boolean;
   /** True when at least one rule could not run. */
   partial: boolean;

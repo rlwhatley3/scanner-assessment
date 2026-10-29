@@ -136,6 +136,9 @@ pub struct ScanSessionRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ScanSummary {
     pub id: i64,
+    /// `completed` once its findings are saved. `running` while the engine runs, and
+    /// `interrupted` when the scan ended before its findings were saved, so they are missing.
+    pub status: String,
     /// True when there were more findings than the cap and the rest were not saved.
     pub truncated: bool,
     /// True when at least one rule could not run.
@@ -656,7 +659,7 @@ pub fn get_session(connection: &Connection, session_id: i64) -> StoreResult<Scan
         "SELECT c.id, c.truncated, c.created_at,
              EXISTS (SELECT 1 FROM findings f WHERE f.scan_id = c.id AND f.kind = 'rule_error'),
              (SELECT COUNT(*) FROM findings f WHERE f.scan_id = c.id AND f.kind = 'match'),
-             c.suppressed_count
+             c.suppressed_count, c.status
          FROM scans c WHERE c.scan_session_id = ?1 ORDER BY c.id",
     )?;
     let scans = statement
@@ -668,10 +671,26 @@ pub fn get_session(connection: &Connection, session_id: i64) -> StoreResult<Scan
                 partial: row.get(3)?,
                 match_count: row.get(4)?,
                 suppressed_count: row.get(5)?,
+                status: row.get(6)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
     Ok(ScanSessionRecord { summary, scans })
+}
+
+/// Marks scans that are still running as interrupted: one scan, or with `None`, every scan. A
+/// scan's findings are saved when its request finishes, so a scan whose request ended first never
+/// gets them. Returns how many scans were marked.
+pub fn interrupt_running_scans(
+    connection: &Connection,
+    scan_id: Option<i64>,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "UPDATE scans SET status = 'interrupted',
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE status = 'running' AND (?1 IS NULL OR id = ?1)",
+        [scan_id],
+    )
 }
 
 /// Starts a session on a version. Archived versions, and versions of an archived rule set,
