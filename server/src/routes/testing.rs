@@ -6,7 +6,8 @@
 //! The engine generates the data deterministically from a seed, so it is never stored: a run
 //! regenerates it. A run's documents go through `scans::scan_in_session` like any scan, so their
 //! text is never stored or logged either; only the findings are saved, and the labels live in the
-//! report alone.
+//! report alone. Each document is also timed rule by rule, without saving anything, to find
+//! rules whose matches flood the scan.
 
 use super::{
     AppState,
@@ -22,7 +23,7 @@ use axum::{
 };
 use secrets_scanner_engine::{
     CaseKind, DetectionType, Expectation, MAX_INPUT_BYTES, Rule, RuleDefinition, RuleSet,
-    generate_test_data, pattern_matches_value,
+    RuleTiming, ScanOptions, generate_test_data, pattern_matches_value, scan_with_options,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -32,6 +33,14 @@ const EXAMPLE_SCORE: u8 = 70;
 
 /// A rule with no value group is worth a diagnostic when a match of its scores under this.
 const DILUTED_CONFIDENCE: u8 = 80;
+
+/// A rule floods a document when it has at least one match per this many bytes. Measured on
+/// 1 MB documents, the densest built-in rule had one match per 32 bytes, on a file where every
+/// line is a credential; a pattern matching every word has one per 6 to 16 bytes.
+const FLOOD_BYTES_PER_MATCH: usize = 16;
+
+/// Fewer matches than this never count as a flood, however short the document.
+const FLOOD_MIN_MATCHES: usize = 1_000;
 
 /// The seed used when a request gives none.
 const DEFAULT_SEED: u64 = 1;
@@ -312,7 +321,7 @@ impl Tallies {
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
     /// parsed_pair_only, no_value_group, example_scored_as_real, classifier_only_lowered,
-    /// model_unavailable, prefix_not_enforced, suppressed, or truncated.
+    /// model_unavailable, prefix_not_enforced, slow_rule, suppressed, or truncated.
     pub code: String,
     pub rule_id: Option<i64>,
     pub rule_name: Option<String>,
@@ -813,10 +822,55 @@ pub async fn run_test_suite(
     let mut evaluation = Evaluation::new(&version);
     for document in documents {
         let scan = scans::scan_in_session(state, scan_session_id, document.text.clone()).await?;
+        let timings = time_rules(state, &version.rule_set, document.text.clone()).await?;
+        evaluation.timings(&document, &timings);
         results.push(evaluation.document(&document, scan));
     }
     let loaded = models::loaded_models(state);
     Ok(evaluation.report(scan_session_id, seed, results, skipped, &loaded))
+}
+
+/// Times each pattern rule on `text` and counts its matches. A session scan's response carries
+/// neither, so this scans again, saving and fingerprinting nothing. Model rules are left out:
+/// their time depends on the text's length rather than their matches (the secret detector takes
+/// about 3.5 s a megabyte), so they are never a flood.
+async fn time_rules(
+    state: &AppState,
+    rule_set: &RuleSet,
+    text: String,
+) -> Result<Vec<RuleTiming>, ApiError> {
+    let rule_set = RuleSet {
+        rules: rule_set
+            .rules
+            .iter()
+            .filter(|rule| {
+                rule.definition
+                    .detection_type
+                    .is_none_or(|detection_type| !detection_type.uses_model())
+            })
+            .cloned()
+            .collect(),
+    };
+    let _permit = state
+        .scan_permits
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|error| ApiError::Internal(format!("Internal error: {error}")))?;
+    let models = state.models.clone();
+    let timings = tokio::task::spawn_blocking(move || {
+        let options = ScanOptions {
+            models: Some(&models),
+            fingerprint_key: None,
+        };
+        // A version of only model and placeholder rules has nothing left to time.
+        scan_with_options(0, &text, &rule_set, options)
+            .map(|result| result.rule_timings)
+            .unwrap_or_default()
+    })
+    .await
+    .map_err(|error| ApiError::Internal(format!("Internal error: {error}")))?;
+    Ok(timings)
 }
 
 /// What a saved match says, read back from its violation.
@@ -885,6 +939,8 @@ struct Evaluation<'v> {
     rule_errors: BTreeMap<i64, RuleErrorBrief>,
     suppressed: Vec<(String, i64)>,
     truncated: Vec<String>,
+    /// Each rule's densest flood: the document, its length, and the rule's timing there.
+    floods: BTreeMap<i64, (String, usize, RuleTiming)>,
 }
 
 impl<'v> Evaluation<'v> {
@@ -898,6 +954,27 @@ impl<'v> Evaluation<'v> {
             rule_errors: BTreeMap::new(),
             suppressed: Vec::new(),
             truncated: Vec::new(),
+            floods: BTreeMap::new(),
+        }
+    }
+
+    fn timings(&mut self, document: &Document, timings: &[RuleTiming]) {
+        let bytes = document.text.len();
+        for &timing in timings {
+            if timing.matches < FLOOD_MIN_MATCHES || timing.matches * FLOOD_BYTES_PER_MATCH < bytes
+            {
+                continue;
+            }
+            let denser = self
+                .floods
+                .get(&timing.rule_id)
+                .is_none_or(|(_, other_bytes, other)| {
+                    timing.matches * other_bytes > other.matches * bytes
+                });
+            if denser {
+                self.floods
+                    .insert(timing.rule_id, (document.name.clone(), bytes, timing));
+            }
         }
     }
 
@@ -1366,6 +1443,24 @@ impl<'v> Evaluation<'v> {
                     "{count} match(es) in \"{name}\" were left out by the session's \
                      suppressions, so cases they cover read as missed or not reported. Run the \
                      suite in a new session to see every match."
+                ),
+            ));
+        }
+        for (&rule_id, (name, bytes, timing)) in &self.floods {
+            diagnostics.push(diagnostic(
+                "slow_rule",
+                Some(rule_id),
+                Vec::new(),
+                format!(
+                    "{} matched {} times in \"{name}\", about once every {} characters, and \
+                     spent {:.1} ms on its own work. A pattern that matches almost everything \
+                     slows every scan: each match is scored, checked against other rules' \
+                     matches, and counted toward the cap of 200 findings. Narrow the pattern \
+                     to the syntax around the secret, such as a prefix or a key name.",
+                    version.name(rule_id),
+                    timing.matches,
+                    (bytes / timing.matches).max(1),
+                    timing.micros as f64 / 1000.0
                 ),
             ));
         }

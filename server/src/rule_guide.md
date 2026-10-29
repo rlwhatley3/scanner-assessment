@@ -85,6 +85,7 @@ Findings on no case are listed as unlabeled. `diagnostics` name rule problems th
 | `classifier_only_lowered` | A value classifier rated reported values as not credentials. It lowers confidence to 30 and never drops a finding |
 | `model_unavailable` | A rule names a model hash this server hasn't loaded, usually after the model was retrained. The message lists the loaded models' hashes |
 | `prefix_not_enforced` | The rule still finds the value with its `prefix` changed |
+| `slow_rule` | A rule matched at least once every 16 characters (and at least 1,000 times) in a document, which slows every scan. The message gives its match count and its own time (see `patterns`) |
 | `suppressed`, `truncated` | A scan left matches out, so cases may read as missed |
 
 Why both kinds of data: generated cases cover each rule's mechanisms exhaustively (the checksum, the prefix, the length, the placeholders), but only a file someone would really write, such as a README, a CI config, a Python settings module, or a CSV export, shows how rules meet real context and each other. Generate first, then add realistic files with the same values in them.
@@ -121,6 +122,7 @@ Rules:
 - `\b` is a boundary between a word character (`[A-Za-z0-9_]`) and anything else. It doesn't work next to `-`, `/`, `+`, `.`, or `=`. For formats that end in those characters, end with `(?:[^A-Za-z0-9_-]|$)` after the `value` group, or leave the end open when the length is fixed.
 - A pattern that can match empty text is a warning (`matches_empty`), and an empty `value` is skipped.
 - A pattern too large to compile (over 1 MB compiled) is a `too_large` error. Large alternations of literal words are the usual cause.
+- A pattern that matches almost everything, such as `\w+`, is valid but makes every scan slower. The search itself stays fast; the cost is the flood of matches, since each one is scored, checked against other rules' matches, and counted toward the 200-finding cap. Anchor the pattern to the syntax around the secret: a prefix, a key name, or a fixed length. `run_test_suite` reports a rule that matches at least once every 16 characters in a document as `slow_rule`, with its match count and its own time; the densest built-in rule matches about once every 32 characters even in a file where every line is a credential. Model rules aren't checked: their time grows with the text, not their matches (the secret detector takes about 3.5 s on 1 MB).
 
 `prefix` is the public start of the format, such as `ghp_` or `AKIA`. Findings show it as the redacted preview (`ghp_…`). It is never taken from the match, so set it only when every match starts with it, and only to text that is safe to show.
 

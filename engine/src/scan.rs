@@ -12,6 +12,7 @@ use crate::rules::{
 use regex::Regex;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 /// Inputs larger than this are rejected before scanning.
 pub const MAX_INPUT_BYTES: usize = 1024 * 1024;
@@ -191,6 +192,22 @@ pub struct ScanResult {
     /// The format the text was read as.
     pub format: Format,
     pub log: Vec<LogEvent>,
+    /// How long each rule that ran spent on its own work, in the order the rules ran.
+    pub rule_timings: Vec<RuleTiming>,
+}
+
+/// The time one rule spent searching, detecting, classifying its values, and assessing others'
+/// matches. Work shared by every rule, such as parsing the text, isn't counted, but it grows
+/// with every rule's matches, so a rule that matches almost everything slows the whole scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleTiming {
+    pub rule_id: i64,
+    pub micros: u64,
+    /// What the rule found before other rules' overlapping findings and the cap were applied:
+    /// values for a rule that creates findings, ranges for a placeholder rule, none for an
+    /// assessment rule.
+    pub matches: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -342,11 +359,15 @@ pub fn scan_with_options(
         structure.pairs.len()
     ));
 
+    let mut elapsed: HashMap<i64, Duration> = HashMap::new();
+    let mut matched: HashMap<i64, usize> = HashMap::new();
     let mut placeholder_ranges = Vec::new();
     let mut candidates = Vec::new();
     let mut assessors = Vec::new();
     for (rule, model, _) in &runnable {
         let creates_findings = rule.detection_type.creates_findings();
+        let started = Instant::now();
+        let placeholders = placeholder_ranges.len();
         match (&rule.matcher, model) {
             (Matcher::Pattern(regex), _) if creates_findings => {
                 candidates.extend(find_candidates(rule, regex, text, &structure));
@@ -367,10 +388,15 @@ pub fn scan_with_options(
             // `rule_model` always finds a model for a model rule that runs.
             (Matcher::Model { .. }, None) => {}
         }
+        *elapsed.entry(rule.id).or_default() += started.elapsed();
+        matched.insert(rule.id, placeholder_ranges.len() - placeholders);
     }
     candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.rule.id));
     // A value found both by a rule's pattern and by parsing is one finding.
     candidates.dedup_by(|a, b| (a.rule.id, a.start, a.end) == (b.rule.id, b.start, b.end));
+    for candidate in &candidates {
+        *matched.entry(candidate.rule.id).or_default() += 1;
+    }
     // Shape-only rules and detection models are fallbacks, so they don't repeat a value a rule
     // ranked ahead of them reported.
     for rank in [1, 2] {
@@ -422,7 +448,12 @@ pub fn scan_with_options(
         let key = (candidate.start, candidate.end, setting.sha256.as_str());
         let class = match classified.get(&key) {
             Some(class) => Some(*class),
-            None => classify(model, text, candidate.start, candidate.end),
+            None => {
+                let started = Instant::now();
+                let class = classify(model, text, candidate.start, candidate.end);
+                *elapsed.entry(rule.id).or_default() += started.elapsed();
+                class
+            }
         };
         match class {
             Some(class) => {
@@ -443,7 +474,10 @@ pub fn scan_with_options(
 
     // Assess only the matches that are kept, so a flood of matches can't multiply model runs.
     for (rule, model) in assessors {
-        match assess(rule, model, text, &candidates) {
+        let started = Instant::now();
+        let assessed = assess(rule, model, text, &candidates);
+        *elapsed.entry(rule.id).or_default() += started.elapsed();
+        match assessed {
             Ok(scores) => {
                 for (candidate, score) in candidates.iter_mut().zip(scores) {
                     if let Some(score) = score {
@@ -453,6 +487,25 @@ pub fn scan_with_options(
             }
             Err(error) => rule_errors.push(error),
         }
+    }
+
+    let rule_timings: Vec<RuleTiming> = runnable
+        .iter()
+        .map(|(rule, _, _)| RuleTiming {
+            rule_id: rule.id,
+            micros: elapsed.get(&rule.id).map_or(0, |time| {
+                u64::try_from(time.as_micros()).unwrap_or(u64::MAX)
+            }),
+            matches: matched.get(&rule.id).copied().unwrap_or(0),
+        })
+        .collect();
+    for timing in &rule_timings {
+        log_line(format!(
+            "rule {} ran in {:.1} ms with {} matches",
+            timing.rule_id,
+            timing.micros as f64 / 1000.0,
+            timing.matches
+        ));
     }
 
     let groups = overlap_groups(&candidates);
@@ -520,6 +573,7 @@ pub fn scan_with_options(
         truncated,
         format: structure.format,
         log,
+        rule_timings,
     })
 }
 

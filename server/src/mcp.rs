@@ -880,7 +880,9 @@ impl ScannerMcp {
                        false alarms a value classifier only lowered to 30 \
                        (classifier_only_lowered), a model hash that isn't loaded \
                        (model_unavailable), a prefix the pattern doesn't require \
-                       (prefix_not_enforced), and suppressed or truncated scans.",
+                       (prefix_not_enforced), a rule matching so much of a document that it \
+                       slows every scan, with its match count and time (slow_rule), and \
+                       suppressed or truncated scans.",
         annotations(destructive_hint = false)
     )]
     async fn run_test_suite(
