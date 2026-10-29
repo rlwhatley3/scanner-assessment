@@ -220,6 +220,35 @@ async fn try_runs_an_unsaved_definition_on_sample_text_and_saves_nothing() {
 }
 
 #[tokio::test]
+async fn try_says_when_the_rule_matches_almost_everything() {
+    let app = app();
+    let id = create_rule(&app, json!({})).await;
+    let mut definition = valid_definition("Every word");
+    definition["pattern"] = json!("(?P<value>\\w+)");
+    definition["prefix"] = json!(null);
+    let text = "the service returns the request handler config\n".repeat(400);
+
+    let (status, body) = send(
+        &app,
+        "POST",
+        &format!("/api/rules/{id}/try"),
+        Some(json!({ "definition": definition, "text": text })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["slowRules"][0]["ruleName"], "Every word");
+    let (_, body) = send(
+        &app,
+        "POST",
+        &format!("/api/rules/{id}/try"),
+        Some(json!({ "definition": valid_definition("AWS key"), "text": text })),
+    )
+    .await;
+    assert_eq!(body["slowRules"], json!([]));
+}
+
+#[tokio::test]
 async fn try_reports_a_broken_pattern_as_a_rule_error() {
     let app = app();
     let id = create_rule(&app, json!({})).await;

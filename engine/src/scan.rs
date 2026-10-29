@@ -25,6 +25,14 @@ pub const MAX_FINDINGS: usize = 200;
 /// not a secret.
 pub const MIN_DETECTION_BYTES: usize = 8;
 
+/// A rule floods the text when it has at least one match per this many bytes. Measured on 1 MB
+/// documents, the densest built-in rule had one match per 32 bytes, on a file where every line
+/// is a credential; a pattern matching every word has one per 6 to 16 bytes.
+pub const FLOOD_BYTES_PER_MATCH: usize = 16;
+
+/// Fewer matches than this never count as a flood, however short the text.
+pub const FLOOD_MIN_MATCHES: usize = 1_000;
+
 /// The most a value classifier can raise a match's confidence to: a model alone is never surer
 /// than a known format.
 const MAX_CLASSIFIER_CONFIDENCE: u8 = 95;
@@ -208,6 +216,10 @@ pub struct RuleTiming {
     /// values for a rule that creates findings, ranges for a placeholder rule, none for an
     /// assessment rule.
     pub matches: usize,
+    /// Whether the rule matched so much of the text that it slows the scan: at least
+    /// [`FLOOD_MIN_MATCHES`] matches and one per [`FLOOD_BYTES_PER_MATCH`] bytes. Never true for
+    /// a model rule, whose time grows with the text rather than its matches.
+    pub floods: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -491,20 +503,31 @@ pub fn scan_with_options(
 
     let rule_timings: Vec<RuleTiming> = runnable
         .iter()
-        .map(|(rule, _, _)| RuleTiming {
-            rule_id: rule.id,
-            micros: elapsed.get(&rule.id).map_or(0, |time| {
-                u64::try_from(time.as_micros()).unwrap_or(u64::MAX)
-            }),
-            matches: matched.get(&rule.id).copied().unwrap_or(0),
+        .map(|(rule, _, _)| {
+            let matches = matched.get(&rule.id).copied().unwrap_or(0);
+            RuleTiming {
+                rule_id: rule.id,
+                micros: elapsed.get(&rule.id).map_or(0, |time| {
+                    u64::try_from(time.as_micros()).unwrap_or(u64::MAX)
+                }),
+                matches,
+                floods: !rule.detection_type.uses_model()
+                    && matches >= FLOOD_MIN_MATCHES
+                    && matches * FLOOD_BYTES_PER_MATCH >= text.len(),
+            }
         })
         .collect();
     for timing in &rule_timings {
         log_line(format!(
-            "rule {} ran in {:.1} ms with {} matches",
+            "rule {} ran in {:.1} ms with {} matches{}",
             timing.rule_id,
             timing.micros as f64 / 1000.0,
-            timing.matches
+            timing.matches,
+            if timing.floods {
+                ", flooding the scan"
+            } else {
+                ""
+            }
         ));
     }
 

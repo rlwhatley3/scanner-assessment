@@ -34,10 +34,10 @@ pub use rules::{
     check_rule_set,
 };
 pub use scan::{
-    Finding, FindingKind, LogEvent, MAX_FINDINGS, MAX_INPUT_BYTES, MIN_DETECTION_BYTES,
-    MatchDetails, ModelAssessment, ModelVerdict, RuleTiming, ScanError, ScanOptions, ScanResult,
-    ValueClass, ValueLabel, Violation, pattern_matches_value, scan, scan_with_models,
-    scan_with_options,
+    FLOOD_BYTES_PER_MATCH, FLOOD_MIN_MATCHES, Finding, FindingKind, LogEvent, MAX_FINDINGS,
+    MAX_INPUT_BYTES, MIN_DETECTION_BYTES, MatchDetails, ModelAssessment, ModelVerdict, RuleTiming,
+    ScanError, ScanOptions, ScanResult, ValueClass, ValueLabel, Violation, pattern_matches_value,
+    scan, scan_with_models, scan_with_options,
 };
 pub use test_data::{
     CaseKind, Expectation, SkippedCase, TestCase, TestDocument, TestSuite, generate_test_data,

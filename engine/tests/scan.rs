@@ -304,6 +304,36 @@ fn every_rule_that_runs_gets_a_timing_with_its_match_count_and_a_log_line() {
 }
 
 #[test]
+fn a_rule_matching_almost_everything_floods_the_scan_and_the_built_in_rules_do_not() {
+    let prose = "the service returns the request handler config\n".repeat(400);
+    let broad = only_rule(DetectionType::DirectCredential, r"(?P<value>\w+)");
+    let result = scan(1, &prose, &broad).expect("scan should run");
+    assert!(result.rule_timings[0].floods, "{:?}", result.rule_timings);
+    assert!(
+        result
+            .log
+            .iter()
+            .any(|event| event.message.ends_with("flooding the scan"))
+    );
+
+    // Every line a credential is as dense as the built-in rules get: once every 32 bytes.
+    let passwords: String = (0..2_000)
+        .map(|line| format!("password = {}{line:04}\n", &RANDOM_PASSWORD[..12]))
+        .collect();
+    for text in [&prose, &passwords] {
+        let result = run(text);
+        assert!(
+            result.rule_timings.iter().all(|timing| !timing.floods),
+            "{:?}",
+            result.rule_timings
+        );
+    }
+    // A short text never floods, however dense.
+    let result = scan(1, "a b c d e f", &broad).expect("scan should run");
+    assert!(!result.rule_timings[0].floods);
+}
+
+#[test]
 fn a_repeated_rule_name_is_a_rule_error_and_the_first_rule_still_runs() {
     let mut rule_set = default_rule_set();
     rule_set.rules.push(Rule {

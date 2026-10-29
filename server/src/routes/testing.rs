@@ -6,15 +6,14 @@
 //! The engine generates the data deterministically from a seed, so it is never stored: a run
 //! regenerates it. A run's documents go through `scans::scan_in_session` like any scan, so their
 //! text is never stored or logged either; only the findings are saved, and the labels live in the
-//! report alone. Each scan's per-rule timings, which aren't saved either, show rules whose
-//! matches flood a document.
+//! report alone. Each scan's rule timings show rules whose matches flood a document.
 
 use super::{
     AppState,
     models::{self, ModelResponse},
     scans::{self, ApiError, ErrorResponse, FindingResponse},
 };
-use crate::store::{self, StoreError};
+use crate::store::{self, RuleTimingRecord, StoreError};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -23,7 +22,7 @@ use axum::{
 };
 use secrets_scanner_engine::{
     CaseKind, DetectionType, Expectation, MAX_INPUT_BYTES, Rule, RuleDefinition, RuleSet,
-    RuleTiming, generate_test_data, pattern_matches_value,
+    generate_test_data, pattern_matches_value,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -33,14 +32,6 @@ const EXAMPLE_SCORE: u8 = 70;
 
 /// A rule with no value group is worth a diagnostic when a match of its scores under this.
 const DILUTED_CONFIDENCE: u8 = 80;
-
-/// A rule floods a document when it has at least one match per this many bytes. Measured on
-/// 1 MB documents, the densest built-in rule had one match per 32 bytes, on a file where every
-/// line is a credential; a pattern matching every word has one per 6 to 16 bytes.
-const FLOOD_BYTES_PER_MATCH: usize = 16;
-
-/// Fewer matches than this never count as a flood, however short the document.
-const FLOOD_MIN_MATCHES: usize = 1_000;
 
 /// The seed used when a request gives none.
 const DEFAULT_SEED: u64 = 1;
@@ -821,9 +812,8 @@ pub async fn run_test_suite(
     let mut results = Vec::new();
     let mut evaluation = Evaluation::new(&version);
     for document in documents {
-        let (scan, timings) =
-            scans::scan_in_session_timed(state, scan_session_id, document.text.clone()).await?;
-        evaluation.timings(&document, &timings);
+        let scan = scans::scan_in_session(state, scan_session_id, document.text.clone()).await?;
+        evaluation.timings(&document, &scan.rule_timings);
         results.push(evaluation.document(&document, scan));
     }
     let loaded = models::loaded_models(state);
@@ -897,7 +887,7 @@ struct Evaluation<'v> {
     suppressed: Vec<(String, i64)>,
     truncated: Vec<String>,
     /// Each rule's densest flood: the document, its length, and the rule's timing there.
-    floods: BTreeMap<i64, (String, usize, RuleTiming)>,
+    floods: BTreeMap<i64, (String, usize, RuleTimingRecord)>,
 }
 
 impl<'v> Evaluation<'v> {
@@ -915,23 +905,11 @@ impl<'v> Evaluation<'v> {
         }
     }
 
-    /// Keeps each pattern rule's densest flood. Model rules are left out: their time depends on
-    /// the text's length rather than their matches (the secret detector takes about 3.5 s a
-    /// megabyte), so they are never a flood.
-    fn timings(&mut self, document: &Document, timings: &[RuleTiming]) {
+    /// Keeps each rule's densest flood. The engine decides what floods; it never counts a model
+    /// rule, whose time grows with the text rather than its matches.
+    fn timings(&mut self, document: &Document, timings: &[RuleTimingRecord]) {
         let bytes = document.text.len();
-        for &timing in timings {
-            let uses_model = self
-                .version
-                .rule(timing.rule_id)
-                .and_then(|rule| rule.definition.detection_type)
-                .is_some_and(DetectionType::uses_model);
-            if uses_model
-                || timing.matches < FLOOD_MIN_MATCHES
-                || timing.matches * FLOOD_BYTES_PER_MATCH < bytes
-            {
-                continue;
-            }
+        for timing in timings.iter().filter(|timing| timing.floods) {
             let denser = self
                 .floods
                 .get(&timing.rule_id)
@@ -939,8 +917,10 @@ impl<'v> Evaluation<'v> {
                     timing.matches * other_bytes > other.matches * bytes
                 });
             if denser {
-                self.floods
-                    .insert(timing.rule_id, (document.name.clone(), bytes, timing));
+                self.floods.insert(
+                    timing.rule_id,
+                    (document.name.clone(), bytes, timing.clone()),
+                );
             }
         }
     }

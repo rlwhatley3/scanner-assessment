@@ -769,7 +769,8 @@ impl ScannerMcp {
     #[tool(
         description = "Get a scan session and a summary of each of its scans. A scan's status \
                        is interrupted when it ended before its findings were saved, so its \
-                       counts are missing, not zero.",
+                       counts are missing, not zero. slowRules names rules that matched so \
+                       much of a scan's text that they slowed it.",
         annotations(read_only_hint = true)
     )]
     async fn get_scan_session(
@@ -801,7 +802,9 @@ impl ScannerMcp {
         description = "Get a saved scan and its findings. Findings never contain the matched \
                        text; the output schema explains confidence, valueClass, and the other \
                        finding fields. status is interrupted when the scan ended before its \
-                       findings were saved, so they are missing: it is not a clean scan.",
+                       findings were saved, so they are missing: it is not a clean scan. \
+                       ruleTimings gives each rule's time and match count, and slowRules names \
+                       rules that matched so much of the text that they slowed the scan.",
         annotations(read_only_hint = true)
     )]
     async fn get_scan(
@@ -820,7 +823,10 @@ impl ScannerMcp {
                           its findings to the session. The text is never stored or logged. \
                           Findings are capped at 200. A match an active suppression in the \
                           session covers is left out and counted in suppressedCount. The output \
-                          schema explains confidence, valueClass, and the other finding fields.",
+                          schema explains confidence, valueClass, and the other finding fields. \
+                          ruleTimings gives each rule's time and match count; slowRules names \
+                          rules that matched at least once every 16 characters (and 1,000 \
+                          times), which slows every scan, and says what to change.",
         annotations(destructive_hint = false)
     )]
     async fn run_scan(
