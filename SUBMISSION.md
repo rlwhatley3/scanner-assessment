@@ -214,8 +214,6 @@ Known placeholder values (`YOUR_KEY_HERE`, `changeme`, ...) are rules of type pl
 
 ## Phase 2: Core implementation
 
-Phase 2 notes so far. The UI and the rest of the API are still to come.
-
 ### Detection approach
 
 The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a pure Rust library: no network, disk, or HTTP. It layers four techniques, all running locally:
