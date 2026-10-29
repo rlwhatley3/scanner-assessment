@@ -238,6 +238,36 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 - **AI or ML triage:** this would also send text off the machine unless the model ran locally, and it would make "why flagged" harder to explain.
 - **Parsing source code into syntax trees:** this would need a parser per language, so code is scanned as text with its comment lines recognized.
 
+### Models: what the secret detector was trained and evaluated on
+
+The secret detector (`engine/models/secret-detector.onnx`) is a `model_detection` model that runs locally on the CPU, so no text leaves the machine. It scores every byte of the text for how likely it is part of a secret. Details are in [ml/README.md](ml/README.md#secret-detector-training).
+
+**Training data: synthetic only.** `ml/detector_data.py` generates documents with a label for every byte. Training used 32,000 documents; evaluation used 2,000 more from a different seed.
+
+- **Documents:** about twenty kinds of file: env, YAML, JSON, TOML, INI, properties, code in seven languages, shell, Dockerfile, XML, Terraform, logs, prose and chat, HTML, credential files, and Markdown with code blocks. A third of the documents contain no secret.
+- **Secrets it plants (labeled 1):**
+  - known vendor formats, and made-up vendor tokens (a random prefix and random characters)
+  - generic hex, alphanumeric and base64 keys, salts, and composite tokens
+  - passwords
+  - the password in a connection string, a token after `Bearer` or in `--user`, a signature in a URL
+  - webhook URLs, JWTs, private keys, and keys passed straight to functions
+- **Hard negatives (labeled 0):**
+  - hashes and digests, `0x` hashes, lockfile and checksum entries
+  - UUIDs, IDs with prefixes, ARNs, build hashes, cursors
+  - base64 image data, SRI strings, public keys, certificates, SSH keys
+  - URLs, minified code
+  - placeholders, references to secrets stored elsewhere, and settings named after secrets that hold none
+- **No real secrets:** real-shaped values are random at generation time, so the repository contains no secret-looking string and the model has seen no real credential.
+
+**Evaluation data:**
+
+- **Held-out synthetic documents** (2,000): precision 0.959, recall 0.958 at threshold 50. This mostly shows the model learned the generator.
+- **Hand-written text** (`engine/tests/secret_detector.rs`), in three batches, each written before the model it was first checked against:
+  - Batches 1 and 2 were used to find gaps in the generator, so the model has been tuned against them. The final model finds 23 of 24 and 13 of 13 secrets there.
+  - Batch 3 was never used to change anything: **11 of 12 secrets found, 2 of 14 findings wrong, nothing flagged in 8 texts without secrets** (precision 0.86, recall 0.92).
+  - These batches are small, and the same person wrote them and the generator.
+- **Real data: none yet.** The model has not been trained or evaluated on real repositories. The public CredData dataset is planned next, split by repository and with its results reported separately from the synthetic numbers.
+
 ### Scan endpoint
 
 `POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged.
