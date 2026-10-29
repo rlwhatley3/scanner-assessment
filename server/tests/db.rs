@@ -437,3 +437,110 @@ async fn rule_set_names_are_unique_ignoring_case_and_space() {
         .expect("insert should run");
     assert!(!duplicate);
 }
+
+#[tokio::test]
+async fn a_scan_starts_completed_and_status_only_accepts_known_values() {
+    let db = Db::open_in_memory().expect("in-memory database should open");
+    let (status, unknown) = db
+        .call(|connection| {
+            connection.execute_batch(SEED)?;
+            let status: String =
+                connection.query_row("SELECT status FROM scans", [], |row| row.get(0))?;
+            let unknown = connection
+                .execute("UPDATE scans SET status = 'cancelled'", [])
+                .is_ok();
+            Ok((status, unknown))
+        })
+        .await
+        .expect("scan should be readable");
+
+    assert_eq!(status, "completed");
+    assert!(!unknown);
+}
+
+#[tokio::test]
+async fn marking_running_scans_interrupted_leaves_finished_scans_alone() {
+    let db = Db::open_in_memory().expect("in-memory database should open");
+    let (marked, statuses) = db
+        .call(|connection| {
+            connection.execute_batch(SEED)?;
+            connection.execute_batch(
+                "INSERT INTO scans (scan_session_id, status) VALUES (1, 'running');
+                 INSERT INTO scans (scan_session_id, status) VALUES (1, 'running');",
+            )?;
+            // What the server does when it starts: every running scan was cut off.
+            let marked = secrets_scanner_api::store::interrupt_running_scans(connection, None)?;
+            let statuses: Vec<String> = connection
+                .prepare("SELECT status FROM scans ORDER BY id")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok((marked, statuses))
+        })
+        .await
+        .expect("scans should update");
+
+    assert_eq!(marked, 2);
+    assert_eq!(statuses, ["completed", "interrupted", "interrupted"]);
+}
+
+#[tokio::test]
+async fn scans_cut_off_before_scan_status_existed_are_marked_interrupted() {
+    let path = std::env::temp_dir().join(format!(
+        "secrets-scanner-scan-status-migration-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    {
+        // A database as it was before the scan status migration. Scan 1 finished with a
+        // finding, scan 2 finished clean (its results were saved later), scan 3 had one value
+        // suppressed, and scan 4 was cut off: never updated after its row was made.
+        let connection = rusqlite::Connection::open(&path).expect("database should open");
+        for migration in [
+            include_str!("../src/db/migrations/0001_initial.sql"),
+            include_str!("../src/db/migrations/0002_rule_sets.sql"),
+            include_str!("../src/db/migrations/0003_suppressions.sql"),
+        ] {
+            connection
+                .execute_batch(migration)
+                .expect("earlier migration should run");
+        }
+        connection
+            .execute_batch(
+                "PRAGMA user_version = 3;
+                 INSERT INTO rule_set_versions DEFAULT VALUES;
+                 INSERT INTO rules DEFAULT VALUES;
+                 INSERT INTO scan_sessions (rule_set_version_id) VALUES (1);
+                 INSERT INTO scans (scan_session_id, created_at, updated_at)
+                     VALUES (1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+                 INSERT INTO findings (scan_id, rule_id, kind, violation, violation_pretty)
+                     VALUES (1, 1, 'match', '{}', 'pretty');
+                 INSERT INTO scans (scan_session_id, created_at, updated_at)
+                     VALUES (1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:01.000Z');
+                 INSERT INTO scans (scan_session_id, suppressed_count, created_at, updated_at)
+                     VALUES (1, 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+                 INSERT INTO scans (scan_session_id, created_at, updated_at)
+                     VALUES (1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');",
+            )
+            .expect("old scans should insert");
+    }
+
+    let db = Db::open(&path).expect("database should open and migrate");
+    let statuses: Vec<String> = db
+        .call(|connection| {
+            connection
+                .prepare("SELECT status FROM scans ORDER BY id")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()
+        })
+        .await
+        .expect("migrated scans should be readable");
+    drop(db);
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+    }
+
+    assert_eq!(
+        statuses,
+        ["completed", "completed", "completed", "interrupted"]
+    );
+}
