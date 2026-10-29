@@ -14,6 +14,8 @@ mod scan_sessions;
 mod scans;
 #[path = "routes/suppressions.rs"]
 mod suppressions;
+#[path = "routes/testing.rs"]
+mod testing;
 
 use axum::{
     Router,

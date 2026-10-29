@@ -585,6 +585,42 @@ fn find_candidates<'r>(
     candidates
 }
 
+/// The value ranges `rule` finds in `text` before scoring, as a scan finds them: its pattern's
+/// matches and, for likely credentials, parsed key/value pairs. Generated test data is checked
+/// against this.
+pub(crate) fn rule_value_spans(
+    rule: &CompiledRule,
+    text: &str,
+    structure: &Structure,
+) -> Vec<(usize, usize)> {
+    let Matcher::Pattern(regex) = &rule.matcher else {
+        return Vec::new();
+    };
+    find_candidates(rule, regex, text, structure)
+        .into_iter()
+        .map(|candidate| (candidate.start, candidate.end))
+        .collect()
+}
+
+/// Whether the rule's own pattern matched the value at `start..end`, rather than the value only
+/// being found as a parsed key/value pair (which a likely credential rule with key names also
+/// checks). False when the rule doesn't compile or has no pattern.
+pub fn pattern_matches_value(rule: &Rule, text: &str, start: usize, end: usize) -> bool {
+    let Some(compiled) = check_and_compile(rule).0 else {
+        return false;
+    };
+    let Matcher::Pattern(regex) = &compiled.matcher else {
+        return false;
+    };
+    regex.captures_iter(text).any(|captures| {
+        let value = captures
+            .name("value")
+            .or_else(|| captures.get(0))
+            .expect("group 0 always matches");
+        (value.start(), value.end()) == (start, end)
+    })
+}
+
 /// Where a pattern matched, as byte ranges into the text.
 struct Found {
     /// The `value` group, or the whole match without one.

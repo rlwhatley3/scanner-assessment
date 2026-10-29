@@ -7,6 +7,7 @@ pub mod store;
 
 use routes::{
     health, models, rule_set_versions, rule_sets, rules, scan_sessions, scans, suppressions,
+    testing,
 };
 
 #[derive(utoipa::OpenApi)]
@@ -37,6 +38,8 @@ use routes::{
         suppressions::list,
         suppressions::create,
         suppressions::remove,
+        testing::create_test_data,
+        testing::create_test_run,
         mcp::describe,
     ),
     components(schemas(
@@ -50,6 +53,10 @@ use routes::{
         suppressions::CreateSuppression,
         store::SuppressionRecord,
         store::SuppressionStatus,
+        testing::GenerateTestData,
+        testing::TestData,
+        testing::RunTestSuite,
+        testing::TestRunReport,
         mcp::McpDescription
     )),
     tags(
@@ -60,6 +67,7 @@ use routes::{
         (name = "Rule set versions", description = "Saved, immutable sets of rule snapshots"),
         (name = "Scan sessions", description = "Scans grouped under one rule set version"),
         (name = "Suppressions", description = "Known-safe values, suppressed within one scan session"),
+        (name = "Testing", description = "Generated test data and labeled test runs for rule sets"),
         (name = "MCP", description = "The MCP server mounted at /mcp")
     )
 )]
