@@ -67,7 +67,7 @@ Rust's `regex` crate runs in linear time, so no pattern can backtrack catastroph
 
 ## Model rules
 
-Models add judgment on top of the pattern rules in two ways: as **model rules** (`model_assessment`, `model_detection`), and as a pattern rule's **[value classifier setting](#value-classifier-setting)**, which checks that rule's own matches the way a checksum does. A [trained value classifier](#the-value-classifier) ships with the engine. A rule set without models scans exactly as before. They run only when the engine is built with the `ml` feature (`cargo build --features ml`), which runs ONNX models on the CPU with [tract](https://github.com/sonos/tract), a pure-Rust runtime.
+Models add judgment on top of the pattern rules in two ways: as **model rules** (`model_assessment`, `model_detection`), and as a pattern rule's **[value classifier setting](#value-classifier-setting)**, which checks that rule's own matches the way a checksum does. A [trained value classifier](#the-value-classifier) and a [trained secret detector](#the-secret-detector) ship with the engine. A rule set without models scans exactly as before. They run only when the engine is built with the `ml` feature (`cargo build --features ml`), which runs ONNX models on the CPU with [tract](https://github.com/sonos/tract), a pure-Rust runtime.
 
 ```json
 {
@@ -93,7 +93,7 @@ Every model takes one row of token ids, `int64[1, L]`, with `L` fixed by the mod
 | `model_detection` | `L` bytes of text, no markers; windows start every `L / 2` bytes | One score per byte, `float[1, L]`: how likely that byte is part of a secret | Each byte keeps its highest score from any window. Runs of bytes at or above the threshold, widened to whole characters, become findings; runs under 8 bytes are dropped. The finding's confidence is the run's highest score |
 
 - **Assessments run after the 200-finding cap,** so a flood of matches can't multiply model runs. Findings with no value (unsafe handling) get no assessment. Detection findings are assessed too.
-- **Detection reads the whole text,** about `2 × bytes / L` model runs per scan, so it is the slowest rule type: a 1 MB input with `L = 256` means about 8,000 model runs.
+- **Detection reads the whole text,** about `2 × bytes / L` model runs per scan, so it is the slowest rule type: a 1 MB input with `L = 256` means about 8,000 model runs. With the bundled detector that takes about 3.5 seconds in a release build (see [below](#the-secret-detector)).
 
 ### Value classifier setting
 
@@ -122,7 +122,32 @@ It judges the matched value and the name it's assigned to, not the file around i
 - About 1 in 4 placeholders is classed as something else, and when that is a credential, it keeps its confidence.
 - Retraining changes the file's hash. Rule set versions that name the old hash keep naming it, so their rules report the classifier as unavailable until a new version uses the new setting.
 
+- Its CredData split isn't the secret detector's: it trained on 51 of the detector's 66 test repositories. Retraining on the detector's split made it worse, including on the 15 repositories neither model saw (accuracy 0.845 against 0.885), so the shipped model keeps its own split. Numbers for the two together are only on unseen data for those 15 repositories.
+
 `tests/value_classifier.rs` runs it through the engine on hand-written cases: passwords and keys, hashes and UUIDs under secret-sounding names, URLs and paths, and placeholders.
+
+### The secret detector
+
+[`models/secret-detector.onnx`](models/secret-detector.onnx) is a trained `model_detection` model (about 170 KB, `L = 256`, SHA-256 `c81090bf…0292`). It reads raw text and scores every byte, so it can flag secrets no pattern rule describes: a token from a vendor with no rule, a password passed to a function, a key in a chat message. Like the classifier it is not part of the built-in rule set; the engine exports it as `SECRET_DETECTOR_ONNX` with a ready-made rule, `secret_detector_rule()` (severity medium, threshold 50). The API loads it at startup and lists it at `GET /api/models` as fitting `model_detection`, but does not seed a rule for it. [`ml/`](../ml/README.md#secret-detector-training) has the code that trains it.
+
+It is a byte-level convolutional network trained on synthetic documents mixed with real labeled code from Samsung's public CredData benchmark (split by repository into training, validation and test; none of that data is in this repository). The threshold of 50 was chosen on the validation repositories. On held-out data:
+
+| Held out | Precision | Recall |
+|---|---|---|
+| CredData test repositories, the 65 other than one that holds 84% of the labels | 0.52 (0.71 at threshold 70) | 0.69 (0.63 at 70) |
+| CredData test repositories, all 66 | 0.55 | 0.93 |
+| Synthetic documents | 0.95 | 0.93 |
+| Hand-written batch never used to tune it | 0 of 12 findings wrong | 11 of 12 found |
+
+The first row is the best guide to ordinary code: about half of the findings are credentials, so treat findings as leads to review. [`ml/README.md`](../ml/README.md#how-good-the-detector-is) has the full numbers and what they do and don't show.
+
+- **Spans are approximate.** A finding covers the bytes the model scored at or above the threshold, so it can stop a few characters short of a secret or run into a quote. A private key's finding covers its `-----BEGIN` line and first line of key data, not the whole block.
+- **Passwords are its weakest kind:** it finds about 8 in 10 of the passwords in real code that are long enough to report (none under 8 bytes, the engine's minimum finding), and can miss a password with punctuation in a connection URL.
+- **No test or example context.** A real-looking value in a test or README is flagged; placeholders are only recognized by how they look.
+- **Speed.** A 1 MB scan takes about 3.5 seconds in a release build and about 30 seconds in a debug build (Apple M1 Pro, one thread; `tests/secret_detector.rs` has the timing, run with `--ignored`). The time goes into the convolutions, not per-run overhead, so batching windows would gain little; a smaller network or running windows on several threads would.
+- **Retraining changes the file's hash.** Rule set versions that name the old hash report the detector rule as unavailable until a new version names the new one.
+
+`tests/secret_detector.rs` runs it through the engine on the three hand-written batches and asserts exactly what it gets wrong today.
 
 The tests in `tests/models.rs` build tiny hand-written ONNX models in code, so they need no model files.
 

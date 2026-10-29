@@ -241,6 +241,76 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 - **Parsing source code into syntax trees:** this would need a parser per language, so code is scanned as text with its comment lines recognized.
 - **Finding passwords under 8 characters:** the scanner doesn't try. A model detection rule drops any finding shorter than 8 bytes (`MIN_DETECTION_BYTES`), and the built-in password rules need 8 characters too (6 for about 60 very common passwords). A secrets scanner finds secrets that leaked; it isn't a password-strength check. A 4-character password can be guessed whether or not it's in the code, so finding it doesn't help anyone. Lowering the minimum was measured on 65 held-out CredData repositories: at 4 bytes, the detector found 42 of 108 short passwords but added about 1,300 false findings, and precision fell from 0.405 to 0.283.
 
+### Models: what the secret detector was trained and evaluated on
+
+The secret detector (`engine/models/secret-detector.onnx`) is a `model_detection` model that runs locally on the CPU, so no text leaves the machine. It scores every byte of the text for how likely it is part of a secret. Details are in [ml/README.md](ml/README.md#secret-detector-training).
+
+It was trained on two sources, and each is evaluated on held-out data of its own. The numbers are kept separate so synthetic and real results aren't mixed.
+
+**1. Synthetic documents** (`ml/detector_data.py`): 32,000 for training, 2,000 more from a different seed for evaluation. Every byte has a label.
+
+- **Documents:** about twenty kinds of file: env, YAML, JSON, TOML, INI, properties, code in seven languages, shell, Dockerfile, XML, Terraform, logs, prose and chat, HTML, credential files, and Markdown with code blocks. A third of the documents contain no secret.
+- **Secrets it plants (labeled 1):**
+  - known vendor formats, and made-up vendor tokens (a random prefix and random characters)
+  - generic hex, alphanumeric and base64 keys, salts, and composite tokens
+  - passwords
+  - the password in a connection string, a token after `Bearer` or in `--user`, a signature in a URL
+  - webhook URLs, JWTs, private keys, and keys passed straight to functions
+- **Hard negatives (labeled 0):**
+  - hashes and digests, `0x` hashes, lockfile and checksum entries
+  - UUIDs, IDs with prefixes, ARNs, build hashes, cursors
+  - base64 image data, SRI strings, public keys, certificates, SSH keys
+  - URLs, minified code
+  - placeholders, references to secrets stored elsewhere, and settings named after secrets that hold none
+- **No real secrets:** real-shaped values are random at generation time, so the repository contains no secret-looking string.
+
+**2. CredData** ([Samsung/CredData](https://github.com/Samsung/CredData) at commit `fc9b64b`): source files from 337 public GitHub repositories (11,565 files, 997 MB), with 67,896 lines labeled by hand: 15,753 `T`, 48,061 `F`, 4,082 `X`. CredData had already replaced the real credentials with random values of the same shape. AWS keys keep their real prefix (`AKIA…`), never a documentation value, so these rows don't teach the model that example values are secrets.
+
+- **Labels used:**
+  - A `T` value is labeled 1 at CredData's value position. A multi-line private key is labeled from its start through its second line.
+  - `F` lines, `X` lines and unlabeled text are labeled 0.
+  - `T` rows with no value position, and multi-line `T` values that aren't keys, are left out of training.
+- **Split by repository,** by a hash of each repository's id. No repository is in more than one split:
+  - **Test:** 66 repositories with 6,183 `T`, 13,360 `F` and 562 `X` lines. Used only to report results.
+  - **Validation:** 37 repositories with 1,454 `T`. Used to choose the threshold.
+  - **Training:** the other 234 repositories. The model trains on 34,016 pieces from them:
+    - pieces around every `T`, `F` and `X` line, with passwords of 8 bytes or more taken three times
+    - at most 500 pieces from any one repository, so no repository dominates
+- **Error analysis drove the last round:**
+  - The previous model's false positives on the test repositories were sorted into groups: embedded base64 blobs, .NET `PublicKeyToken=` values, lockfile checksums, password hashes, SQL column lists, format strings, AWS documentation IDs.
+  - Synthetic look-alikes of each group were added as negatives.
+  - This used the test repositories' error groups, not their labels, but it is still a form of tuning against them, so the validation numbers below matter too.
+- **Not committed:** no CredData file is in this repository, only the trained model and the code that reads a local checkout (`ml/creddata.py`). Each file keeps its source project's license: MIT 185 repositories, Apache-2.0 94, BSD-3-Clause 17, LGPL 16, ISC 4, BSD-2-Clause 4, CC0 3, GPL 1, EPL 1, other 4, no license file 8.
+
+**Threshold:** chosen on the validation repositories. F1 peaks at threshold 50 there, with precision 0.702 and recall 0.694, so the default stays at 50. The chart is in `ml/detector-thresholds.svg`.
+
+**Results**, at threshold 50, as precision / recall. A secret counts as found when a finding overlaps it; a finding counts as right when it overlaps a secret.
+
+| Held-out data | Synthetic only | First CredData model | **Shipped model** |
+|---|---|---|---|
+| CredData test: the 65 repositories other than one holding 84% of the labels | 0.074 / 0.563 | 0.405 / 0.750 | **0.523 / 0.693** |
+| CredData test: all 66 repositories | 0.280 / 0.694 | 0.611 / 0.844 | **0.550 / 0.932** |
+| CredData validation: 37 repositories | (not separate then) | (trained on) | **0.702 / 0.694** |
+| Synthetic documents (shipped and first-CredData models on the current, harder set) | 0.959 / 0.958 | 0.891 / 0.924 | **0.945 / 0.934** |
+| Hand-written batch 3 (12 secrets, 8 clean texts) | 11 found, 2 wrong | 10 found, 0 wrong | **11 found, 0 wrong** |
+
+- **Hand-written batches** (`engine/tests/secret_detector.rs`): each batch was written before the model it was first checked against.
+  - Batches 1 and 2 were used to find gaps in the generator, so they aren't a fair test.
+  - Batch 3 was never used to change anything. It is small, and the same person wrote it and the generator.
+- **Ordinary code:** the first CredData row is the best guide, since one cryptography project dominates the second.
+  - About half of the findings there are credentials at threshold 50 (about 7 in 10 at threshold 70), so findings are leads to review, not verdicts.
+  - The shipped model trades some recall for precision against the first CredData model: F1 0.60 against 0.53.
+  - Its precision–recall curve is close to the earlier model's, and ahead wherever precision is above about 0.65.
+- **Passwords:** 108 of the 360 test passwords are under 8 bytes, below the engine's minimum finding, so none of those can be found. Of the 252 it could report, it finds 207.
+- **Uncertainty:** errors cluster by repository, so the intervals come from resampling whole repositories.
+  - On the 65 test repositories, the shipped model's precision is 0.523, with a 95% interval of 0.40 to 0.65.
+  - Its gain over the first CredData model is still clear: precision +0.05 to +0.17 higher, F1 +0.02 to +0.12 higher.
+- **Tried and not shipped: hard negatives.** Using the shipped model's unlabeled findings in the training repositories as negatives (v6) gave mixed results:
+  - better on the test repositories: 0.680 / 0.658
+  - worse on validation: 0.554 / 0.601, against 0.702 / 0.694
+  Validation decides, so the shipped model stayed. Some unlabeled CredData text is probably real secrets, which makes those negatives noisy.
+- **Value classifier overlap:** the value classifier splits CredData by its own hash and trained on 51 of these 66 test repositories. Numbers for the detector and classifier together are only on unseen data for the other 15. Retraining the classifier on this split was tried and rejected; see its section below.
+
 ### Scan endpoint
 
 `POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged. `GET /api/scan-sessions/{id}/scans/{scanId}` reads a saved scan back in the same shape.
@@ -289,6 +359,12 @@ It was trained on two sources, each evaluated on held-out data of its own:
 | Synthetic | accuracy 0.986 | accuracy 0.974 |
 
 The synthetic-only model's near-perfect synthetic score and poor CredData score show why the real data mattered: it had learned the generator, not real code.
+
+**Tried and not shipped: the secret detector's split.**
+- **What was tried:** the classifier was retrained on the detector's repository split (234 training, 37 validation, 66 test), so both models would hold out the same test repositories. One setting, the number of synthetic samples, was chosen on validation.
+- **Result:** it was worse on the test repositories. On the 15 repositories neither model trained on, the only comparison fair to both, it scored accuracy 0.845 against 0.885, with 5.0% of credentials lowered against 2.8%.
+- **Outcome:** [PR #29](https://github.com/rlwhatley3/scanner-assessment/pull/29) was closed, and the shipped model keeps its own split.
+- **What that leaves:** the two models' test sets overlap on only 15 repositories, so numbers for the detector and classifier together are only on unseen data there.
 
 ### Known gaps
 

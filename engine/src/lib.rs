@@ -17,7 +17,8 @@ mod test_data;
 
 pub use checksum::{Checksum, ChecksumEncoding, Crc32Checksum};
 pub use defaults::{
-    VALUE_CLASSIFIER_ONNX, VALUE_CLASSIFIER_SHA256, default_rule_set, value_classifier_setting,
+    SECRET_DETECTOR_ONNX, SECRET_DETECTOR_SHA256, VALUE_CLASSIFIER_ONNX, VALUE_CLASSIFIER_SHA256,
+    default_rule_set, secret_detector_rule, value_classifier_setting,
 };
 pub use fingerprint::{FINGERPRINT_KEY_BYTES, FingerprintKey};
 pub use format::Format;

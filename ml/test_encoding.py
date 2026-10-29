@@ -2,7 +2,15 @@
 
 import unittest
 
-from encoding import BYTE_OFFSET, PAD_ID, VALUE_END_ID, VALUE_START_ID, encode_value, line_bounds
+from encoding import (
+    BYTE_OFFSET,
+    PAD_ID,
+    VALUE_END_ID,
+    VALUE_START_ID,
+    encode_value,
+    encode_window,
+    line_bounds,
+)
 
 
 def shown(ids: list[int]) -> str:
@@ -30,6 +38,11 @@ class LineBoundsTest(unittest.TestCase):
         self.assertEqual(line_bounds(text, 9, 14), (4, 21))
         self.assertEqual(line_bounds(b"VALUE", 0, 5), (0, 5))
         self.assertEqual(line_bounds(b"x\rVALUE\ry", 2, 7), (2, 7))
+
+
+class EncodeWindowTest(unittest.TestCase):
+    def test_a_window_is_its_bytes_then_padding(self):
+        self.assertEqual(shown(encode_window(b"abc", 5)), "abc__")
 
 
 if __name__ == "__main__":

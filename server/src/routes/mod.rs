@@ -14,13 +14,16 @@ pub use error::ErrorBody;
 
 use crate::db::Db;
 use axum::{Router, extract::FromRef, routing::get};
-use secrets_scanner_engine::{FingerprintKey, Models, VALUE_CLASSIFIER_ONNX};
+use secrets_scanner_engine::{FingerprintKey, Models, SECRET_DETECTOR_ONNX, VALUE_CLASSIFIER_ONNX};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
 /// The models the API ships with and loads at startup, by readable name.
-const BUNDLED_MODELS: &[(&str, &[u8])] = &[("value-classifier", VALUE_CLASSIFIER_ONNX)];
+const BUNDLED_MODELS: &[(&str, &[u8])] = &[
+    ("value-classifier", VALUE_CLASSIFIER_ONNX),
+    ("secret-detector", SECRET_DETECTOR_ONNX),
+];
 
 /// How many scans may run at once. Scans run on this machine's CPU alongside the API, so extra
 /// requests wait their turn instead of all competing at the same time.

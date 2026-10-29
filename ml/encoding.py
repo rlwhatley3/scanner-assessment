@@ -1,6 +1,7 @@
 """The token ids the engine feeds a model, matching `engine/src/models.rs` exactly.
 
 `0` pads, `1` and `2` mark where a value starts and ends, and each byte `b` of the text is `b + 3`.
+A detector's window has no markers.
 """
 
 PAD_ID = 0
@@ -34,4 +35,10 @@ def encode_value(text: bytes, start: int, end: int, length: int) -> list[int]:
     ids += [b + BYTE_OFFSET for b in text[start:value_end]]
     ids.append(VALUE_END_ID)
     ids += [b + BYTE_OFFSET for b in text[end : end + after]]
+    return ids + [PAD_ID] * (length - len(ids))
+
+
+def encode_window(window: bytes, length: int) -> list[int]:
+    """A detector's input for one window of text, padded to `length`."""
+    ids = [b + BYTE_OFFSET for b in window]
     return ids + [PAD_ID] * (length - len(ids))
