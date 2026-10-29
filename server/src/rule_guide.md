@@ -99,7 +99,7 @@ Typical values, in bits per character: an English word about 2.5–3, a made-up 
 
 When to use it: likely-credential rules that would otherwise match ordinary settings. The built-in assignment rule uses 3.0, which keeps `password: changeme` out and keeps `password: q8Z!fP2xL7mR` in. Why it is a threshold and not a format: it is the one signal that works on secrets with no format at all. Its limit: it can't tell a random secret from a random identifier (a git SHA, a UUID), so pair it with key names, context, or a `valueClassifier`.
 
-Separately, any value under 2 bits per character counts as an example signal in the placeholder score, whatever the rule's threshold.
+Separately, a value under 2 bits per character counts as an example signal in the placeholder score, whatever the rule's threshold. A value under 8 characters can't always reach 2 bits (3 characters top out at 1.6), so it also has to be under two thirds of what its length allows: `417` is not an example signal, `000` is.
 
 ## Checksums
 
@@ -133,7 +133,7 @@ A `placeholder_vs_real` rule's pattern runs over the whole text, but its matches
 
 When to use it: the fake values your docs and fixtures use (`your_key_here`, `changeme`, `EXAMPLE`). Why containment: a placeholder word elsewhere on the line says nothing about the secret, but one inside the value does. Keep entries specific. A common word like `password` would mark any finding whose span contains a `password:` key, such as a whole Kubernetes Secret manifest, so the built-in rule uses `:password@` (a URL password of literally `password`) instead.
 
-The other example signals, which score 70, need no rule: entropy under 2 bits per character, a failed checksum, or the value sitting in a comment.
+The other example signals, which score 70, need no rule: very little randomness (see `entropy`), a failed checksum, or the value sitting in a comment.
 
 ## Models
 

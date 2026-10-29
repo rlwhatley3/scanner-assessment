@@ -182,7 +182,7 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
   - A match with no value (unsafe handling) is judged by the secret name in its `key` group: +1.5 when it's code (`dbPassword`, `{token}`, `${token}`) or labels the value logged with it (`"password:", pw`, `"token=%s" % t`, `f"secret: {s}"`), +0.5 when it's a word in a longer message logged with another value (`"password reset for", user`), −2 when it's only a word in a quoted message. Commented out: −2.5.
   - Model detection: the model's highest score in the span.
   - With a value classifier: a credential score above the evidence-based confidence raises it halfway toward that score, up to 95; a score below the setting's minimum lowers it to 30.
-- **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
+- **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character, and under two thirds of what a value its length can have, so a short value with no repeated characters isn't an example just for being short), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
 
 Every match also reports `inComment` and `checksumValid` (absent when the rule has no checksum), and the scan result reports the `format` the text was read as.
 

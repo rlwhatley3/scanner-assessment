@@ -505,6 +505,26 @@ fn a_secret_in_a_comment_still_counts_but_looks_like_an_example() {
 }
 
 #[test]
+fn a_short_value_is_only_an_example_when_it_repeats_itself() {
+    let placeholder_score = |password: &str| {
+        let result = run(&format!("ALTER ROLE app WITH PASSWORD '{password}';\n"));
+        matches(&result)
+            .into_iter()
+            .find(|details| details.rule_name == "Password in a SQL statement")
+            .expect("the password is reported")
+            .placeholder_score
+    };
+    // Every character differs: as random as a value this short can be.
+    assert_eq!(placeholder_score("k7q"), Some(5));
+    assert_eq!(placeholder_score("k7qk"), Some(5));
+    // Mostly one character.
+    assert_eq!(placeholder_score("000"), Some(70));
+    assert_eq!(placeholder_score("kkq"), Some(70));
+    // From 8 characters on, under 2 bits per character is an example whatever the length.
+    assert_eq!(placeholder_score("kkk777qq"), Some(70));
+}
+
+#[test]
 fn commented_out_logging_is_low_confidence() {
     let result = run("// console.log(\"debug\", token)\nrun();\n");
     let found = matches(&result);
