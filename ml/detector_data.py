@@ -43,6 +43,10 @@ class Doc:
     # (start, end, kind) byte ranges of what was planted, for reporting.
     secrets: list[tuple[int, int, str]] = field(default_factory=list)
     decoys: list[tuple[int, int, str]] = field(default_factory=list)
+    # 0 for bytes left out of training because their label is unknown; None means every byte.
+    mask: np.ndarray | None = None
+    # Where a real document came from (a CredData repository id); empty for generated ones.
+    source: str = ""
 
 
 @dataclass

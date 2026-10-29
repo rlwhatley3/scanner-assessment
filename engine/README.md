@@ -126,12 +126,21 @@ It judges the matched value and the name it's assigned to, not the file around i
 
 ### The secret detector
 
-[`models/secret-detector.onnx`](models/secret-detector.onnx) is a trained `model_detection` model (about 170 KB, `L = 256`, SHA-256 `cb18c8a0…21c8`). It reads raw text and scores every byte, so it can flag secrets no pattern rule describes: a token from a vendor with no rule, a password passed to a function, a key in a chat message. Like the classifier it is not part of the built-in rule set; the engine exports it as `SECRET_DETECTOR_ONNX` with a ready-made rule, `secret_detector_rule()` (severity medium, threshold 50). The API loads it at startup and lists it at `GET /api/models` as fitting `model_detection`, but does not seed a rule for it. [`ml/`](../ml/README.md#secret-detector-training) has the code that trains it.
+[`models/secret-detector.onnx`](models/secret-detector.onnx) is a trained `model_detection` model (about 170 KB, `L = 256`, SHA-256 `ac129904…3561`). It reads raw text and scores every byte, so it can flag secrets no pattern rule describes: a token from a vendor with no rule, a password passed to a function, a key in a chat message. Like the classifier it is not part of the built-in rule set; the engine exports it as `SECRET_DETECTOR_ONNX` with a ready-made rule, `secret_detector_rule()` (severity medium, threshold 50). The API loads it at startup and lists it at `GET /api/models` as fitting `model_detection`, but does not seed a rule for it. [`ml/`](../ml/README.md#secret-detector-training) has the code that trains it.
 
-It is a byte-level convolutional network trained only on synthetic documents. On held-out generated documents it has precision 0.96 and recall 0.96 at threshold 50; on the hand-written batch that was never used to tune it, it found 11 of 12 secrets with 2 of 14 findings wrong and flagged nothing in 8 texts without secrets. [`ml/README.md`](../ml/README.md#how-good-the-detector-is) has the full numbers and what they do and don't show.
+It is a byte-level convolutional network trained on synthetic documents mixed with real labeled code from Samsung's public CredData benchmark (split by repository; none of that data is in this repository). At threshold 50:
+
+| Held out | Precision | Recall |
+|---|---|---|
+| CredData repositories, all 66 | 0.61 | 0.84 |
+| CredData repositories, the 65 other than one that holds 84% of the labels | 0.41 | 0.75 |
+| Synthetic documents | 0.96 | 0.93 |
+| Hand-written batch never used to tune it | 0 of 13 findings wrong | 10 of 12 found |
+
+The second row is the best guide to ordinary code: about 4 in 10 findings are credentials, so treat findings as leads to review. [`ml/README.md`](../ml/README.md#how-good-the-detector-is) has the full numbers and what they do and don't show.
 
 - **Spans are approximate.** A finding covers the bytes the model scored at or above the threshold, so it can stop a few characters short of a secret or run into a quote. A private key's finding covers its `-----BEGIN` line and first line of key data, not the whole block.
-- **It misses secrets that only their name gives away when the name is bland**, such as a bare hex key in `maps = "…"`, and sometimes flags text right next to a secret (table borders, the setting on the line above) as a finding of its own.
+- **Passwords are its weakest kind:** it finds a little over half of them in real code, and misses passwords with punctuation in places like a Markdown table or a connection URL.
 - **No test or example context.** A real-looking value in a test or README is flagged; placeholders are only recognized by how they look.
 - **Speed.** A 1 MB scan takes about 3.5 seconds in a release build and about 30 seconds in a debug build (Apple M1 Pro, one thread; `tests/secret_detector.rs` has the timing, run with `--ignored`). The time goes into the convolutions, not per-run overhead, so batching windows would gain little; a smaller network or running windows on several threads would.
 - **Retraining changes the file's hash.** Rule set versions that name the old hash report the detector rule as unavailable until a new version names the new one.

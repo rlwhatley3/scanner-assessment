@@ -44,27 +44,32 @@ Held-out accuracy on generated data is about 99%; most misses are hex strings un
 
 # Secret detector training
 
-Trains the model behind [`engine/models/secret-detector.onnx`](../engine/models/secret-detector.onnx): a `model_detection` model that reads raw text and scores every byte for how likely it is part of a secret, so it can flag secrets no pattern rule describes. The engine's side of the contract is in [`engine/README.md`](../engine/README.md#the-secret-detector).
+Trains the model behind [`engine/models/secret-detector.onnx`](../engine/models/secret-detector.onnx): a `model_detection` model that reads raw text and scores every byte for how likely it is part of a secret, so it can flag secrets no pattern rule describes. It is trained on synthetic documents mixed with real labeled code from [CredData](#creddata). The engine's side of the contract is in [`engine/README.md`](../engine/README.md#the-secret-detector).
 
 ## Retrain the detector
 
-With the venv from [Retrain](#retrain) above:
+The shipped model needs a local CredData checkout (see [CredData](#creddata) for how to build one). With the venv from [Retrain](#retrain) above:
 
 ```sh
-.venv/bin/python -m unittest test_encoding
-.venv/bin/python train_detector.py
+.venv/bin/python -m unittest test_encoding test_creddata
+.venv/bin/python train_detector.py --creddata /path/to/CredData
 ```
 
-Training takes about 35 minutes on a laptop CPU (4 threads). It overwrites `engine/models/secret-detector.onnx`, checks the written graph against PyTorch with ONNX's reference runtime, and prints the new file's SHA-256. Training is seeded and uses a fixed thread count, so the same code gives the same file on the same machine. Put the new hash in `SECRET_DETECTOR_SHA256` in `engine/src/defaults.rs`, then run `cargo test --features ml` in `engine/`. `--docs`, `--epochs` and `--out` make quick experiments easy; `--untrained --out PATH` writes the untrained network, for timing.
+Training takes about 25 minutes on a laptop CPU (4 threads), then evaluates on the held-out synthetic documents and CredData repositories. It overwrites `engine/models/secret-detector.onnx`, checks the written graph against PyTorch with ONNX's reference runtime, and prints the new file's SHA-256. Training is seeded and uses a fixed thread count, so the same code and the same CredData commit give the same file on the same machine. Put the new hash in `SECRET_DETECTOR_SHA256` in `engine/src/defaults.rs`, then run `cargo test --features ml` in `engine/`.
+
+- Without `--creddata` it trains on synthetic documents only.
+- `--evaluate MODEL.onnx` evaluates a written model without training (add `--creddata` to include the held-out repositories).
+- `--docs`, `--epochs` and `--out` are for quick experiments; `--untrained --out PATH` writes the untrained network, for timing.
 
 | Detector file | What it does |
 |---|---|
 | [`detector_data.py`](detector_data.py) | Generates documents with a label for every byte |
+| [`creddata.py`](creddata.py) | Reads a CredData checkout into documents with a label for every byte, split by repository |
+| [`test_creddata.py`](test_creddata.py) | Checks that CredData's labels land on the right bytes, with a tiny made-up checkout |
 | [`train_detector.py`](train_detector.py) | Trains the network, reports held-out precision and recall the way the engine scores, and writes the ONNX file |
 | [`encoding.py`](encoding.py) | `encode_window` matches the engine's detector input |
 
-## The detector's data
-
+## Synthetic documents
 Every document is synthetic, and real-shaped values are random at generation time, so no secret-looking string is committed. A document is one of about twenty kinds of file (env, YAML, JSON, TOML, INI, properties, Python, JavaScript, Go, Java, Ruby, PHP, C#, shell, Dockerfile, XML, Terraform, logs, prose and chat, HTML, credential files such as `.netrc`, `.npmrc`, `.pgpass`, service-account JSON and Kubernetes secrets, and Markdown with code blocks). A third of documents have no secret at all; about a tenth have their newlines squashed, the way minified JSON or a pasted log arrives.
 
 | Labeled 1 | Labeled 0 |
@@ -80,35 +85,77 @@ Secrets sit under names in every case style, under bland names when their format
 
 Each training step takes one 256-byte window from each document, placed the way the engine places windows: at the start, on a 128-byte boundary, or anywhere, sometimes running off the end into padding.
 
+## CredData
+
+[CredData](https://github.com/Samsung/CredData) is Samsung's public benchmark for credential scanners: source files from public GitHub repositories in which the lines a set of scanners flagged were labeled by hand. The detector uses the checkout at commit `fc9b64b`, built with CredData's own `download_data.py`:
+
+- **337 repositories, 11,565 files (997 MB).** 67,896 labeled lines: 15,753 `T` (a credential), 48,061 `F` (not one) and 4,082 `X` (a test value, example or placeholder).
+- **Real credentials are already replaced:** CredData swaps each one for a random value with the same character set and length, keeping fixed prefixes. AWS keys keep their real prefix (`AKIA…`) with a random rest, never a documentation value such as `AKIAIOSFODNN7EXAMPLE`, so these rows don't teach the model that documentation values are secrets.
+- **Nothing from it is committed here.** Each file keeps its source project's license (the license files sit in each repository's folder), so the repository only has the trained model and the code that reads a local checkout.
+
+| License of the source repository | Repositories |
+|---|---|
+| MIT | 185 |
+| Apache-2.0 | 94 |
+| BSD-3-Clause | 17 |
+| LGPL | 16 |
+| ISC | 4 |
+| BSD-2-Clause | 4 |
+| CC0 | 3 |
+| GPL | 1 |
+| EPL | 1 |
+| Other | 4 |
+| No license file | 8 |
+
+How [`creddata.py`](creddata.py) uses it:
+
+- **Labels:**
+  - A `T` row's value is labeled 1, using CredData's value position within the line.
+  - A private key spanning several lines is labeled from its start to the end of its second line, the same rule as the synthetic keys, and the rest of it is left out of training.
+  - Other `T` values that span several lines (two keys and the code between them), and `T` rows with no value position (1,003 of them), are left out of training.
+  - `F` lines, `X` lines and all unlabeled text are labeled 0.
+- **Split by repository:** one repository in five, chosen by a hash of its id, is held out for evaluation. That is 66 repositories (6,183 `T`, 13,360 `F`, 562 `X`); no file from them is trained on.
+- **Training pieces:** from the other 271 repositories, about 770 bytes around every `T` and `X` line and two in five `F` lines, plus a random piece of one file in four: 29,479 pieces. They are mixed with the 32,000 synthetic documents.
+- **Evaluation:** whole files, or for a file over 1 MB (the engine's limit for one scan), the text within 8 KB of its labels.
+
 ## The detector model
 
 Byte embeddings, a 1×1 convolution, six residual dilated convolutions (kernel 3, dilations 1 to 32, so each byte sees about 64 bytes either side), a max over the window added back to every byte as a summary of the whole window, and one sigmoid score per byte: about 42,000 parameters. `L = 256`. `train_detector.py` writes the ONNX graph by hand (Gather, Transpose, Conv, Relu, Add, ReduceMax, Sigmoid, Flatten at opset 13). Training uses label smoothing so scores stay off 0 and 1.
 
 ## How good the detector is
 
-Measured at the engine's default threshold of 50, the way the engine scores: windows every 128 bytes, each byte keeps its highest score, runs under 8 bytes dropped. A secret counts as found when a finding overlaps it; a finding counts as right when it overlaps a secret.
+Measured at the engine's default threshold of 50, the way the engine scores: windows every 128 bytes, each byte keeps its highest score, runs under 8 bytes dropped. A secret counts as found when a finding overlaps it; a finding counts as right when it overlaps a secret. Each source is reported on its own.
 
-**On 2,000 held-out generated documents** (a different seed from training): precision 0.959, recall 0.958 (0.986 / 0.936 at threshold 70; 0.904 / 0.971 at 30). Recall is 1.0 or close to it for known formats, JWTs, private keys, webhook URLs and generic keys; passwords are the weakest at 0.89 (737 of 829), and passwords in connection strings 0.90. The false positives are mostly base64 image data, SSH public keys, digests, SRI strings and prefixed IDs. These numbers mostly show that the model learned the generator.
+**Held-out CredData repositories**, comparing the shipped model with the previous one, trained on synthetic documents only:
 
-**On hand-written text**, in [`engine/tests/secret_detector.rs`](../engine/tests/secret_detector.rs), in three batches, each written before the model it was first checked against:
+| Held out | Synthetic only: precision / recall | With CredData: precision / recall |
+|---|---|---|
+| All 66 repositories (6,183 credentials) | 0.280 / 0.694 | **0.611 / 0.844** |
+| The 65 other than `2ba83c6a` (1,018 credentials) | 0.074 / 0.563 | **0.405 / 0.750** |
+
+- **One repository dominates.** `2ba83c6a` holds 84% of the held-out credentials (mostly keys and private keys, by the look of it test material in a cryptography project), so the second row is the better guide to ordinary code.
+- **At threshold 70**, precision and recall are 0.770 / 0.645 on all 66 repositories and 0.563 / 0.698 on the other 65.
+- **Recall by kind** on the other 65 repositories: tokens 186 of 190, private keys 30 of 31, UUID-shaped secrets 118 of 138, secrets 69 of 75, keys 50 of 59, passwords 202 of 360, URL credentials 5 of 19.
+- **Most false positives are in unlabeled text** (965 of 1,205 on the other 65 repositories); 230 are on lines CredData labeled `F` and 10 on `X` lines. CredData only labels lines some scanner flagged, so some unlabeled findings may be real secrets nobody labeled, but most are random-looking strings in code.
+- **Real values were obfuscated,** in training and evaluation alike. If the obfuscated values look different from real ones (CredData's replacement passwords are mostly lowercase letters and digits), these numbers can be better than on real code.
+
+**Held-out synthetic documents** (2,000, a different seed from training): precision 0.958, recall 0.926 (0.988 / 0.884 at threshold 70). The synthetic-only model scored 0.959 / 0.958; adding real data cost some recall on the generator's own documents.
+
+**Hand-written text**, in [`engine/tests/secret_detector.rs`](../engine/tests/secret_detector.rs), in three batches, each written before the model it was first checked against:
 
 | Batch | How it was used | Secrets found | Wrong findings | Texts with no secret |
 |---|---|---|---|---|
-| 1 | Written before any training; the first model's misses (5 of 24) led to changes in the data | 23 of 24 | 0 of 25 | 18, none flagged |
-| 2 | Written before the second model was checked; its misses (4 of 13, plus 2 false positives) led to the last round of changes | 13 of 13 | 1 of 14 | 10, none flagged |
-| 3 | Written before the final model was trained, and never used to change anything | **11 of 12** | **2 of 14** | **8, none flagged** |
+| 1 | Written before any training; the first model's misses (5 of 24) led to changes in the generator | 22 of 24 | 0 of 25 | 18, none flagged |
+| 2 | Written before the second model was checked; its misses (4 of 13, plus 2 false positives) led to the last changes to the generator | 13 of 13 | 1 of 14 | 10, 1 flagged |
+| 3 | Written before the third model was trained, and never used to change anything, including the move to CredData | **10 of 12** | **0 of 13** | **8, none flagged** |
 
-Only batch 3 is a fair test. On it the final model finds 11 of 12 secrets and is wrong in 2 of 14 findings (precision 0.86, recall 0.92); the second model, which had not seen batch 3 either, scored 11 of 12 and 0 of 13. On batch 2, while it was still held out, the second model found 9 of 13 with 2 false positives in 10 clean texts. Treat the true rate on real text as somewhere around those held-out numbers, not the generated ones: these batches are small (25 secrets and 18 clean texts held out in all), and the person who wrote them also wrote the generator.
-
-What it still gets wrong, from these batches:
-
-- A bare 32-character hex key under a bland name (`static let maps = "…"`) is missed: without a secret-sounding name, hex looks like a hash.
-- A hex key with a suffix after a fixed user (`--user "anystring:…-us6"`), found by the second model, is missed by the final one.
-- Table borders and settings next to a secret (`|---|---|`, `=-Xmx2048m`) are sometimes flagged as their own findings.
+On batch 3 the synthetic-only model found 11 of 12 with 2 of 14 findings wrong. The batches are small, and the person who wrote them also wrote the generator. What the shipped model still misses there: passwords with punctuation in a Markdown table and in a connection URL, an EC key indented inside a YAML block, a three-word password in an email; it flags a `0x` transaction hash.
 
 ## Detector limits
 
-- **It learned a generator.** Every training document is synthetic. It has not been trained or checked on real repositories, so expect misses and false positives in formats and surroundings unlike anything above.
+- **Precision on ordinary code is modest.** On held-out real repositories other than the dominant one, about 4 in 10 findings at threshold 50 are credentials (about 6 in 10 at 70). Treat findings as leads to review, not verdicts.
+- **Passwords are the weakest kind**, at a little over half found on real code.
+- **Its real data is one benchmark,** with obfuscated values, labels only on lines other scanners flagged, and one repository that dominates the held-out labels.
 - **Each byte sees about 64 bytes either side** and a summary of its 256-byte window. A name further away than that doesn't help, and the middle of a long private key looks like a certificate, which is why only a key's first lines are labeled.
 - **No test or example context.** A real-looking value in a unit test or a README is flagged like any other; placeholders are only recognized by their look.
 - **Speed.** About 3.5 seconds for 1 MB in a release build on an Apple M1 Pro, 30 seconds in a debug build; see the [engine README](../engine/README.md#the-secret-detector).

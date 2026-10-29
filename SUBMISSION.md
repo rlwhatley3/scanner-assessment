@@ -242,7 +242,9 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 
 The secret detector (`engine/models/secret-detector.onnx`) is a `model_detection` model that runs locally on the CPU, so no text leaves the machine. It scores every byte of the text for how likely it is part of a secret. Details are in [ml/README.md](ml/README.md#secret-detector-training).
 
-**Training data: synthetic only.** `ml/detector_data.py` generates documents with a label for every byte. Training used 32,000 documents; evaluation used 2,000 more from a different seed.
+It was trained on two sources, and each is evaluated on held-out data of its own. The numbers are kept separate so synthetic and real results aren't mixed.
+
+**1. Synthetic documents** (`ml/detector_data.py`): 32,000 for training, 2,000 more from a different seed for evaluation. Every byte has a label.
 
 - **Documents:** about twenty kinds of file: env, YAML, JSON, TOML, INI, properties, code in seven languages, shell, Dockerfile, XML, Terraform, logs, prose and chat, HTML, credential files, and Markdown with code blocks. A third of the documents contain no secret.
 - **Secrets it plants (labeled 1):**
@@ -257,16 +259,31 @@ The secret detector (`engine/models/secret-detector.onnx`) is a `model_detection
   - base64 image data, SRI strings, public keys, certificates, SSH keys
   - URLs, minified code
   - placeholders, references to secrets stored elsewhere, and settings named after secrets that hold none
-- **No real secrets:** real-shaped values are random at generation time, so the repository contains no secret-looking string and the model has seen no real credential.
+- **No real secrets:** real-shaped values are random at generation time, so the repository contains no secret-looking string.
 
-**Evaluation data:**
+**2. CredData** ([Samsung/CredData](https://github.com/Samsung/CredData) at commit `fc9b64b`): source files from 337 public GitHub repositories (11,565 files, 997 MB), with 67,896 lines labeled by hand: 15,753 `T`, 48,061 `F`, 4,082 `X`. CredData had already replaced the real credentials with random values of the same shape. AWS keys keep their real prefix (`AKIA…`), never a documentation value, so these rows don't teach the model that example values are secrets.
 
-- **Held-out synthetic documents** (2,000): precision 0.959, recall 0.958 at threshold 50. This mostly shows the model learned the generator.
-- **Hand-written text** (`engine/tests/secret_detector.rs`), in three batches, each written before the model it was first checked against:
-  - Batches 1 and 2 were used to find gaps in the generator, so the model has been tuned against them. The final model finds 23 of 24 and 13 of 13 secrets there.
-  - Batch 3 was never used to change anything: **11 of 12 secrets found, 2 of 14 findings wrong, nothing flagged in 8 texts without secrets** (precision 0.86, recall 0.92).
-  - These batches are small, and the same person wrote them and the generator.
-- **Real data: none yet.** The model has not been trained or evaluated on real repositories. The public CredData dataset is planned next, split by repository and with its results reported separately from the synthetic numbers.
+- **Labels used:**
+  - A `T` value is labeled 1 at CredData's value position. A multi-line private key is labeled from its start through its second line.
+  - `F` lines, `X` lines and unlabeled text are labeled 0.
+  - `T` rows with no value position, and multi-line `T` values that aren't keys, are left out of training.
+- **Split by repository:** one repository in five, chosen by a hash of its id, is held out. That is 66 repositories with 6,183 `T`, 13,360 `F` and 562 `X` lines, none of them trained on. From the other 271 repositories, 29,479 pieces around labeled lines were mixed into training.
+- **Not committed:** no CredData file is in this repository, only the trained model and the code that reads a local checkout (`ml/creddata.py`). Each file keeps its source project's license: MIT 185 repositories, Apache-2.0 94, BSD-3-Clause 17, LGPL 16, ISC 4, BSD-2-Clause 4, CC0 3, GPL 1, EPL 1, other 4, no license file 8.
+
+**Results**, at threshold 50. A secret counts as found when a finding overlaps it; a finding counts as right when it overlaps a secret.
+
+| Held-out data | Synthetic-only model | Shipped model (synthetic + CredData) |
+|---|---|---|
+| CredData, all 66 repositories | precision 0.280, recall 0.694 | **precision 0.611, recall 0.844** |
+| CredData, the 65 repositories other than one holding 84% of the labels | precision 0.074, recall 0.563 | **precision 0.405, recall 0.750** |
+| Synthetic documents | precision 0.959, recall 0.958 | precision 0.958, recall 0.926 |
+| Hand-written batch 3 (12 secrets, 8 clean texts) | 11 found, 2 of 14 findings wrong | 10 found, 0 of 13 findings wrong |
+
+- **Hand-written batches** (`engine/tests/secret_detector.rs`): each batch was written before the model it was first checked against.
+  - Batches 1 and 2 were used to find gaps in the generator, so they aren't a fair test.
+  - Batch 3 was never used to change anything. It is small, and the same person wrote it and the generator.
+- **Ordinary code:** the second CredData row is the best guide, since one cryptography project dominates the first. Only about 4 in 10 findings there are credentials (about 6 in 10 at threshold 70), so findings are leads to review, not verdicts.
+- **Passwords are the weakest kind:** 202 of 360 found in real code.
 
 ### Scan endpoint
 

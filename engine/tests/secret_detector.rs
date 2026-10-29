@@ -7,10 +7,11 @@
 //!
 //! 1. Written before any model was trained. The first model's misses here led to changes in the
 //!    training data, so the model has been tuned against this batch.
-//! 2. Written before the second model was checked. Its misses led to the last round of changes,
-//!    so this batch is tuned against too.
-//! 3. Written before the final model was trained, and kept out of every change since: the only
-//!    batch that shows how the detector does on text nobody tuned it for.
+//! 2. Written before the second model was checked. Its misses led to the last round of changes
+//!    to the generator, so this batch is tuned against too.
+//! 3. Written before the third model was trained, and kept out of every change since, including
+//!    adding real data from CredData: the only batch here that shows how the detector does on
+//!    text nobody tuned it for. `ml/README.md` has its results on held-out CredData repositories.
 //!
 //! Each batch's test asserts exactly what the detector gets wrong today, so a regression and an
 //! improvement both show up as a failure to look at.
@@ -602,9 +603,14 @@ fn the_model_loads_under_the_hash_its_rule_names() {
 #[test]
 fn batch_1() {
     let (missed, wrong) = run("batch 1", BATCH_1_WITH_SECRETS, BATCH_1_WITHOUT_SECRETS);
-    // A 32-character hex key with a `-us6` suffix after `anystring:`; the model found it before
-    // the last round of training changes and misses it since.
-    assert_eq!(missed, ["mailchimp key in curl"]);
+    // An EC key indented inside a YAML block scalar, and a three-word password in an email.
+    assert_eq!(
+        missed,
+        [
+            "indented private key in a YAML block",
+            "temporary password in an email"
+        ]
+    );
     assert!(wrong.is_empty(), "{wrong:?}");
 }
 
@@ -612,20 +618,16 @@ fn batch_1() {
 fn batch_2() {
     let (missed, wrong) = run("batch 2", BATCH_2_WITH_SECRETS, BATCH_2_WITHOUT_SECRETS);
     assert!(missed.is_empty(), "{missed:?}");
-    // Flags `=-Xmx2048m` on the line above the key.
-    assert_eq!(wrong, ["push server key in gradle properties"]);
+    // Flags a `0x` transaction hash.
+    assert_eq!(wrong, ["transaction hash in a log"]);
 }
 
 #[test]
 fn batch_3_held_out() {
     let (missed, wrong) = run("batch 3", BATCH_3_WITH_SECRETS, BATCH_3_WITHOUT_SECRETS);
-    // A bare 32-character hex key in a Swift constant named `maps`.
-    assert_eq!(missed, ["swift constant"]);
-    // Flags the table's `|---|` borders and `| staging` next to the password it finds.
-    assert_eq!(
-        wrong,
-        ["markdown table of logins", "markdown table of logins"]
-    );
+    // Passwords with punctuation in a Markdown table and in a connection URL in a crontab.
+    assert_eq!(missed, ["markdown table of logins", "crontab backup job"]);
+    assert!(wrong.is_empty(), "{wrong:?}");
 }
 
 #[test]
