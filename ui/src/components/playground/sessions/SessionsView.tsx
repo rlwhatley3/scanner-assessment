@@ -152,8 +152,8 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
             <tr>
               <th>Rule</th>
               <th>Severity</th>
-              <th>Location</th>
-              <th>Preview</th>
+              <th>Where</th>
+              <th>Starts with</th>
             </tr>
           </thead>
           <tbody>
@@ -165,9 +165,7 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
                   <td>
                     <SeverityIcon tone={violation.severity} /> {SEVERITY_LABELS[violation.severity]}
                   </td>
-                  <td>
-                    {violation.location.startLine}:{violation.location.startColumn}
-                  </td>
+                  <td>Line {violation.location.startLine}</td>
                   <td>{violation.redactedPreview && <code>{violation.redactedPreview}</code>}</td>
                 </tr>
               );

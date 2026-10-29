@@ -1148,7 +1148,6 @@ a.button {
   h3 {
     margin: 0 0 0.5rem;
   }
-
 }
 
 .guide-section {
@@ -1194,4 +1193,11 @@ a.button {
     color: var(--ink-soft);
     font-size: var(--font-small);
   }
+}
+
+.finding-technical {
+  display: block;
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.75rem;
 }

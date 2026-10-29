@@ -12,6 +12,7 @@ import {
 } from "../api.ts";
 import { describeChecksum } from "../checksum.ts";
 import MoreMenu from "../MoreMenu.tsx";
+import { describeRule } from "../rules/describe.ts";
 import { useActiveSession } from "../session.tsx";
 import { DETECTION_LABELS, SEVERITY_LABELS, SeverityIcon } from "../severity.tsx";
 import { useLoad } from "../useLoad.ts";
@@ -56,6 +57,7 @@ export default function RuleSetPanel({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [technical, setTechnical] = useState(false);
 
   const set = ruleSet.data?.id === ruleSetId ? ruleSet.data : null;
   const selectedId = versionId ?? set?.latestVersionId ?? set?.versions.at(-1)?.id ?? null;
@@ -301,14 +303,27 @@ export default function RuleSetPanel({
               ]}
             />
           </div>
+          <label className="findings-sort">
+            <input
+              type="checkbox"
+              checked={technical}
+              onChange={(event) => setTechnical(event.target.checked)}
+            />
+            Show technical details
+          </label>
           <table className="data-table">
             <thead>
               <tr>
                 <th>Rule</th>
                 <th>Severity</th>
-                <th>Type</th>
-                <th>Pattern</th>
-                <th>Checksum</th>
+                <th>What it finds</th>
+                {technical && (
+                  <>
+                    <th>Type</th>
+                    <th>Pattern</th>
+                    <th>Checksum</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -316,7 +331,7 @@ export default function RuleSetPanel({
                 <tr key={ruleId} className={definition.enabled === false ? "disabled" : undefined}>
                   <td>
                     <Link to={`/playground/rules/${ruleId}`}>{ruleName(definition, ruleId)}</Link>
-                    {definition.enabled === false && <span className="badge">Disabled</span>}
+                    {definition.enabled === false && <span className="badge">Off</span>}
                   </td>
                   <td>
                     {definition.severity && (
@@ -326,11 +341,18 @@ export default function RuleSetPanel({
                       </>
                     )}
                   </td>
-                  <td>{definition.detectionType && DETECTION_LABELS[definition.detectionType]}</td>
-                  <td>
-                    <code className="pattern">{definition.pattern}</code>
-                  </td>
-                  <td>{describeChecksum(definition.checksum) ?? "—"}</td>
+                  <td>{describeRule(definition)}</td>
+                  {technical && (
+                    <>
+                      <td>
+                        {definition.detectionType && DETECTION_LABELS[definition.detectionType]}
+                      </td>
+                      <td>
+                        <code className="pattern">{definition.pattern}</code>
+                      </td>
+                      <td>{describeChecksum(definition.checksum) ?? "—"}</td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>

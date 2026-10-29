@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { describeRule } from "./describe.ts";
 import { LABEL_PATTERN, NEW_PREFIX_SHAPE, type Shape, shapeFields, shapeOf } from "./shape.ts";
 
 function roundTrip(shape: Shape): Shape {
@@ -59,5 +60,53 @@ describe("shapeOf", () => {
         kind: "custom",
       });
     }
+  });
+});
+
+describe("describeRule", () => {
+  it("describes simple-editor rules from their shape", () => {
+    const prefix = shapeFields({
+      kind: "prefix",
+      prefix: "acme_",
+      length: "24",
+      charset: "alphanumeric",
+    });
+    assert.equal(
+      describeRule({ ...prefix, keyNames: [] }),
+      "Text starting with “acme_”, then 24 letters and numbers.",
+    );
+    assert.equal(
+      describeRule({
+        pattern: LABEL_PATTERN,
+        keyNames: ["password", "token"],
+        detectionType: "likely_credential",
+      }),
+      "Values after labels like password, token.",
+    );
+  });
+
+  it("falls back to the rule type for hand-written rules", () => {
+    assert.equal(
+      describeRule({
+        pattern: "\\bAKIA[0-9A-Z]{16}\\b",
+        prefix: "AKIA",
+        detectionType: "direct_credential",
+      }),
+      "A specific key or token format, starting with “AKIA”.",
+    );
+    assert.equal(describeRule({}), "Not finished yet.");
+  });
+});
+
+describe("describeRule label lists", () => {
+  it("names the first three labels and counts the rest", () => {
+    assert.equal(
+      describeRule({
+        pattern: LABEL_PATTERN,
+        keyNames: ["password", "secret", "token", "api_key", "passphrase"],
+        detectionType: "likely_credential",
+      }),
+      "Values after labels like password, secret, token and 2 more.",
+    );
   });
 });

@@ -24,10 +24,23 @@ export function findingElementId(index: number): string {
 }
 
 function formatLocation({ location }: SavedMatch["violation"]): string {
-  const start = `${location.startLine}:${location.startColumn}`;
   return location.endLine === location.startLine
-    ? `Line ${start}–${location.endColumn}`
-    : `Lines ${start} – ${location.endLine}:${location.endColumn}`;
+    ? `Line ${location.startLine}`
+    : `Lines ${location.startLine}–${location.endLine}`;
+}
+
+/** How likely the match is a real secret, in plain words, from its scores and any model's or
+ * value classifier's verdict. */
+export function likelihood(details: SavedMatch["violation"]): string {
+  const example =
+    (details.placeholderScore ?? 0) >= 50 ||
+    details.valueClass?.label === "placeholder" ||
+    details.modelAssessments?.some((assessment) => assessment.verdict === "likely_example");
+  if (example) return "Looks like an example value";
+  if (details.valueClass?.label === "non_secret") return "Might not be a secret";
+  if (details.confidence >= 80) return "Very likely real";
+  if (details.confidence >= 50) return "Probably real";
+  return "Might be real";
 }
 
 /** Matches in text order by default, or by severity. Clicking one selects its highlight, and a
@@ -41,6 +54,7 @@ export default function FindingsList({
 }: FindingsListProps) {
   const [sortBySeverity, setSortBySeverity] = useState(false);
   const [suppressing, setSuppressing] = useState<number | null>(null);
+  const [technical, setTechnical] = useState<number | null>(null);
   const activeByFinding = useMemo(
     () =>
       new Map(
@@ -111,37 +125,12 @@ export default function FindingsList({
                   <span className="finding-location">{formatLocation(details)}</span>
                 </span>
                 <span className="finding-meta">
-                  {SEVERITY_LABELS[details.severity]} · {DETECTION_LABELS[details.detectionType]} ·
-                  Confidence {details.confidence}
-                  {details.placeholderScore !== null &&
-                    ` · Placeholder ${details.placeholderScore}`}
-                  {details.checksumValid !== null &&
-                    (details.checksumValid ? " · Checksum valid" : " · Checksum fails")}
+                  {SEVERITY_LABELS[details.severity]} · {likelihood(details)}
                   {details.inComment && " · In a comment"}
-                  {details.valueClass && (
-                    <span className={`value-class ${details.valueClass.label}`}>
-                      {" "}
-                      · Value: {VALUE_LABELS[details.valueClass.label]} (
-                      {details.valueClass.label === "credential"
-                        ? details.valueClass.credential
-                        : details.valueClass.label === "non_secret"
-                          ? details.valueClass.nonSecret
-                          : details.valueClass.placeholder}
-                      )
-                    </span>
-                  )}
-                  {details.modelAssessments?.map((assessment) => (
-                    <span key={assessment.ruleId} className={`model-verdict ${assessment.verdict}`}>
-                      {" "}
-                      · {assessment.ruleName}:{" "}
-                      {assessment.verdict === "likely_real" ? "likely real" : "likely an example"} (
-                      {assessment.score})
-                    </span>
-                  ))}
                   {details.redactedPreview && (
                     <>
                       {" "}
-                      · <code>{details.redactedPreview}</code>
+                      · starts with <code>{details.redactedPreview}</code>
                     </>
                   )}
                 </span>
@@ -154,14 +143,27 @@ export default function FindingsList({
                 {selected.includes(index) && (
                   <span className="finding-details">
                     <span>
-                      <b>Why flagged:</b> {details.whyFlagged}
+                      <b>Why it was flagged:</b> {details.whyFlagged}
                     </span>
                     <span>
-                      <b>Fix:</b> {details.remediation}
+                      <b>How to fix it:</b> {details.remediation}
                     </span>
                   </span>
                 )}
               </button>
+              {selected.includes(index) && (
+                <div className="finding-actions">
+                  <button
+                    type="button"
+                    className="link-button"
+                    aria-expanded={technical === finding.id}
+                    onClick={() => setTechnical(technical === finding.id ? null : finding.id)}
+                  >
+                    {technical === finding.id ? "Hide technical details" : "Technical details"}
+                  </button>
+                  {technical === finding.id && <TechnicalDetails details={details} />}
+                </div>
+              )}
               {selected.includes(index) &&
                 !suppression &&
                 onSuppress &&
@@ -189,5 +191,46 @@ export default function FindingsList({
         })}
       </ol>
     </section>
+  );
+}
+
+/** The engine's own terms and scores, for people who want them. */
+function TechnicalDetails({ details }: { details: SavedMatch["violation"] }) {
+  const { location } = details;
+  return (
+    <span className="finding-technical">
+      {location.startLine}:{location.startColumn}–{location.endLine}:{location.endColumn} ·{" "}
+      {DETECTION_LABELS[details.detectionType]} · Confidence {details.confidence}
+      {details.placeholderScore !== null && ` · Placeholder ${details.placeholderScore}`}
+      {details.checksumValid !== null &&
+        (details.checksumValid ? " · Checksum valid" : " · Checksum fails")}
+      {details.inComment && " · In a comment"}
+      {details.valueClass && (
+        <span className={`value-class ${details.valueClass.label}`}>
+          {" "}
+          · Value: {VALUE_LABELS[details.valueClass.label]} (
+          {details.valueClass.label === "credential"
+            ? details.valueClass.credential
+            : details.valueClass.label === "non_secret"
+              ? details.valueClass.nonSecret
+              : details.valueClass.placeholder}
+          )
+        </span>
+      )}
+      {details.modelAssessments?.map((assessment) => (
+        <span key={assessment.ruleId} className={`model-verdict ${assessment.verdict}`}>
+          {" "}
+          · {assessment.ruleName}:{" "}
+          {assessment.verdict === "likely_real" ? "likely real" : "likely an example"} (
+          {assessment.score})
+        </span>
+      ))}
+      {details.redactedPreview && (
+        <>
+          {" "}
+          · <code>{details.redactedPreview}</code>
+        </>
+      )}
+    </span>
   );
 }
