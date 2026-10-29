@@ -7,7 +7,7 @@ interface SuppressFormProps {
   onCancel: () => void;
 }
 
-/** Asks why a finding's value is safe and until when, then suppresses it in the session. */
+/** Asks why a finding's value is safe and until when, then marks it safe in the session. */
 export default function SuppressForm({ onSubmit, onCancel }: SuppressFormProps) {
   const bounds = useMemo(() => expiryBounds(new Date()), []);
   const [reason, setReason] = useState("");
@@ -23,7 +23,7 @@ export default function SuppressForm({ onSubmit, onCancel }: SuppressFormProps) 
     try {
       await onSubmit(reason.trim(), expiryFromDate(date));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not suppress the finding.");
+      setError(reason instanceof Error ? reason.message : "Could not mark the value as safe.");
       setSaving(false);
     }
   }
@@ -32,8 +32,8 @@ export default function SuppressForm({ onSubmit, onCancel }: SuppressFormProps) 
     <form className="suppress-form" onSubmit={submit}>
       <p className="muted small suppress-note">
         Later scans in this session won't flag this exact value from this rule. If the value
-        changes, or the suppression expires or is removed, it is flagged again. Other sessions are
-        not affected. Never type the value itself here.
+        changes, or this expires or is removed, it is flagged again. Other sessions are not
+        affected. Never type the value itself here.
       </p>
       <label htmlFor={`${id}-reason`}>Why is it safe?</label>
       <textarea
@@ -66,7 +66,7 @@ export default function SuppressForm({ onSubmit, onCancel }: SuppressFormProps) 
           className="button primary"
           disabled={saving || reason.trim() === "" || date === ""}
         >
-          Suppress
+          Mark as safe
         </button>
         <button type="button" className="button" onClick={onCancel} disabled={saving}>
           Cancel

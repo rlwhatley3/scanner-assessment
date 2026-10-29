@@ -220,7 +220,7 @@ pub async fn scan_in_session(
         .await
         .map_err(internal)?;
 
-    let result = run_scan(state, scan_id, text, rule_set).await;
+    let result = run_scan(state, scan_id, text, rule_set, true).await;
     let result = match result {
         Ok(result) => result,
         Err(error) => {
@@ -242,12 +242,14 @@ pub async fn scan_in_session(
     save_results(state, scan_session_id, scan_id, result).await
 }
 
-/// Runs the engine off the async runtime, behind the concurrency cap.
+/// Runs the engine off the async runtime, behind the concurrency cap. `fingerprint` is false
+/// when nothing will be saved, so no value needs recognizing later.
 async fn run_scan(
     state: &AppState,
     scan_id: i64,
     text: String,
     rule_set: RuleSet,
+    fingerprint: bool,
 ) -> Result<ScanResult, ApiError> {
     let _permit = state
         .scan_permits
@@ -260,7 +262,7 @@ async fn run_scan(
     tokio::task::spawn_blocking(move || {
         let options = ScanOptions {
             models: Some(&models),
-            fingerprint_key: Some(&fingerprint_key),
+            fingerprint_key: fingerprint.then_some(&*fingerprint_key),
         };
         scan_with_options(scan_id, &text, &rule_set, options)
     })
@@ -443,4 +445,100 @@ fn load_rule_set(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(Some(RuleSet { rules }))
+}
+
+fn store_error(error: store::StoreError) -> ApiError {
+    match error {
+        store::StoreError::NotFound(message) => ApiError::NotFound(message),
+        store::StoreError::Invalid(message) => ApiError::Unprocessable(message),
+        store::StoreError::RulesInvalid(_) => {
+            ApiError::Unprocessable("The rule is invalid.".into())
+        }
+        store::StoreError::Database(error) => internal(error),
+    }
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TryRuleRequest {
+    /// The rule's definition as it stands in the editor, saved or not.
+    #[schema(value_type = Object)]
+    definition: serde_json::Value,
+    /// Sample text to try it on. It is never stored or logged.
+    text: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TryRuleResponse {
+    /// True when there were more findings than the cap and the rest were dropped.
+    truncated: bool,
+    /// Matches, or the rule error that stopped the rule from running. Never contain the matched
+    /// text, and have no ids: nothing is saved.
+    #[schema(value_type = Vec<Object>)]
+    findings: Vec<TriedFinding>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TriedFinding {
+    rule_id: i64,
+    kind: FindingKind,
+    violation: serde_json::Value,
+    violation_pretty: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/rules/{id}/try",
+    tag = "Rules",
+    summary = "Try a rule on sample text",
+    description = "Runs one rule definition, saved or not, on sample text and returns what it \
+                   finds. Nothing is saved: not the text, the scan, or its findings, so this \
+                   needs no rule set version or scan session. The rule runs even when its \
+                   definition is disabled. Rules that only adjust other findings (placeholder \
+                   vs. real, model assessment) find nothing on their own and are rejected.",
+    params(("id" = i64, Path, description = "Rule id")),
+    request_body = TryRuleRequest,
+    responses(
+        (status = 200, description = "What the rule found", body = TryRuleResponse),
+        (status = 400, description = "No text to try", body = ErrorResponse),
+        (status = 404, description = "No such rule", body = ErrorResponse),
+        (status = 413, description = "Text is over 1 MB", body = ErrorResponse),
+        (status = 422, description = "Mistyped fields, or a rule that creates no findings", body = ErrorResponse)
+    )
+)]
+pub async fn try_rule(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(request): Json<TryRuleRequest>,
+) -> Result<Json<TryRuleResponse>, ApiError> {
+    state
+        .db
+        .call(move |connection| Ok(store::get_rule(connection, id).map(|_| ())))
+        .await
+        .map_err(internal)?
+        .map_err(store_error)?;
+    let mut definition = store::parse_definition(request.definition).map_err(store_error)?;
+    definition.enabled = Some(true);
+    let rule_set = RuleSet {
+        rules: vec![Rule { id, definition }],
+    };
+    let result = run_scan(&state, 0, request.text, rule_set, false).await?;
+    let findings = result
+        .findings
+        .into_iter()
+        .map(|finding| {
+            Ok(TriedFinding {
+                rule_id: finding.rule_id,
+                kind: finding.kind,
+                violation: serde_json::to_value(&finding.violation).map_err(internal)?,
+                violation_pretty: finding.violation_pretty,
+            })
+        })
+        .collect::<Result<_, ApiError>>()?;
+    Ok(Json(TryRuleResponse {
+        truncated: result.truncated,
+        findings,
+    }))
 }

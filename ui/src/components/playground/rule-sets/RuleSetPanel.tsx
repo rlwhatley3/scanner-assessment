@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
-  createSession,
   formatDate,
   getRuleSet,
   getVersion,
@@ -12,6 +11,7 @@ import {
   versionLabel,
 } from "../api.ts";
 import { describeChecksum } from "../checksum.ts";
+import MoreMenu from "../MoreMenu.tsx";
 import { useActiveSession } from "../session.tsx";
 import { DETECTION_LABELS, SEVERITY_LABELS, SeverityIcon } from "../severity.tsx";
 import { useLoad } from "../useLoad.ts";
@@ -49,7 +49,7 @@ export default function RuleSetPanel({
   onCopy,
 }: RuleSetPanelProps) {
   const navigate = useNavigate();
-  const { setSession } = useActiveSession();
+  const { session, setSession, setVersionChoice } = useActiveSession();
   const ruleSet = useLoad(() => getRuleSet(ruleSetId), [ruleSetId]);
   const [composing, setComposing] = useState<{ parent: RuleSetVersionDetail | null } | null>(null);
   const [editing, setEditing] = useState(false);
@@ -99,15 +99,14 @@ export default function RuleSetPanel({
     }
   }
 
-  async function startSession() {
+  /** Opens Scan with this version chosen. The next scan starts a session with it. */
+  function scanWith() {
     if (!version) return;
-    setError(null);
-    try {
-      setSession(await createSession(version.id));
-      navigate("/playground/scan");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not start a session.");
+    if (session?.ruleSetVersionId !== version.id) {
+      setSession(null);
+      setVersionChoice(version.id);
     }
+    navigate("/playground/scan");
   }
 
   if (!set) {
@@ -187,36 +186,35 @@ export default function RuleSetPanel({
         <div className="form-actions">
           <button
             type="button"
-            className="button primary"
+            // Only the main action while there is no version to scan with yet.
+            className={`button${set.versions.length === 0 ? " primary" : ""}`}
             onClick={newVersion}
             disabled={set.archived}
             title={set.archived ? "Restore the rule set to add versions." : undefined}
           >
             New version
           </button>
-          <button
-            type="button"
-            className="button"
-            onClick={() => {
-              setName(set.name);
-              setDescription(set.description);
-              setEditing(true);
-            }}
-          >
-            Rename
-          </button>
-          <button
-            type="button"
-            className="button"
-            onClick={() =>
-              run(
-                () => updateRuleSet(set.id, { archived: !set.archived }),
-                "Could not update the rule set.",
-              )
-            }
-          >
-            {set.archived ? "Restore rule set" : "Archive rule set"}
-          </button>
+          <MoreMenu
+            label="More…"
+            items={[
+              {
+                label: "Rename",
+                onSelect: () => {
+                  setName(set.name);
+                  setDescription(set.description);
+                  setEditing(true);
+                },
+              },
+              {
+                label: set.archived ? "Restore rule set" : "Archive rule set",
+                onSelect: () =>
+                  run(
+                    () => updateRuleSet(set.id, { archived: !set.archived }),
+                    "Could not update the rule set.",
+                  ),
+              },
+            ]}
+          />
         </div>
       )}
 
@@ -273,34 +271,35 @@ export default function RuleSetPanel({
             <button
               type="button"
               className="button primary"
-              onClick={startSession}
+              onClick={scanWith}
               disabled={version.archived || set.archived}
-            >
-              Start scan session
-            </button>
-            <button
-              type="button"
-              className="button"
-              onClick={() => setComposing({ parent: version })}
-              disabled={set.archived}
-            >
-              New version from this
-            </button>
-            <button type="button" className="button" onClick={() => onCopy(version.id)}>
-              Copy to new rule set
-            </button>
-            <button
-              type="button"
-              className="button"
-              onClick={() =>
-                run(
-                  () => setVersionArchived(version.id, !version.archived),
-                  "Could not update the version.",
-                )
+              title={
+                version.archived || set.archived
+                  ? "Restore it to scan with this version."
+                  : undefined
               }
             >
-              {version.archived ? "Restore version" : "Archive version"}
+              Scan with this version
             </button>
+            <MoreMenu
+              label="More…"
+              items={[
+                {
+                  label: "New version from this",
+                  onSelect: () => setComposing({ parent: version }),
+                  disabled: set.archived,
+                },
+                { label: "Copy to new rule set", onSelect: () => onCopy(version.id) },
+                {
+                  label: version.archived ? "Restore version" : "Archive version",
+                  onSelect: () =>
+                    run(
+                      () => setVersionArchived(version.id, !version.archived),
+                      "Could not update the version.",
+                    ),
+                },
+              ]}
+            />
           </div>
           <table className="data-table">
             <thead>

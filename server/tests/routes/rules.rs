@@ -186,3 +186,79 @@ async fn check_set_rejects_unknown_and_repeated_rules() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+#[tokio::test]
+async fn try_runs_an_unsaved_definition_on_sample_text_and_saves_nothing() {
+    let app = app();
+    let id = create_rule(&app, json!({})).await;
+    let mut definition = valid_definition("AWS key");
+    definition["enabled"] = json!(false);
+
+    let (status, body) = send(
+        &app,
+        "POST",
+        &format!("/api/rules/{id}/try"),
+        Some(json!({ "definition": definition, "text": "key = AKIAABCDEFGHIJKLMNOP\n" })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let findings = body["findings"]
+        .as_array()
+        .expect("findings should be listed");
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0]["kind"], "match");
+    assert_eq!(findings[0]["violation"]["location"]["startLine"], 1);
+    assert!(findings[0].get("id").is_none());
+    assert!(!body.to_string().contains("ABCDEFGHIJKLMNOP"));
+
+    // Neither the rule nor any session changed.
+    let (_, rule) = send(&app, "GET", &format!("/api/rules/{id}"), None).await;
+    assert_eq!(rule["definition"]["pattern"], json!(null));
+    let (_, sessions) = send(&app, "GET", "/api/scan-sessions", None).await;
+    assert_eq!(sessions, json!([]));
+}
+
+#[tokio::test]
+async fn try_reports_a_broken_pattern_as_a_rule_error() {
+    let app = app();
+    let id = create_rule(&app, json!({})).await;
+    let mut definition = valid_definition("AWS key");
+    definition["pattern"] = json!("(unclosed");
+
+    let (status, body) = send(
+        &app,
+        "POST",
+        &format!("/api/rules/{id}/try"),
+        Some(json!({ "definition": definition, "text": "anything" })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["findings"][0]["kind"], "rule_error");
+}
+
+#[tokio::test]
+async fn try_rejects_empty_text_and_unknown_rules() {
+    let app = app();
+    let id = create_rule(&app, json!({})).await;
+    let definition = valid_definition("AWS key");
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/rules/{id}/try"),
+        Some(json!({ "definition": definition, "text": "  " })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/rules/9999/try",
+        Some(json!({ "definition": definition, "text": "AKIAABCDEFGHIJKLMNOP" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

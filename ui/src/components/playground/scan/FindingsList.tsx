@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { formatDate, type SavedMatch, type Suppression } from "../api.ts";
+import { formatDate, type SavedMatch, type Severity, type Suppression } from "../api.ts";
 import { DETECTION_LABELS, SEVERITY_LABELS, SEVERITY_ORDER, SeverityIcon } from "../severity.tsx";
 import SuppressForm from "./SuppressForm.tsx";
 
@@ -9,7 +9,7 @@ interface FindingsListProps {
   onSelect: (index: number) => void;
   /** The session's suppressions, to show which of these findings one was made from. */
   suppressions?: Suppression[];
-  /** Suppresses a finding's value in the session. Without it, findings can't be suppressed. */
+  /** Marks a finding's value as safe in the session. Without it, findings can't be marked. */
   onSuppress?: (finding: SavedMatch, reason: string, expiresAt: string) => Promise<void>;
 }
 
@@ -31,7 +31,7 @@ function formatLocation({ location }: SavedMatch["violation"]): string {
 }
 
 /** Matches in text order by default, or by severity. Clicking one selects its highlight, and a
- * selected one can be suppressed. */
+ * selected one can be marked as safe. */
 export default function FindingsList({
   findings,
   selected,
@@ -51,6 +51,19 @@ export default function FindingsList({
     [suppressions],
   );
 
+  // e.g. "2 high, 1 medium", most severe first.
+  const bySeverity = useMemo(() => {
+    const counts = new Map<Severity, number>();
+    for (const finding of findings) {
+      const { severity } = finding.violation;
+      counts.set(severity, (counts.get(severity) ?? 0) + 1);
+    }
+    return [...counts]
+      .sort(([a], [b]) => SEVERITY_ORDER[a] - SEVERITY_ORDER[b])
+      .map(([severity, count]) => `${count} ${SEVERITY_LABELS[severity].toLowerCase()}`)
+      .join(", ");
+  }, [findings]);
+
   const order = useMemo(() => {
     const indices = findings.map((_, index) => index);
     if (!sortBySeverity) return indices;
@@ -66,6 +79,7 @@ export default function FindingsList({
       <header className="findings-header">
         <h2>
           {findings.length} {findings.length === 1 ? "finding" : "findings"}
+          {bySeverity && <span className="findings-breakdown">: {bySeverity}</span>}
         </h2>
         <label className="findings-sort">
           <input
@@ -133,8 +147,8 @@ export default function FindingsList({
                 </span>
                 {suppression && (
                   <span className="finding-suppression">
-                    <b>Suppressed</b> until {formatDate(suppression.expiresAt)}: later scans in this
-                    session won't flag this value. {suppression.reason}
+                    <b>Marked safe</b> until {formatDate(suppression.expiresAt)}: later scans in
+                    this session won't flag this value. {suppression.reason}
                   </span>
                 )}
                 {selected.includes(index) && (
@@ -166,7 +180,7 @@ export default function FindingsList({
                       className="link-button"
                       onClick={() => setSuppressing(finding.id)}
                     >
-                      Suppress this value…
+                      Mark as safe…
                     </button>
                   </div>
                 ))}
