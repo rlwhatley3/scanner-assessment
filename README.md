@@ -85,7 +85,7 @@ $env:API_PORT = "3011"
 
 ### Connect an MCP client
 
-While the stack is running, the API serves an MCP server at `http://127.0.0.1:3001/mcp` for reading and writing rules, rule set versions, scan sessions, scans, and suppressions. To add it to Claude Code:
+While the stack is running, the API serves an MCP server at `http://127.0.0.1:3001/mcp` for reading and writing rules, rule set versions, scan sessions, scans, and suppressions, and for testing a rule set version with generated and labeled data (`generate_test_data`, `run_test_suite`). To add it to Claude Code:
 
 ```sh
 claude mcp add --transport http secrets-scanner http://127.0.0.1:3001/mcp

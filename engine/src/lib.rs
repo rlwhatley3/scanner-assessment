@@ -13,6 +13,7 @@ mod models;
 mod password_shape;
 mod rules;
 mod scan;
+mod test_data;
 
 pub use checksum::{Checksum, ChecksumEncoding, Crc32Checksum};
 pub use defaults::{
@@ -32,5 +33,8 @@ pub use rules::{
 pub use scan::{
     Finding, FindingKind, LogEvent, MAX_FINDINGS, MAX_INPUT_BYTES, MIN_DETECTION_BYTES,
     MatchDetails, ModelAssessment, ModelVerdict, ScanError, ScanOptions, ScanResult, ValueClass,
-    ValueLabel, Violation, scan, scan_with_models, scan_with_options,
+    ValueLabel, Violation, pattern_matches_value, scan, scan_with_models, scan_with_options,
+};
+pub use test_data::{
+    CaseKind, Expectation, SkippedCase, TestCase, TestDocument, TestSuite, generate_test_data,
 };

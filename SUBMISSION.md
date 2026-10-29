@@ -315,20 +315,22 @@ It was trained on two sources, and each is evaluated on held-out data of its own
 
 `POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged. `GET /api/scan-sessions/{id}/scans/{scanId}` reads a saved scan back in the same shape.
 
-Rules, rule sets, rule set versions, and scan sessions have REST routes too (`/api/rules`, `/api/rule-sets`, `/api/rule-set-versions`, `/api/scan-sessions`), including `POST /api/rules/check` to check rules as one set without saving. They cover everything the MCP tools do except reading the rule authoring guide, through the same storage module. Swagger UI at `/swagger-ui` lists them all.
+Rules, rule sets, rule set versions, and scan sessions have REST routes too (`/api/rules`, `/api/rule-sets`, `/api/rule-set-versions`, `/api/scan-sessions`), including `POST /api/rules/check` to check rules as one set without saving. They cover everything the MCP tools do except reading the rule authoring guide, through the same storage module, including `POST /api/rule-set-versions/{id}/test-data` and `POST /api/scan-sessions/{id}/test-runs` for testing. Swagger UI at `/swagger-ui` lists them all.
 
 - **Concurrency cap:** at most 4 scans run at once. Others wait their turn, so a burst of scans can't starve the rest of the API.
 - **At scale:** scanning in the API process would compete with every other request. The intended production shape avoids that entirely: scanning runs on the client (a CLI or a real local app calling the engine in-process), and the hosted API only serves rule sets. If a hosted scanning service were ever needed, the next steps would be a separate worker pool, then a queue with independently scaled workers.
 
 ### MCP server
 
-The API also serves an MCP server at `/mcp` (Streamable HTTP), so an AI agent can read and write the same data the UI will. It has 20 tools:
+The API also serves an MCP server at `/mcp` (Streamable HTTP), so an AI agent can read and write the same data the UI will. It has 26 tools:
 
 - **Rule authoring:** `rule_authoring_guide` explains every mechanism a rule can use (patterns and their `value` and `key` groups, detection types, key names, entropy, checksums, password shape, placeholders, model rules), when to use each and why, and how each built-in rule is assembled from them. It returns the whole guide or one section by topic, and the server's instructions tell agents to read it before writing rules. The guide lives in `server/src/rule_guide.md`.
 - **Rules:** `list_rules`, `get_rule`, `create_rule`, `update_rule`, `delete_rule`, `check_rules`
 - **Rule sets:** `list_rule_sets`, `get_rule_set`, `create_rule_set`, `update_rule_set`
 - **Rule set versions:** `list_rule_set_versions`, `get_rule_set_version`, `create_rule_set_version`, `set_rule_set_version_archived`
 - **Scan sessions and scans:** `list_scan_sessions`, `get_scan_session`, `create_scan_session`, `get_scan`, `run_scan`
+- **Suppressions:** `list_suppressions`, `create_suppression`, `remove_suppression`
+- **Testing:** `generate_test_data` and `run_test_suite` automate the loop of building a rule set, testing it with fake data, and reporting. The agent does the reasoning (which rules a purpose needs, realistic files to test them in, what the report means); the server only adds deterministic building blocks, so the engine stays the source of truth and no model output changes a finding. `generate_test_data` builds labeled cases from each rule's own pattern: positives with valid checksums, broken-checksum and placeholder copies, and lookalikes. `run_test_suite` scans those (regenerated from the seed, so their text is never stored or sent back) and the agent's own labeled documents as scans in a session, and reports each case as caught, missed, a false alarm, or scored as an example or as real, with confidence and placeholder scores. Its diagnostics catch rule problems found by testing rule sets by hand: key names on a likely credential reaching every parsed pair, a pattern without a `value` group diluting its own score, a broken checksum another rule still scores as real, a value classifier that only lowers false alarms to 30, and a classifier hash gone stale after retraining.
 
 The tools follow the same rules as the rest of the API, through a shared storage module (`server/src/store.rs`):
 

@@ -7,6 +7,7 @@ import {
   type SavedMatch,
   type StoredScan,
 } from "../api.ts";
+import { HelpLink } from "../guide/GuideView.tsx";
 import SuppressionsPanel from "../scan/SuppressionsPanel.tsx";
 import { useActiveSession } from "../session.tsx";
 import { SEVERITY_LABELS, SeverityIcon } from "../severity.tsx";
@@ -35,17 +36,24 @@ export default function SessionsView() {
     <div className="playground-section master-detail">
       <section className="panel master" aria-label="Scan sessions">
         <div className="master-header">
-          <h2>Scan sessions</h2>
-          <Link className="button primary" to="/playground/scan">
-            New session
-          </Link>
+          <h2>
+            Scan sessions <HelpLink section="sessions" label="How sessions work" />
+          </h2>
         </div>
+        <p className="muted small">
+          Your first scan on the Scan tab starts a session. Each one keeps its scans' results and
+          the values marked safe in it.
+        </p>
         {sessions.error && (
           <p className="banner error" role="alert">
             {sessions.error}
           </p>
         )}
-        {sessions.data?.length === 0 && <p className="muted">No scan sessions yet.</p>}
+        {sessions.data?.length === 0 && (
+          <p className="muted">
+            No scan sessions yet. <Link to="/playground/scan">Run a scan</Link> to start one.
+          </p>
+        )}
         <ul className="master-list">
           {sessions.data?.map((entry) => (
             <li key={entry.id}>
@@ -58,9 +66,9 @@ export default function SessionsView() {
                   {entry.ruleSetName} v{entry.versionNumber} · {entry.scanCount}{" "}
                   {entry.scanCount === 1 ? "scan" : "scans"} ·{" "}
                   {entry.activeSuppressionCount > 0 &&
-                    `${entry.activeSuppressionCount} active ${
-                      entry.activeSuppressionCount === 1 ? "suppression" : "suppressions"
-                    } · `}
+                    `${entry.activeSuppressionCount} ${
+                      entry.activeSuppressionCount === 1 ? "value" : "values"
+                    } marked safe · `}
                   {entry.lastRan ? `last ran ${formatDate(entry.lastRan)}` : "not run yet"}
                 </span>
               </NavLink>
@@ -87,7 +95,7 @@ export default function SessionsView() {
             </header>
             <div className="form-actions">
               <button type="button" className="button primary" onClick={reopen}>
-                {active?.id === session.id ? "Go to scan" : "Reopen and scan"}
+                {active?.id === session.id ? "Back to scanning" : "Continue scanning"}
               </button>
             </div>
             <p className="muted small">
@@ -102,7 +110,9 @@ export default function SessionsView() {
             )}
           </div>
         ) : (
-          <p className="results-placeholder">{detail.error ?? "Select a session to review it."}</p>
+          <p className="results-placeholder">
+            {detail.error ?? "Select a session to see its scans, or continue scanning in it."}
+          </p>
         )}
       </section>
     </div>
@@ -123,7 +133,7 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
         <span className={`outcome ${outcome.toLowerCase()}`}>{outcome}</span>
         {scan.truncated && <span className="badge">Cut off at 200</span>}
         {scan.suppressedCount > 0 && (
-          <span className="badge subtle">{scan.suppressedCount} suppressed, not flagged</span>
+          <span className="badge subtle">{scan.suppressedCount} marked safe, not flagged</span>
         )}
       </h3>
       {ruleErrors.length > 0 && (
@@ -142,8 +152,8 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
             <tr>
               <th>Rule</th>
               <th>Severity</th>
-              <th>Location</th>
-              <th>Preview</th>
+              <th>Where</th>
+              <th>Starts with</th>
             </tr>
           </thead>
           <tbody>
@@ -155,9 +165,7 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
                   <td>
                     <SeverityIcon tone={violation.severity} /> {SEVERITY_LABELS[violation.severity]}
                   </td>
-                  <td>
-                    {violation.location.startLine}:{violation.location.startColumn}
-                  </td>
+                  <td>Line {violation.location.startLine}</td>
                   <td>{violation.redactedPreview && <code>{violation.redactedPreview}</code>}</td>
                 </tr>
               );

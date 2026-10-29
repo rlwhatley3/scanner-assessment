@@ -26,6 +26,52 @@ impl Checksum {
             Checksum::Base58check => base58check_is_valid(value),
         }
     }
+
+    /// `value` with its checksum part rewritten so it passes, for generating test data. `None`
+    /// when the value can't hold one (too short, or not in the checksum's alphabet). Base58Check
+    /// re-encodes the whole value, so its length can change by a character.
+    pub(crate) fn repair(self, value: &str) -> Option<String> {
+        match self {
+            Checksum::Crc32(checksum) => {
+                if !value.is_ascii() || value.len() <= checksum.prefix_length + checksum.length {
+                    return None;
+                }
+                let rest = &value[..value.len() - checksum.length];
+                Some(format!(
+                    "{rest}{}",
+                    checksum.compute(&rest[checksum.prefix_length..])
+                ))
+            }
+            Checksum::Luhn => luhn_repair(value),
+            Checksum::Base58check => {
+                let bytes = base58_decode(value)?;
+                if bytes.len() < 5 {
+                    return None;
+                }
+                let mut payload = bytes[..bytes.len() - 4].to_vec();
+                let digest = Sha256::digest(Sha256::digest(&payload));
+                payload.extend_from_slice(&digest[..4]);
+                Some(base58_encode(&payload))
+            }
+        }
+    }
+
+    /// The byte range of `value` the checksum covers and a one-character change breaks: the
+    /// covered part of a CRC32 token, the check digit of a card number, or a Base58Check body.
+    pub(crate) fn covered(self, value: &str) -> Option<(usize, usize)> {
+        let range = match self {
+            Checksum::Crc32(checksum) => (
+                checksum.prefix_length,
+                value.len().checked_sub(checksum.length)?,
+            ),
+            Checksum::Luhn => {
+                let last = value.rfind(|character: char| character.is_ascii_digit())?;
+                (last, last + 1)
+            }
+            Checksum::Base58check => (1, value.len().checked_sub(1)?),
+        };
+        (range.0 < range.1).then_some(range)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,6 +190,62 @@ fn luhn_is_valid(value: &str) -> bool {
         })
         .sum();
     sum.is_multiple_of(10)
+}
+
+/// Rewrites the last digit of `value` to the Luhn check digit of the digits before it, keeping
+/// every separator where it is.
+fn luhn_repair(value: &str) -> Option<String> {
+    let last = value.rfind(|character: char| character.is_ascii_digit())?;
+    let payload: Vec<u32> = value[..last]
+        .chars()
+        .filter_map(|character| character.to_digit(10))
+        .collect();
+    if payload.is_empty() {
+        return None;
+    }
+    // The check digit sits at position 0 from the right, so the payload's rightmost digit is
+    // the first one doubled.
+    let sum: u32 = payload
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(index, &digit)| {
+            if index % 2 == 0 {
+                let doubled = digit * 2;
+                if doubled > 9 { doubled - 9 } else { doubled }
+            } else {
+                digit
+            }
+        })
+        .sum();
+    let check = char::from_digit((10 - sum % 10) % 10, 10)?;
+    Some(format!("{}{check}{}", &value[..last], &value[last + 1..]))
+}
+
+/// Encodes bytes as Base58; each leading zero byte is a leading `1`.
+fn base58_encode(bytes: &[u8]) -> String {
+    let mut digits: Vec<u8> = Vec::new();
+    for &byte in bytes {
+        let mut carry = u32::from(byte);
+        for digit in digits.iter_mut() {
+            carry += u32::from(*digit) << 8;
+            *digit = (carry % 58) as u8;
+            carry /= 58;
+        }
+        while carry > 0 {
+            digits.push((carry % 58) as u8);
+            carry /= 58;
+        }
+    }
+    let leading_zeros = bytes.iter().take_while(|&&byte| byte == 0).count();
+    std::iter::repeat_n('1', leading_zeros)
+        .chain(
+            digits
+                .iter()
+                .rev()
+                .map(|&digit| BASE58[digit as usize] as char),
+        )
+        .collect()
 }
 
 /// Decodes Base58 into bytes; each leading `1` is a leading zero byte.
@@ -276,5 +378,31 @@ mod tests {
         assert!(Checksum::Base58check.is_valid(wif));
         assert!(!Checksum::Base58check.is_valid(&wif.replacen('H', "J", 1)));
         assert!(!Checksum::Base58check.is_valid("0OIl"));
+    }
+
+    #[test]
+    fn repair_rewrites_each_checksum_so_it_passes() {
+        let github = Checksum::Crc32(Crc32Checksum::GITHUB);
+        let repaired = github.repair(&format!("ghp_{RANDOM}000000")).unwrap();
+        assert!(github.is_valid(&repaired));
+        assert_eq!(repaired.len(), 40);
+
+        for number in [
+            "4111111111111110",
+            "4111 1111 1111 1119",
+            "3782-822463-10009",
+        ] {
+            let repaired = Checksum::Luhn.repair(number).unwrap();
+            assert!(Checksum::Luhn.is_valid(&repaired), "{number}");
+            assert_eq!(repaired.len(), number.len());
+        }
+
+        let wif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
+        assert_eq!(Checksum::Base58check.repair(wif).as_deref(), Some(wif));
+        let changed = Checksum::Base58check
+            .repair(&wif.replacen('H', "J", 1))
+            .unwrap();
+        assert!(Checksum::Base58check.is_valid(&changed));
+        assert!(github.repair("ghp_short").is_none());
     }
 }

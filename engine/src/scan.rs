@@ -585,6 +585,42 @@ fn find_candidates<'r>(
     candidates
 }
 
+/// The value ranges `rule` finds in `text` before scoring, as a scan finds them: its pattern's
+/// matches and, for likely credentials, parsed key/value pairs. Generated test data is checked
+/// against this.
+pub(crate) fn rule_value_spans(
+    rule: &CompiledRule,
+    text: &str,
+    structure: &Structure,
+) -> Vec<(usize, usize)> {
+    let Matcher::Pattern(regex) = &rule.matcher else {
+        return Vec::new();
+    };
+    find_candidates(rule, regex, text, structure)
+        .into_iter()
+        .map(|candidate| (candidate.start, candidate.end))
+        .collect()
+}
+
+/// Whether the rule's own pattern matched the value at `start..end`, rather than the value only
+/// being found as a parsed key/value pair (which a likely credential rule with key names also
+/// checks). False when the rule doesn't compile or has no pattern.
+pub fn pattern_matches_value(rule: &Rule, text: &str, start: usize, end: usize) -> bool {
+    let Some(compiled) = check_and_compile(rule).0 else {
+        return false;
+    };
+    let Matcher::Pattern(regex) = &compiled.matcher else {
+        return false;
+    };
+    regex.captures_iter(text).any(|captures| {
+        let value = captures
+            .name("value")
+            .or_else(|| captures.get(0))
+            .expect("group 0 always matches");
+        (value.start(), value.end()) == (start, end)
+    })
+}
+
 /// Where a pattern matched, as byte ranges into the text.
 struct Found {
     /// The `value` group, or the whole match without one.
@@ -1170,7 +1206,7 @@ fn to_confidence(total: f64) -> u8 {
 /// Where a secret name sits in a line of code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NameUse {
-    /// Outside any string, or inside an interpolation such as `{token}` or `${token}`.
+    /// Outside any string, or inside an interpolation such as `{token}`, `${token}`, or `"$TOKEN"`.
     Code,
     /// A label for the value logged with it: in a string that ends right after the name, apart
     /// from separators and placeholders, with a value following the string or interpolated in
@@ -1234,7 +1270,11 @@ fn name_use(text: &str, start: usize, end: usize) -> NameUse {
     text[line_start..start]
         .chars()
         .for_each(|character| quotes.step(character));
-    if !quotes.in_plain_string() {
+    // A variable such as `"$TOKEN"` expands inside double quotes in shell, Perl, and PHP, as
+    // `${token}` does; single quotes and `\$` keep it literal.
+    let before = &text[line_start..start];
+    let variable = before.ends_with('$') && !before.ends_with("\\$") && quotes.quote != Some('\'');
+    if !quotes.in_plain_string() || variable {
         return NameUse::Code;
     }
     // Read to the end of the string, then see whether another value follows it.

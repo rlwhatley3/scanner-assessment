@@ -7,6 +7,7 @@ pub mod rules;
 pub mod scan_sessions;
 pub mod scans;
 pub mod suppressions;
+pub mod testing;
 mod whiteboard;
 
 pub use error::ErrorBody;
@@ -75,12 +76,16 @@ pub fn router(db: Db, fingerprint_key: FingerprintKey) -> Router {
         .route("/api/mcp", get(crate::mcp::describe))
         .nest("/api/rules", rules::router())
         .nest("/api/rule-sets", rule_sets::router())
-        .nest("/api/rule-set-versions", rule_set_versions::router())
+        .nest(
+            "/api/rule-set-versions",
+            rule_set_versions::router().merge(testing::version_router()),
+        )
         .nest(
             "/api/scan-sessions",
             scan_sessions::router()
                 .merge(scans::router())
-                .merge(suppressions::router()),
+                .merge(suppressions::router())
+                .merge(testing::session_router()),
         )
         .nest("/api/whiteboards", whiteboard::router())
         .nest_service("/mcp", crate::mcp::service(state.clone()))

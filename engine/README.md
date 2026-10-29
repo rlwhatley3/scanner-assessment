@@ -202,7 +202,7 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
   - Checksum: +3.5 when it passes, −3.5 when it fails.
   - The rule's `prefix` starts the match: +2. Assigned to one of the rule's `keyNames`: +1. The pattern needed fixed syntax around its `value` group, such as a header name: +1.
   - Randomness: the value's entropy compared with the most a value that long can have (log2 of its length, when every character differs), from −1.5 with no variety to +1.5 when every character differs. A short value with no repeated characters counts as just as random as a long one. With a password shape setting, the shape score takes its place: +0.35 per point above 3.
-  - A match with no value (unsafe handling) is judged by the secret name in its `key` group: +1.5 when it's code (`dbPassword`, `{token}`, `${token}`) or labels the value logged with it (`"password:", pw`, `"token=%s" % t`, `f"secret: {s}"`), +0.5 when it's a word in a longer message logged with another value (`"password reset for", user`), −2 when it's only a word in a quoted message. Commented out: −2.5.
+  - A match with no value (unsafe handling) is judged by the secret name in its `key` group: +1.5 when it's code (`dbPassword`, `{token}`, `${token}`, or `$TOKEN` outside single quotes) or labels the value logged with it (`"password:", pw`, `"token=%s" % t`, `f"secret: {s}"`), +0.5 when it's a word in a longer message logged with another value (`"password reset for", user`), −2 when it's only a word in a quoted message. Commented out: −2.5.
   - Model detection: the model's highest score in the span.
   - With a value classifier: a credential score above the evidence-based confidence raises it halfway toward that score, up to 95; a score below the setting's minimum lowers it to 30.
 - **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character, and under two thirds of what a value its length can have, so a short value with no repeated characters isn't an example just for being short), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
@@ -322,6 +322,16 @@ let result = scan_with_options(scan_id, text, &rule_set, options)?;
 - **Removing** a suppression sets `removed_at`, so later scans flag its value again, and keeps the row as a record of what was suppressed, why, and until when. An expired one stays on record the same way.
 - **Trade-off:** the 200-finding cap is applied in the engine, before suppressions, so suppressed matches still use up places under the cap.
 - **Endpoints:** `GET`/`POST /api/scan-sessions/{id}/suppressions` and `DELETE /api/scan-sessions/{id}/suppressions/{suppressionId}`, and the MCP tools `list_suppressions`, `create_suppression`, and `remove_suppression`, all through `server/src/store.rs`.
+
+## Test data
+
+`generate_test_data(rule_set, rule_ids, seed)` builds labeled test data for the enabled pattern rules: for each rule, a positive that the rule finds (with a valid checksum when it has one), a copy with a broken checksum, a copy with a value from the set's placeholder rules inside it, and lookalikes it shouldn't find (prefix changed, one character short, too little randomness). Likely-credential rules with key names also get assignments in `.env`, YAML, and JSON files, plus the same value under a neutral name. A last file holds ordinary values that aren't secrets. Each case has an id, its rule, its kind, what it should get (`secret`, `example`, or `not_secret`), and its byte range.
+
+- **From the rule's own pattern:** generation walks the pattern's syntax tree (`regex-syntax`) and writes a random match, preferring letters and digits so values look like tokens, short runs of spacing, the rule's prefix at the start, and key names in the `key` group. A checksum is then computed into the value (`Checksum::repair`: CRC32 in any encoding, Luhn, Base58Check).
+- **Checked, not assumed:** every case is checked against the compiled rule the way a scan finds values, pattern matches and parsed pairs alike, and kept only if the rule finds a positive and doesn't find a lookalike. Cases are then laid out into documents and checked again in place, so a multi-line match can't run from one case into the next. A case that can't be made is listed in `skipped` with the reason, which can point at a rule problem, such as a pattern that doesn't require its declared prefix.
+- **Deterministic:** a small seeded generator (SplitMix64) with one stream per rule, so the same rule set and seed always give the same data, and adding a rule doesn't change the others' data. That is why the API never stores generated text: a test run regenerates it.
+
+`pattern_matches_value(rule, text, start, end)` says whether a rule's own pattern matched a value, as opposed to the value being found only as a parsed key/value pair. The API's test runs use it to point out key names that reach further than the pattern.
 
 ## Trade-offs
 

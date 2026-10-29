@@ -144,6 +144,7 @@ async fn initializes_and_lists_every_tool() {
             "create_scan_session",
             "create_suppression",
             "delete_rule",
+            "generate_test_data",
             "get_rule",
             "get_rule_set",
             "get_rule_set_version",
@@ -158,6 +159,7 @@ async fn initializes_and_lists_every_tool() {
             "remove_suppression",
             "rule_authoring_guide",
             "run_scan",
+            "run_test_suite",
             "set_rule_set_version_archived",
             "update_rule",
             "update_rule_set",
@@ -557,6 +559,7 @@ async fn the_rule_authoring_guide_covers_every_mechanism_by_topic() {
         json!([
             "overview",
             "workflow",
+            "testing",
             "detection-types",
             "patterns",
             "key-names",
@@ -700,4 +703,80 @@ async fn creates_lists_and_removes_suppressions_and_a_suppressed_match_is_not_fl
     .await;
     assert_eq!(after["findings"].as_array().map(Vec::len), Some(1));
     assert_eq!(after["suppressedCount"], 0);
+}
+
+#[tokio::test]
+async fn generates_test_data_and_runs_it_with_documents_of_your_own() {
+    let (app, db) = app().await;
+    let data = ok(
+        &app,
+        "generate_test_data",
+        json!({"versionId": 1, "seed": 5, "ruleIds": [1]}),
+    )
+    .await;
+    assert_eq!(data["ruleSetVersionId"], 1);
+    let positive = data["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|document| document["cases"].as_array().unwrap())
+        .find(|case| case["id"] == "r1-positive")
+        .expect("a positive for the AWS key rule")
+        .clone();
+    assert_eq!(positive["expect"], "secret");
+    assert_eq!(positive["ruleName"], "AWS access key");
+
+    let session = ok(&app, "create_scan_session", json!({"ruleSetVersionId": 1})).await;
+    let readme =
+        format!("## Setup\n\nExport your key:\n\n    export AWS_ACCESS_KEY_ID={AWS_KEY}\n");
+    let report = ok(
+        &app,
+        "run_test_suite",
+        json!({
+            "sessionId": session["id"],
+            "generated": {"seed": 5, "ruleIds": [1]},
+            "documents": [{
+                "name": "README.md",
+                "text": readme,
+                "cases": [{"id": "readme-key", "value": AWS_KEY, "expect": "secret", "ruleId": 1}]
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(report["seed"], 5);
+    let cases: Vec<&Value> = report["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|document| document["cases"].as_array().unwrap())
+        .collect();
+    let outcome = |id: &str| {
+        cases
+            .iter()
+            .find(|case| case["id"] == id)
+            .map(|case| case["outcome"].clone())
+    };
+    assert_eq!(outcome("r1-positive"), Some(json!("caught")));
+    assert_eq!(outcome("readme-key"), Some(json!("caught")));
+    assert_eq!(report["summary"]["secrets"]["missed"], 0);
+
+    // Each document was saved as a scan in the session, and get_scan reads it back.
+    let scan_id = report["documents"][0]["scanId"].clone();
+    let scan = ok(&app, "get_scan", json!({"scanId": scan_id})).await;
+    assert_eq!(scan["scanSessionId"], session["id"]);
+    let scans: i64 = db
+        .call(|connection| connection.query_row("SELECT COUNT(*) FROM scans", [], |row| row.get(0)))
+        .await
+        .unwrap();
+    assert_eq!(scans, report["documents"].as_array().unwrap().len() as i64);
+
+    let error = err(
+        &app,
+        "run_test_suite",
+        json!({"sessionId": session["id"], "documents": [{"name": "a", "text": "abc", "cases": [{"value": "zzz", "expect": "secret"}]}]}),
+    )
+    .await;
+    assert!(error.contains("doesn't occur"), "{error}");
+    let error = err(&app, "generate_test_data", json!({"versionId": 99})).await;
+    assert!(error.contains("99"), "{error}");
 }

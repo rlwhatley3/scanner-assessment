@@ -26,7 +26,7 @@ export default function SuppressionsPanel({ sessionId, suppressions }: Suppressi
       await removeSuppression(sessionId, suppression.id);
       suppressions.reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not remove the suppression.");
+      setError(reason instanceof Error ? reason.message : "Could not remove it.");
     } finally {
       setRemoving(null);
     }
@@ -34,8 +34,8 @@ export default function SuppressionsPanel({ sessionId, suppressions }: Suppressi
 
   const list = suppressions.data ?? [];
   return (
-    <section className="suppressions" aria-label="Suppressions">
-      <h3>Suppressions</h3>
+    <section className="suppressions" aria-label="Values marked safe">
+      <h3>Values marked safe</h3>
       <p className="muted small">
         Each one stops this session's scans from flagging one value found by one rule. Remove one to
         have its value flagged again; it stays on record here.
@@ -46,7 +46,12 @@ export default function SuppressionsPanel({ sessionId, suppressions }: Suppressi
         </p>
       )}
       {list.length === 0 ? (
-        !suppressions.loading && <p className="muted">No suppressions in this session.</p>
+        !suppressions.loading && (
+          <p className="muted">
+            No values marked safe in this session. Select a finding and use <b>Mark as safe…</b> to
+            add one.
+          </p>
+        )
       ) : (
         <table className="data-table">
           <thead>

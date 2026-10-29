@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 
 const appBasePath =
   process.env.VITE_APP_BASE_PATH ||
@@ -18,6 +18,8 @@ export default defineConfig({
     host: process.env.HOST || "127.0.0.1",
     port: Number(process.env.UI_PORT || "5173"),
     strictPort: true,
+    // The playground's sample inputs are imported from the repo's tests/ folder.
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), "../tests"] },
     proxy: {
       "/api": `http://127.0.0.1:${apiPort}`,
       "/swagger-ui": `http://127.0.0.1:${apiPort}`,
