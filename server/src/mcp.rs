@@ -863,6 +863,10 @@ impl ScannerMcp {
                        caught_as_example, missed, flagged_as_example, scored_as_real, \
                        not_reported, ignored, or false_alarm, with every overlapping finding's \
                        rule, confidence, placeholderScore, checksumValid, and valueClass. \
+                       The summary and each rule count cases by what they expected: secrets \
+                       (caught, caughtAsExample, missed), examples (flaggedAsExample, \
+                       notReported, scoredAsReal), and notSecrets (ignored, falseAlarms), so \
+                       an example or lookalike a rule left alone never reads as a miss. \
                        Findings on no case are listed as unlabeled. diagnostics name rule \
                        problems the run showed: key names reaching parsed pairs \
                        (parsed_pair_only), a pattern with no value group (no_value_group), \

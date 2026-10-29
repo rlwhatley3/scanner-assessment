@@ -177,8 +177,22 @@ async fn a_generated_run_scans_each_document_in_the_session_without_storing_its_
         documents.len() as i64
     );
     let summary = &report["summary"];
-    assert_eq!(summary["missed"], 0, "{report}");
-    assert!(summary["caught"].as_u64().unwrap() >= 39);
+    assert_eq!(summary["secrets"]["missed"], 0, "{report}");
+    assert!(summary["secrets"]["caught"].as_u64().unwrap() >= 39);
+    // Each group adds up to its cases, and the groups to the whole run.
+    let group = |name: &str, outcomes: &[&str]| {
+        let group = &summary[name];
+        let sum: u64 = outcomes.iter().map(|o| group[*o].as_u64().unwrap()).sum();
+        assert_eq!(group["cases"].as_u64().unwrap(), sum, "{name}: {group}");
+        sum
+    };
+    let total = group("secrets", &["caught", "caughtAsExample", "missed"])
+        + group(
+            "examples",
+            &["flaggedAsExample", "notReported", "scoredAsReal"],
+        )
+        + group("notSecrets", &["ignored", "falseAlarms"]);
+    assert_eq!(summary["cases"].as_u64().unwrap(), total);
     assert_eq!(summary["ruleErrors"], 0);
     assert_eq!(case(&report, "r1-positive")["outcome"], "caught");
     assert_eq!(case(&report, "r1-wrong-prefix")["outcome"], "ignored");
@@ -271,8 +285,26 @@ async fn labels_documents_of_your_own_by_value() {
     let summary = &report["summary"];
     assert_eq!(summary["cases"], 3);
     assert_eq!(summary["unlabeledFindings"], 0);
-    assert_eq!(report["rules"][0]["caught"], 1);
-    assert!(report["rules"][0]["caughtConfidence"].is_array());
+    assert_eq!(
+        summary["secrets"],
+        json!({"cases": 1, "caught": 1, "caughtAsExample": 0, "missed": 0})
+    );
+    assert_eq!(
+        summary["examples"],
+        json!({"cases": 1, "flaggedAsExample": 0, "notReported": 0, "scoredAsReal": 1})
+    );
+    assert_eq!(
+        summary["notSecrets"],
+        json!({"cases": 1, "ignored": 1, "falseAlarms": 0})
+    );
+    // The rule counts only the two cases labeled for it; the unnamed one is the summary's.
+    let rule = &report["rules"][0];
+    assert_eq!(rule["cases"], 2);
+    assert_eq!(rule["secrets"]["caught"], 1);
+    assert_eq!(rule["examples"]["scoredAsReal"], 1);
+    assert_eq!(rule["notSecrets"]["cases"], 0);
+    assert_eq!(rule["unassignedFalseAlarms"], 0);
+    assert!(rule["caughtConfidence"].is_array());
 
     // A finding on no case is listed as unlabeled.
     let (_, report) = run(
@@ -289,6 +321,29 @@ async fn labels_documents_of_your_own_by_value() {
             .len(),
         2
     );
+
+    // A false alarm on a case labeled for no rule goes to the rule that reported it, apart
+    // from the cases labeled for that rule.
+    let (_, report) = run(
+        &app,
+        session_id,
+        json!({
+            "documents": [{
+                "name": ".env",
+                "text": text,
+                "cases": [{"value": AWS_KEY, "expect": "not_secret"}]
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(
+        report["summary"]["notSecrets"],
+        json!({"cases": 1, "ignored": 0, "falseAlarms": 1})
+    );
+    let rule = &report["rules"][0];
+    assert_eq!(rule["cases"], 0);
+    assert_eq!(rule["notSecrets"]["falseAlarms"], 0);
+    assert_eq!(rule["unassignedFalseAlarms"], 1);
 }
 
 #[tokio::test]

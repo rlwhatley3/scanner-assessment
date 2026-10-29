@@ -73,6 +73,8 @@ How each case is judged:
 - `example`: `not_reported`, `flagged_as_example` when every overlapping finding has `placeholderScore` 70 or more, or `scored_as_real` when any finding, from any rule, scores it as real.
 - `not_secret`: `ignored`, or `false_alarm` when its rule (any rule, if none is named) reports it.
 
+The counts are grouped the same way. `summary` and each entry in `rules` have `secrets` (`caught` + `caughtAsExample` + `missed`), `examples` (`flaggedAsExample` + `notReported` + `scoredAsReal`), and `notSecrets` (`ignored` + `falseAlarms`), each with its own `cases`, and the three add up to `cases`. Only secrets can be caught or missed: a rule with 5 cases and 2 caught has missed nothing if its other 3 are examples it marked and lookalikes it ignored. A rule's groups hold only the cases labeled for it; its findings on `not_secret` cases labeled for no rule, such as the lookalikes, are its `unassignedFalseAlarms`.
+
 Findings on no case are listed as unlabeled. `diagnostics` name rule problems the run showed:
 
 | Code | Meaning |

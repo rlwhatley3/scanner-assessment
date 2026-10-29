@@ -204,7 +204,7 @@ pub enum Outcome {
     ScoredAsReal,
     /// An example nothing reported.
     NotReported,
-    /// A non-secret its rule (or no rule) reported.
+    /// A non-secret its rule (or, with no rule named, any rule) didn't report.
     Ignored,
     /// A non-secret its rule (or, with no rule named, any rule) reported.
     FalseAlarm,
@@ -230,22 +230,82 @@ pub struct TestRunReport {
     pub skipped: Vec<SkippedCase>,
 }
 
+/// Every case in the run, grouped by what it expected. Each group's outcomes add up to its
+/// cases, and the three groups add up to cases.
 #[derive(Default, Serialize, utoipa::ToSchema, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TestSummary {
     pub cases: usize,
-    pub caught: usize,
-    pub caught_as_example: usize,
-    pub missed: usize,
-    pub flagged_as_example: usize,
-    pub scored_as_real: usize,
-    pub not_reported: usize,
-    pub ignored: usize,
-    pub false_alarms: usize,
+    pub secrets: SecretTally,
+    pub examples: ExampleTally,
+    pub not_secrets: NotSecretTally,
     /// Findings that overlap no labeled case.
     pub unlabeled_findings: usize,
     /// Rules that couldn't run in at least one scan.
     pub rule_errors: usize,
+}
+
+/// Cases labeled secret: caught + caughtAsExample + missed = cases.
+#[derive(Default, Serialize, utoipa::ToSchema, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretTally {
+    pub cases: usize,
+    pub caught: usize,
+    pub caught_as_example: usize,
+    pub missed: usize,
+}
+
+/// Cases labeled example: flaggedAsExample + notReported + scoredAsReal = cases. The first
+/// two are the right result.
+#[derive(Default, Serialize, utoipa::ToSchema, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExampleTally {
+    pub cases: usize,
+    pub flagged_as_example: usize,
+    pub not_reported: usize,
+    pub scored_as_real: usize,
+}
+
+/// Cases labeled not_secret: ignored + falseAlarms = cases.
+#[derive(Default, Serialize, utoipa::ToSchema, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NotSecretTally {
+    pub cases: usize,
+    pub ignored: usize,
+    pub false_alarms: usize,
+}
+
+/// Adds each outcome to the group its expectation belongs to.
+#[derive(Default)]
+struct Tallies {
+    secrets: SecretTally,
+    examples: ExampleTally,
+    not_secrets: NotSecretTally,
+}
+
+impl Tallies {
+    fn count(&mut self, outcome: Outcome) {
+        let (cases, count) = match outcome {
+            Outcome::Caught => (&mut self.secrets.cases, &mut self.secrets.caught),
+            Outcome::CaughtAsExample => {
+                (&mut self.secrets.cases, &mut self.secrets.caught_as_example)
+            }
+            Outcome::Missed => (&mut self.secrets.cases, &mut self.secrets.missed),
+            Outcome::FlaggedAsExample => (
+                &mut self.examples.cases,
+                &mut self.examples.flagged_as_example,
+            ),
+            Outcome::NotReported => (&mut self.examples.cases, &mut self.examples.not_reported),
+            Outcome::ScoredAsReal => (&mut self.examples.cases, &mut self.examples.scored_as_real),
+            Outcome::Ignored => (&mut self.not_secrets.cases, &mut self.not_secrets.ignored),
+            Outcome::FalseAlarm => (
+                &mut self.not_secrets.cases,
+                &mut self.not_secrets.false_alarms,
+            ),
+        };
+        *cases += 1;
+        *count += 1;
+    }
 }
 
 #[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]
@@ -268,12 +328,16 @@ pub struct RuleResult {
     /// The rule's detectionType, if it has one.
     pub detection_type: Option<String>,
     pub enabled: bool,
-    /// Cases labeled for this rule.
+    /// Cases labeled for this rule, grouped by what each expected. Each group's outcomes add
+    /// up to its cases, and the three groups add up to cases. Only secrets can be caught or
+    /// missed: an example or a non-secret this rule leaves alone is a correct result.
     pub cases: usize,
-    pub caught: usize,
-    pub missed: usize,
-    /// Its findings on non-secrets: cases labeled not_secret for it or for no rule.
-    pub false_alarms: usize,
+    pub secrets: SecretTally,
+    pub examples: ExampleTally,
+    pub not_secrets: NotSecretTally,
+    /// Its findings on not_secret cases labeled for no rule, such as the generated
+    /// lookalikes. Those cases are counted in the summary, not in this rule's notSecrets.
+    pub unassigned_false_alarms: usize,
     /// Its findings that overlap no labeled case.
     pub unlabeled_findings: usize,
     /// The lowest and highest confidence of its findings on secrets it caught.
@@ -1021,25 +1085,18 @@ impl<'v> Evaluation<'v> {
         skipped: Vec<SkippedCase>,
         loaded: &[ModelResponse],
     ) -> TestRunReport {
-        let mut summary = TestSummary {
+        let mut tallies = Tallies::default();
+        for judged in &self.outcomes {
+            tallies.count(judged.outcome);
+        }
+        let summary = TestSummary {
             cases: self.outcomes.len(),
+            secrets: tallies.secrets,
+            examples: tallies.examples,
+            not_secrets: tallies.not_secrets,
             unlabeled_findings: self.unlabeled.values().map(Vec::len).sum(),
             rule_errors: self.rule_errors.len(),
-            ..TestSummary::default()
         };
-        for judged in &self.outcomes {
-            let count = match judged.outcome {
-                Outcome::Caught => &mut summary.caught,
-                Outcome::CaughtAsExample => &mut summary.caught_as_example,
-                Outcome::Missed => &mut summary.missed,
-                Outcome::FlaggedAsExample => &mut summary.flagged_as_example,
-                Outcome::ScoredAsReal => &mut summary.scored_as_real,
-                Outcome::NotReported => &mut summary.not_reported,
-                Outcome::Ignored => &mut summary.ignored,
-                Outcome::FalseAlarm => &mut summary.false_alarms,
-            };
-            *count += 1;
-        }
 
         let rules = self
             .version
@@ -1052,8 +1109,34 @@ impl<'v> Evaluation<'v> {
                     .is_none_or(DetectionType::creates_findings)
             })
             .map(|rule| {
-                let mine = |rule_id: &Option<i64>| *rule_id == Some(rule.id);
-                let mut result = RuleResult {
+                let mut tallies = Tallies::default();
+                let mut unassigned_false_alarms = 0;
+                let mut caught_confidence: Option<[u8; 2]> = None;
+                for Judged {
+                    rule_id,
+                    outcome,
+                    counted,
+                    ..
+                } in &self.outcomes
+                {
+                    let mut by_rule = counted.iter().filter(|found| found.rule_id == rule.id);
+                    if *rule_id == Some(rule.id) {
+                        tallies.count(*outcome);
+                        if matches!(outcome, Outcome::Caught | Outcome::CaughtAsExample) {
+                            for found in by_rule {
+                                let [low, high] = caught_confidence.unwrap_or([u8::MAX, u8::MIN]);
+                                caught_confidence =
+                                    Some([low.min(found.confidence), high.max(found.confidence)]);
+                            }
+                        }
+                    } else if rule_id.is_none()
+                        && *outcome == Outcome::FalseAlarm
+                        && by_rule.next().is_some()
+                    {
+                        unassigned_false_alarms += 1;
+                    }
+                }
+                RuleResult {
                     rule_id: rule.id,
                     rule_name: self.version.name(rule.id),
                     detection_type: rule
@@ -1062,49 +1145,16 @@ impl<'v> Evaluation<'v> {
                         .and_then(|detection_type| serde_json::to_value(detection_type).ok())
                         .and_then(|value| value.as_str().map(String::from)),
                     enabled: rule.definition.is_enabled(),
-                    cases: self
-                        .outcomes
-                        .iter()
-                        .filter(|judged| mine(&judged.rule_id))
-                        .count(),
-                    caught: 0,
-                    missed: 0,
-                    false_alarms: 0,
+                    cases: tallies.secrets.cases
+                        + tallies.examples.cases
+                        + tallies.not_secrets.cases,
+                    secrets: tallies.secrets,
+                    examples: tallies.examples,
+                    not_secrets: tallies.not_secrets,
+                    unassigned_false_alarms,
                     unlabeled_findings: self.unlabeled.get(&rule.id).map_or(0, Vec::len),
-                    caught_confidence: None,
-                };
-                for Judged {
-                    expect,
-                    rule_id,
-                    outcome,
-                    counted,
-                    ..
-                } in &self.outcomes
-                {
-                    let by_rule: Vec<&FindingBrief> = counted
-                        .iter()
-                        .filter(|found| found.rule_id == rule.id)
-                        .collect();
-                    match (expect, outcome) {
-                        (Expect::Secret, Outcome::Caught | Outcome::CaughtAsExample)
-                            if mine(rule_id) =>
-                        {
-                            result.caught += 1;
-                            for found in by_rule {
-                                let [low, high] =
-                                    result.caught_confidence.unwrap_or([u8::MAX, u8::MIN]);
-                                result.caught_confidence =
-                                    Some([low.min(found.confidence), high.max(found.confidence)]);
-                            }
-                        }
-                        (Expect::Secret, Outcome::Missed) if mine(rule_id) => result.missed += 1,
-                        (Expect::NotSecret, Outcome::FalseAlarm) if !by_rule.is_empty() => {
-                            result.false_alarms += 1
-                        }
-                        _ => {}
-                    }
+                    caught_confidence,
                 }
-                result
             })
             .collect();
 
