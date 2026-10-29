@@ -1,3 +1,4 @@
+pub mod checksums;
 mod error;
 pub mod health;
 pub mod models;
@@ -75,6 +76,7 @@ pub fn router(db: Db, fingerprint_key: FingerprintKey) -> Router {
         .route("/api/models", get(models::list))
         .route("/api/mcp", get(crate::mcp::describe))
         .nest("/api/rules", rules::router())
+        .nest("/api/checksums", checksums::router())
         .nest("/api/rule-sets", rule_sets::router())
         .nest(
             "/api/rule-set-versions",

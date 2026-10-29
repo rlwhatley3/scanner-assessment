@@ -15,7 +15,10 @@ mod rules;
 mod scan;
 mod test_data;
 
-pub use checksum::{Checksum, ChecksumEncoding, Crc32Checksum};
+pub use checksum::{
+    CheckDigitChecksum, CheckRule, Checksum, ChecksumEncoding, Crc32Checksum, HashChecksum,
+    HashFunction, Marvin32Checksum, Marvin32Seed,
+};
 pub use defaults::{
     SECRET_DETECTOR_ONNX, SECRET_DETECTOR_SHA256, VALUE_CLASSIFIER_ONNX, VALUE_CLASSIFIER_SHA256,
     default_rule_set, secret_detector_rule, value_classifier_setting,

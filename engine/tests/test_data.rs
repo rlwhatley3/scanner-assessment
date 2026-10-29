@@ -1,5 +1,6 @@
 use secrets_scanner_engine::{
-    CaseKind, Checksum, ChecksumEncoding, Crc32Checksum, DetectionType, Expectation, FindingKind,
+    CaseKind, CheckDigitChecksum, CheckRule, Checksum, ChecksumEncoding, Crc32Checksum,
+    DetectionType, Expectation, FindingKind, HashChecksum, HashFunction, Marvin32Checksum,
     MatchDetails, Rule, RuleDefinition, RuleSet, Severity, TestSuite, Violation, default_rule_set,
     generate_test_data, pattern_matches_value, scan,
 };
@@ -189,12 +190,63 @@ fn generated_values_pass_each_kind_of_checksum_and_broken_copies_fail_it() {
             rule(5, "WIF", r"\b5[1-9A-HJ-NP-Za-km-z]{50}\b"),
             Checksum::Base58check,
         ),
+        (
+            rule(
+                6,
+                "age key",
+                r"\bAGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}\b",
+            ),
+            Checksum::Bech32,
+        ),
+        (
+            rule(
+                7,
+                "Taproot",
+                r"\bbc1p[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}\b",
+            ),
+            Checksum::Bech32m,
+        ),
+        (
+            rule(8, "Seed phrase", r"\b(?:[a-z]{3,8} ){11}[a-z]{3,8}\b"),
+            Checksum::Bip39,
+        ),
+        (
+            rule(10, "Azure key", r"\b[A-Za-z0-9]{43}="),
+            Checksum::Marvin32(Marvin32Checksum::AZURE_STORAGE),
+        ),
+        (rule(11, "Aadhaar", r"\b\d{12}\b"), Checksum::Verhoeff),
+        (rule(12, "ISBN", r"\b\d{9}[\dX]\b"), Checksum::Mod11),
+        (
+            rule(13, "IBAN", r"\bGB\d{2}[A-Z]{4}\d{14}\b"),
+            Checksum::Mod97,
+        ),
+        (
+            rule(14, "In-house check digit", r"\bacc_\d{12}\b"),
+            Checksum::CheckDigit(CheckDigitChecksum {
+                alphabet: "0123456789".into(),
+                weights: vec![3, 1],
+                modulus: 97,
+                check: CheckRule::Complement,
+                prefix_length: 4,
+                length: 2,
+            }),
+        ),
+        (
+            rule(15, "In-house hash", r"\bhh_[A-Za-z0-9]{30}\b"),
+            Checksum::Hash(HashChecksum {
+                hash: HashFunction::Sha1,
+                bytes: 4,
+                encoding: ChecksumEncoding::Base62,
+                prefix_length: 3,
+                length: 6,
+            }),
+        ),
     ];
     let mut rules: Vec<Rule> = checksums
         .iter()
         .map(|(rule, checksum)| {
             let mut rule = rule.clone();
-            rule.definition.checksum = Some(*checksum);
+            rule.definition.checksum = Some(checksum.clone());
             rule
         })
         .collect();
@@ -219,7 +271,8 @@ fn generated_values_pass_each_kind_of_checksum_and_broken_copies_fail_it() {
             }
         }
     }
-    for id in 1..=5 {
+    for (rule, _) in &checksums {
+        let id = rule.id;
         for kind in ["positive", "broken-checksum"] {
             let case_id = format!("r{id}-{kind}");
             assert!(

@@ -207,6 +207,7 @@ pub fn generate_test_data(rule_set: &RuleSet, rule_ids: Option<&[i64]>, seed: u6
         cases.push(&positive, CaseKind::Positive, Expectation::Secret, true);
         let broken = rule
             .checksum
+            .as_ref()
             .and_then(|checksum| cases.broken_checksum(&positive, checksum, &mut rng));
         if rule.detection_type != DetectionType::UnsafeHandling {
             cases.placeholder(&positive, &placeholders);
@@ -572,20 +573,19 @@ impl Planted {
             .as_deref()
             .filter(|prefix| self.value().starts_with(prefix))
             .map_or(0, str::len);
-        let uncovered = match rule.checksum {
-            Some(Checksum::Crc32(checksum)) => checksum.prefix_length,
-            _ => 0,
-        };
+        let uncovered = rule
+            .checksum
+            .as_ref()
+            .and_then(Checksum::layout)
+            .map_or(0, |(prefix_length, _)| prefix_length);
         prefix.max(uncovered).min(self.value().len())
     }
 
     /// How much of the value's end holds a checksum.
     fn tail(&self, rule: &CompiledRule) -> usize {
-        match rule.checksum {
-            Some(Checksum::Crc32(checksum)) => checksum.length,
-            Some(Checksum::Luhn) => 1,
-            _ => 0,
-        }
+        rule.checksum
+            .as_ref()
+            .map_or(0, |checksum| checksum.tail(self.value()))
     }
 }
 
@@ -613,7 +613,7 @@ fn plant(rule: &CompiledRule, hir: &Hir, shape: &Shape, rng: &mut Rng) -> Option
         {
             text.replace_range(value.0..value.0 + prefix.len(), prefix);
         }
-        if let Some(checksum) = rule.checksum {
+        if let Some(checksum) = &rule.checksum {
             let Some(repaired) = checksum.repair(&text[value.0..value.1]) else {
                 continue;
             };
@@ -633,6 +633,7 @@ fn plant(rule: &CompiledRule, hir: &Hir, shape: &Shape, rng: &mut Rng) -> Option
         }
         if rule
             .checksum
+            .as_ref()
             .is_some_and(|checksum| !checksum.is_valid(&text[found.0..found.1]))
         {
             continue;
@@ -750,7 +751,7 @@ impl RuleCases<'_> {
     fn broken_checksum(
         &mut self,
         positive: &Planted,
-        checksum: Checksum,
+        checksum: &Checksum,
         rng: &mut Rng,
     ) -> Option<String> {
         let value = positive.value();
@@ -820,7 +821,7 @@ impl RuleCases<'_> {
                         &value[..index],
                         &value[index + sample.len()..]
                     );
-                    if let Some(checksum) = self.rule.checksum {
+                    if let Some(checksum) = &self.rule.checksum {
                         match checksum.repair(&planted) {
                             Some(repaired) => planted = repaired,
                             None => continue,
@@ -833,6 +834,7 @@ impl RuleCases<'_> {
                     let valid = self
                         .rule
                         .checksum
+                        .as_ref()
                         .is_none_or(|checksum| checksum.is_valid(&text[found.0..found.1]));
                     if valid && placeholders.iter().any(|any| any.inside(&text, found)) {
                         self.push_text(

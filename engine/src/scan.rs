@@ -658,7 +658,10 @@ fn candidate<'r>(rule: &'r CompiledRule, text: &str, found: Found) -> Option<Can
         end,
         entropy,
         max_entropy: max_entropy(value),
-        checksum_valid: rule.checksum.map(|checksum| checksum.is_valid(value)),
+        checksum_valid: rule
+            .checksum
+            .as_ref()
+            .map(|checksum| checksum.is_valid(value)),
         shape,
         has_prefix: rule.prefix.as_deref().is_some_and(|prefix| {
             text[found.whole.0..].starts_with(prefix) || value.starts_with(prefix)

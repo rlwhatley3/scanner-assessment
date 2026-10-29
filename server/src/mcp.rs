@@ -61,9 +61,15 @@ model_assessment, or model_detection); severity (high, medium, or low; not used 
 placeholder_vs_real or model_assessment); pattern \
 (a Rust regex: a named group `value` narrows the finding to the secret, a named group `key` is \
 checked against keyNames); prefix (the public prefix shown as the redacted preview); keyNames \
-(string array); minEntropy (0 to 8 bits per character); checksum ({\"algorithm\": \"luhn\"}, \
-{\"algorithm\": \"base58check\"}, or {\"algorithm\": \"crc32\", \"encoding\": \
-\"base62\"|\"base36\"|\"hex\", \"prefixLength\": n, \"length\": n}); passwordShape \
+(string array); minEntropy (0 to 8 bits per character); checksum ({\"algorithm\": one of \
+luhn, base58check, bech32, bech32m, bip39, verhoeff, mod11, or mod97}, {\"algorithm\": \
+\"marvin32\", \"seed\": 8 ASCII characters such as \"Default0\"}, or {\"algorithm\": \
+\"crc32\", \"encoding\": \"base62\"|\"base36\"|\"hex\"|\"digits\", \"prefixLength\": n, \
+\"length\": n}, or an in-house setup: {\"algorithm\": \"check_digit\", \"alphabet\": string, \
+\"weights\": [n], \"modulus\": n, \"check\": \"complement\"|\"remainder\", \"prefixLength\": n, \
+\"length\": n} or {\"algorithm\": \"hash\", \"hash\": \"sha256\"|\"sha1\"|\"md5\", \"bytes\": 1 to \
+8, \"encoding\": as for crc32, \"prefixLength\": n, \"length\": n}); \
+passwordShape \
 ({\"minScore\": 1 to 10}, built for likely_credential); remediation (string); model ({\"id\": string, \
 \"sha256\": 64 hex characters}) and threshold (0 to 100), for model_assessment and model_detection \
 only; valueClassifier ({\"model\": {\"id\": string, \"sha256\": 64 hex characters}, \"minScore\": \
@@ -826,8 +832,8 @@ impl ScannerMcp {
     #[tool(
         description = "Generate labeled test data for a rule set version, built from each \
                        enabled pattern rule's own pattern and checked against the rule: a \
-                       positive (with a valid checksum when the rule has one: Luhn, CRC32 in \
-                       base62, base36, or hex, or Base58Check), a broken-checksum copy, a copy \
+                       positive (with a valid checksum when the rule has one), a \
+                       broken-checksum copy, a copy \
                        with a value from the set's placeholder rules inside it, and lookalikes \
                        (prefix changed, one character short, too little randomness). Likely \
                        credentials with key names also get assignments in .env, YAML, and JSON \

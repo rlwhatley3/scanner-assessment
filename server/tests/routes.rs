@@ -1,3 +1,5 @@
+#[path = "routes/checksums.rs"]
+mod checksums;
 #[path = "routes/health.rs"]
 mod health;
 #[path = "routes/models.rs"]
