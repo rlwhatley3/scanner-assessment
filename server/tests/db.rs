@@ -459,6 +459,29 @@ async fn a_scan_starts_completed_and_status_only_accepts_known_values() {
 }
 
 #[tokio::test]
+async fn a_scan_starts_with_no_rule_timings_and_no_text_length() {
+    let db = Db::open_in_memory().expect("in-memory database should open");
+    let (timings, text_bytes, invalid) = db
+        .call(|connection| {
+            connection.execute_batch(SEED)?;
+            let (timings, text_bytes) =
+                connection.query_row("SELECT rule_timings, text_bytes FROM scans", [], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?))
+                })?;
+            let invalid = connection
+                .execute("UPDATE scans SET rule_timings = NULL", [])
+                .is_ok();
+            Ok((timings, text_bytes, invalid))
+        })
+        .await
+        .expect("scan should be readable");
+
+    assert_eq!(timings, "[]");
+    assert_eq!(text_bytes, None);
+    assert!(!invalid);
+}
+
+#[tokio::test]
 async fn marking_running_scans_interrupted_leaves_finished_scans_alone() {
     let db = Db::open_in_memory().expect("in-memory database should open");
     let (marked, statuses) = db

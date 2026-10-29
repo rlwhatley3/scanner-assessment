@@ -262,6 +262,78 @@ fn a_broken_rule_becomes_a_rule_error_finding_and_the_others_still_run() {
 }
 
 #[test]
+fn every_rule_that_runs_gets_a_timing_with_its_match_count_and_a_log_line() {
+    let mut rule_set = default_rule_set();
+    let ran: Vec<i64> = rule_set
+        .rules
+        .iter()
+        .filter(|rule| rule.definition.is_enabled())
+        .map(|rule| rule.id)
+        .collect();
+    rule_set.rules.push(Rule {
+        id: 99,
+        definition: RuleDefinition {
+            name: Some("Broken".into()),
+            pattern: Some("AKIA(".into()),
+            ..rule_set.rules[0].definition.clone()
+        },
+    });
+    let result =
+        scan(1, &format!("k = {AWS_KEY}\nj = {AWS_KEY}"), &rule_set).expect("scan should run");
+    let timed: Vec<i64> = result
+        .rule_timings
+        .iter()
+        .map(|timing| timing.rule_id)
+        .collect();
+    assert_eq!(timed, ran, "a rule that can't run gets no timing");
+    let aws = result.rule_timings[0];
+    assert_eq!((aws.rule_id, aws.matches), (1, 2));
+    assert!(
+        result
+            .log
+            .iter()
+            .any(|event| event.message.starts_with("rule 1 ran in ")
+                && event.message.ends_with(" ms with 2 matches"))
+    );
+    assert!(
+        result
+            .log
+            .iter()
+            .all(|event| !event.message.contains(AWS_KEY))
+    );
+}
+
+#[test]
+fn a_rule_matching_almost_everything_floods_the_scan_and_the_built_in_rules_do_not() {
+    let prose = "the service returns the request handler config\n".repeat(400);
+    let broad = only_rule(DetectionType::DirectCredential, r"(?P<value>\w+)");
+    let result = scan(1, &prose, &broad).expect("scan should run");
+    assert!(result.rule_timings[0].floods, "{:?}", result.rule_timings);
+    assert!(
+        result
+            .log
+            .iter()
+            .any(|event| event.message.ends_with("flooding the scan"))
+    );
+
+    // Every line a credential is as dense as the built-in rules get: once every 32 bytes.
+    let passwords: String = (0..2_000)
+        .map(|line| format!("password = {}{line:04}\n", &RANDOM_PASSWORD[..12]))
+        .collect();
+    for text in [&prose, &passwords] {
+        let result = run(text);
+        assert!(
+            result.rule_timings.iter().all(|timing| !timing.floods),
+            "{:?}",
+            result.rule_timings
+        );
+    }
+    // A short text never floods, however dense.
+    let result = scan(1, "a b c d e f", &broad).expect("scan should run");
+    assert!(!result.rule_timings[0].floods);
+}
+
+#[test]
 fn a_repeated_rule_name_is_a_rule_error_and_the_first_rule_still_runs() {
     let mut rule_set = default_rule_set();
     rule_set.rules.push(Rule {

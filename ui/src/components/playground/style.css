@@ -1084,6 +1084,17 @@ a.button {
   justify-content: space-between;
 }
 
+.rule-timings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rule-timings .data-table td + td {
+  white-space: nowrap;
+}
+
 .switch {
   display: inline-flex;
   flex: none;

@@ -107,6 +107,13 @@ export default function TryRule({ ruleId, definition }: TryRuleProps) {
           The rule isn't finished yet: {finding.violationPretty}
         </p>
       ))}
+      {result && result.slowRules.length > 0 && (
+        <p className="banner warning" role="status">
+          This rule matches almost everything in the example (
+          {result.slowRules[0].matches.toLocaleString()} times), which would slow down every scan.
+          Make it more specific, for example by requiring the text that comes before the secret.
+        </p>
+      )}
       {result && ruleErrors.length === 0 && matches.length === 0 && (
         <p className="banner info" role="status">
           This rule finds nothing in the example.

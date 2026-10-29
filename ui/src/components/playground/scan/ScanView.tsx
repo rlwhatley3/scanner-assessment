@@ -18,6 +18,7 @@ import FindingsList, { findingElementId } from "./FindingsList.tsx";
 import { buildHighlights, type Highlight } from "./highlights.ts";
 import ScanText, { highlightElementId } from "./ScanText.tsx";
 import SessionBar from "./SessionBar.tsx";
+import { RuleTimingsTable, SlowRulesNote } from "./SlowRules.tsx";
 import SuppressionsPanel from "./SuppressionsPanel.tsx";
 import { SAMPLES } from "./samples.ts";
 
@@ -40,6 +41,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [showSuppressions, setShowSuppressions] = useState(false);
+  const [showTimings, setShowTimings] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const scanTokenRef = useRef(0);
@@ -362,6 +364,7 @@ export default function ScanView({ visible }: { visible: boolean }) {
                   saved. A rule may be too broad.
                 </p>
               )}
+              <SlowRulesNote slowRules={result.slowRules} />
               {result.suppressedCount > 0 && (
                 <p className="banner info" role="status">
                   {result.suppressedCount} {result.suppressedCount === 1 ? "value" : "values"}{" "}
@@ -374,6 +377,19 @@ export default function ScanView({ visible }: { visible: boolean }) {
                     See values marked safe
                   </button>
                 </p>
+              )}
+              {result.ruleTimings.length > 0 && (
+                <div className="rule-timings">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={showTimings}
+                      onChange={(event) => setShowTimings(event.target.checked)}
+                    />
+                    Advanced: how long each rule took
+                  </label>
+                  {showTimings && <RuleTimingsTable timings={result.ruleTimings} />}
+                </div>
               )}
               {matches.length === 0 ? (
                 ruleErrors.length === 0 && (

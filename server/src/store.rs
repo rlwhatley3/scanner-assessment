@@ -5,7 +5,7 @@
 
 use rusqlite::{Connection, OptionalExtension, Row};
 use secrets_scanner_engine::{Rule, RuleCheck, RuleDefinition, check_rule_set};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -148,7 +148,76 @@ pub struct ScanSummary {
     /// Matches left out because an active suppression covered their value. They aren't saved,
     /// so they aren't in `match_count`.
     pub suppressed_count: i64,
+    /// Rules that matched so much of the text that they slowed the scan.
+    pub slow_rules: Vec<SlowRule>,
     pub created_at: String,
+}
+
+/// What one rule cost a scan, as saved with it.
+#[derive(Clone, Serialize, Deserialize, schemars::JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleTimingRecord {
+    pub rule_id: i64,
+    pub rule_name: String,
+    /// Time spent on the rule's own work: its search, its model, and its value classifier.
+    pub micros: u64,
+    /// Values it found, before overlapping findings were merged and the findings were capped.
+    pub matches: usize,
+    /// Whether it matched so much of the text that it slowed the scan: at least 1,000 times, and
+    /// at least once every 16 characters. Never true for a model rule.
+    pub floods: bool,
+}
+
+/// A rule that matched so much of a scan's text that it slowed the scan.
+#[derive(Serialize, schemars::JsonSchema, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SlowRule {
+    pub rule_id: i64,
+    pub rule_name: String,
+    pub matches: usize,
+    pub micros: u64,
+    /// What happened and what to change, in plain words.
+    pub message: String,
+}
+
+/// The rules in `timings` that flooded a text of `text_bytes` bytes.
+pub fn slow_rules(timings: &[RuleTimingRecord], text_bytes: Option<i64>) -> Vec<SlowRule> {
+    timings
+        .iter()
+        .filter(|timing| timing.floods)
+        .map(|timing| {
+            let how_often = text_bytes
+                .and_then(|bytes| usize::try_from(bytes).ok())
+                .map(|bytes| {
+                    format!(
+                        ", about once every {} characters,",
+                        (bytes / timing.matches.max(1)).max(1)
+                    )
+                })
+                .unwrap_or_default();
+            SlowRule {
+                rule_id: timing.rule_id,
+                rule_name: timing.rule_name.clone(),
+                matches: timing.matches,
+                micros: timing.micros,
+                message: format!(
+                    "{} matched {} times in this text{how_often} and spent {:.1} ms on it. A \
+                     rule that matches almost everything slows every scan: each match is \
+                     scored, checked against other rules' matches, and counted toward the cap of \
+                     200 findings. Narrow its pattern to the text around the secret, such as a \
+                     prefix or a key name.",
+                    timing.rule_name,
+                    timing.matches,
+                    timing.micros as f64 / 1000.0
+                ),
+            }
+        })
+        .collect()
+}
+
+/// Reads a scan's saved rule timings. Unreadable ones read as none: they only explain a scan.
+pub fn parse_rule_timings(json: &str) -> Vec<RuleTimingRecord> {
+    serde_json::from_str(json).unwrap_or_default()
 }
 
 /// Parses a definition from the rule form's JSON. Field values aren't checked here (drafts are
@@ -659,11 +728,12 @@ pub fn get_session(connection: &Connection, session_id: i64) -> StoreResult<Scan
         "SELECT c.id, c.truncated, c.created_at,
              EXISTS (SELECT 1 FROM findings f WHERE f.scan_id = c.id AND f.kind = 'rule_error'),
              (SELECT COUNT(*) FROM findings f WHERE f.scan_id = c.id AND f.kind = 'match'),
-             c.suppressed_count, c.status
+             c.suppressed_count, c.status, c.rule_timings, c.text_bytes
          FROM scans c WHERE c.scan_session_id = ?1 ORDER BY c.id",
     )?;
     let scans = statement
         .query_map([session_id], |row| {
+            let timings = parse_rule_timings(&row.get::<_, String>(7)?);
             Ok(ScanSummary {
                 id: row.get(0)?,
                 truncated: row.get(1)?,
@@ -672,6 +742,7 @@ pub fn get_session(connection: &Connection, session_id: i64) -> StoreResult<Scan
                 match_count: row.get(4)?,
                 suppressed_count: row.get(5)?,
                 status: row.get(6)?,
+                slow_rules: slow_rules(&timings, row.get(8)?),
             })
         })?
         .collect::<rusqlite::Result<_>>()?;

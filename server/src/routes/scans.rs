@@ -1,5 +1,5 @@
 use super::AppState;
-use crate::store;
+use crate::store::{self, RuleTimingRecord, SlowRule};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -13,6 +13,7 @@ use secrets_scanner_engine::{
     scan_with_options,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::collections::HashSet;
 use tokio::sync::oneshot;
 
@@ -47,6 +48,12 @@ pub struct ScanResponse {
     /// same rule found the same value. They are neither returned nor saved.
     pub suppressed_count: i64,
     pub findings: Vec<FindingResponse>,
+    /// Rules that matched so much of the text that they slowed the scan, each with a message
+    /// saying what to change. Empty for most scans.
+    pub slow_rules: Vec<SlowRule>,
+    /// What each rule that ran cost the scan, in the order they ran. Empty for a scan that
+    /// didn't finish.
+    pub rule_timings: Vec<RuleTimingRecord>,
 }
 
 /// How to read a finding's violation, for API docs and MCP clients.
@@ -144,7 +151,9 @@ fn internal(error: impl std::fmt::Display) -> ApiError {
     description = "Scans the text with the session's rule set version and saves the scan and its findings. \
                    The text itself is never stored or logged. Findings are capped at 200. A match \
                    whose value one of the session's active suppressions covers is not reported \
-                   or saved; suppressedCount says how many were left out.",
+                   or saved; suppressedCount says how many were left out. ruleTimings gives \
+                   each rule's time and match count, and slowRules names rules that matched so \
+                   much of the text that they slowed the scan.",
     params(("scan_session_id" = i64, Path, description = "The scan session to add this scan to")),
     request_body = CreateScanRequest,
     responses(
@@ -230,15 +239,17 @@ async fn scan_and_save(
         .await
         .map_err(internal)?
         .ok_or_else(|| ApiError::NotFound(format!("Scan session {scan_session_id} not found.")))?;
+    let names = rule_names(&rule_set);
 
     // The scan row is created first so its id can tag the engine's log events. If the engine
     // rejects the scan, the row is removed again: failed scans are not stored.
+    let text_bytes = i64::try_from(text.len()).unwrap_or(i64::MAX);
     let scan_id = state
         .db
         .call(move |connection| {
             connection.execute(
-                "INSERT INTO scans (scan_session_id, status) VALUES (?1, 'running')",
-                [scan_session_id],
+                "INSERT INTO scans (scan_session_id, status, text_bytes) VALUES (?1, 'running', ?2)",
+                [scan_session_id, text_bytes],
             )?;
             Ok(connection.last_insert_rowid())
         })
@@ -276,11 +287,47 @@ async fn scan_and_save(
         eprintln!("[scan {}] {}", event.scan_id, event.message);
     }
 
-    let saved = save_results(state, scan_session_id, scan_id, result).await;
+    let saved = save_results(state, scan_session_id, scan_id, text_bytes, result, &names).await;
     if saved.is_err() {
         interrupt(state, scan_id).await;
     }
     saved
+}
+
+/// Each rule's name for messages, or "Rule <id>" when it has none.
+fn rule_names(rule_set: &RuleSet) -> HashMap<i64, String> {
+    rule_set
+        .rules
+        .iter()
+        .map(|rule| {
+            let name = rule
+                .definition
+                .name
+                .as_deref()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map_or_else(|| format!("Rule {}", rule.id), String::from);
+            (rule.id, name)
+        })
+        .collect()
+}
+
+/// The engine's rule timings, named.
+fn timing_records(result: &ScanResult, names: &HashMap<i64, String>) -> Vec<RuleTimingRecord> {
+    result
+        .rule_timings
+        .iter()
+        .map(|timing| RuleTimingRecord {
+            rule_id: timing.rule_id,
+            rule_name: names
+                .get(&timing.rule_id)
+                .cloned()
+                .unwrap_or_else(|| format!("Rule {}", timing.rule_id)),
+            micros: timing.micros,
+            matches: timing.matches,
+            floods: timing.floods,
+        })
+        .collect()
 }
 
 /// Marks a scan that ended before its findings were saved as interrupted. If even that fails,
@@ -328,9 +375,13 @@ async fn save_results(
     state: &AppState,
     scan_session_id: i64,
     scan_id: i64,
+    text_bytes: i64,
     result: ScanResult,
+    names: &HashMap<i64, String>,
 ) -> Result<ScanResponse, ApiError> {
     let truncated = result.truncated;
+    let rule_timings = timing_records(&result, names);
+    let timings_json = serde_json::to_string(&rule_timings).map_err(internal)?;
     let rows = result
         .findings
         .into_iter()
@@ -387,9 +438,9 @@ async fn save_results(
             }
             transaction.execute(
                 "UPDATE scans SET truncated = ?1, suppressed_count = ?2, status = 'completed',
-                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 WHERE id = ?3",
-                rusqlite::params![truncated, suppressed_count, scan_id],
+                     rule_timings = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 WHERE id = ?4",
+                rusqlite::params![truncated, suppressed_count, timings_json, scan_id],
             )?;
             transaction.execute(
                 "UPDATE scan_sessions SET last_ran = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
@@ -406,6 +457,8 @@ async fn save_results(
                 partial: findings.iter().any(|finding| finding.kind == "rule_error"),
                 suppressed_count,
                 findings,
+                slow_rules: store::slow_rules(&rule_timings, Some(text_bytes)),
+                rule_timings,
             })
         })
         .await
@@ -415,20 +468,25 @@ async fn save_results(
 /// A saved scan and its findings, in the same shape the scan endpoint returns. `None` if the
 /// scan doesn't exist.
 pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Option<ScanResponse>> {
-    let Some((scan_session_id, truncated, suppressed_count, status)) = connection
-        .query_row(
-            "SELECT scan_session_id, truncated, suppressed_count, status FROM scans WHERE id = ?1",
-            [scan_id],
-            |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, bool>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            },
-        )
-        .optional()?
+    let Some((scan_session_id, truncated, suppressed_count, status, timings, text_bytes)) =
+        connection
+            .query_row(
+                "SELECT scan_session_id, truncated, suppressed_count, status, rule_timings,
+                     text_bytes
+                 FROM scans WHERE id = ?1",
+                [scan_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, bool>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                    ))
+                },
+            )
+            .optional()?
     else {
         return Ok(None);
     };
@@ -454,6 +512,7 @@ pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Opti
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    let rule_timings = store::parse_rule_timings(&timings);
     Ok(Some(ScanResponse {
         scan_id,
         scan_session_id,
@@ -462,6 +521,8 @@ pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Opti
         partial: findings.iter().any(|finding| finding.kind == "rule_error"),
         suppressed_count,
         findings,
+        slow_rules: store::slow_rules(&rule_timings, text_bytes),
+        rule_timings,
     }))
 }
 
@@ -533,6 +594,8 @@ pub struct TryRuleResponse {
     /// text, and have no ids: nothing is saved.
     #[schema(value_type = Vec<Object>)]
     findings: Vec<TriedFinding>,
+    /// The rule, if it matched so much of the text that it would slow every scan.
+    slow_rules: Vec<SlowRule>,
 }
 
 #[derive(Serialize)]
@@ -553,7 +616,9 @@ struct TriedFinding {
                    finds. Nothing is saved: not the text, the scan, or its findings, so this \
                    needs no rule set version or scan session. The rule runs even when its \
                    definition is disabled. Rules that only adjust other findings (placeholder \
-                   vs. real, model assessment) find nothing on their own and are rejected.",
+                   vs. real, model assessment) find nothing on their own and are rejected. \
+                   slowRules holds the rule if it matched so much of the text that it would \
+                   slow every scan.",
     params(("id" = i64, Path, description = "Rule id")),
     request_body = TryRuleRequest,
     responses(
@@ -580,7 +645,10 @@ pub async fn try_rule(
     let rule_set = RuleSet {
         rules: vec![Rule { id, definition }],
     };
+    let names = rule_names(&rule_set);
+    let text_bytes = i64::try_from(request.text.len()).unwrap_or(i64::MAX);
     let result = run_scan(&state, 0, request.text, rule_set, false).await?;
+    let slow_rules = store::slow_rules(&timing_records(&result, &names), Some(text_bytes));
     let findings = result
         .findings
         .into_iter()
@@ -596,5 +664,6 @@ pub async fn try_rule(
     Ok(Json(TryRuleResponse {
         truncated: result.truncated,
         findings,
+        slow_rules,
     }))
 }

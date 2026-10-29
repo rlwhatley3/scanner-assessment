@@ -393,3 +393,75 @@ async fn a_rejected_scan_is_removed_rather_than_marked_interrupted() {
     }
     assert_eq!(count(&db, "SELECT COUNT(*) FROM scans").await, 0);
 }
+
+/// A rule that matches every word, added to rule set version 1.
+async fn add_every_word_rule(db: &Db) {
+    db.call(|connection| {
+        let definition = json!({
+            "name": "Every word",
+            "detectionType": "direct_credential",
+            "severity": "low",
+            "pattern": "(?P<value>\\w+)"
+        })
+        .to_string();
+        connection.execute(
+            "INSERT INTO rules (definition, drafting) VALUES (?1, 0)",
+            [&definition],
+        )?;
+        connection.execute(
+            "INSERT INTO rule_set_version_rules (rule_set_version_id, rule_id, definition)
+             VALUES (1, last_insert_rowid(), ?1)",
+            [&definition],
+        )
+    })
+    .await
+    .expect("the rule should be added");
+}
+
+#[tokio::test]
+async fn a_rule_matching_almost_everything_is_named_with_the_scan_and_kept_with_it() {
+    let (app, db) = app().await;
+    let (_, plain) = post_scan(&app, 1, json!({ "text": format!("aws = {AWS_KEY}") })).await;
+    assert_eq!(plain["slowRules"], json!([]));
+    assert!(
+        plain["ruleTimings"]
+            .as_array()
+            .is_some_and(|timings| timings.len() > 10
+                && timings.iter().all(|timing| timing["floods"] == false)),
+        "{plain}"
+    );
+
+    add_every_word_rule(&db).await;
+    let text = "the service returns the request handler config\n".repeat(400);
+    let (status, scanned) = post_scan(&app, 1, json!({ "text": text })).await;
+    assert_eq!(status, StatusCode::CREATED, "{scanned}");
+    let slow = scanned["slowRules"].as_array().unwrap();
+    assert_eq!(slow.len(), 1, "{scanned}");
+    assert_eq!(slow[0]["ruleName"], "Every word");
+    assert!(slow[0]["matches"].as_u64().unwrap() >= 1_000);
+    assert!(
+        slow[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Every word matched "),
+        "{slow:?}"
+    );
+    let flooding: Vec<&Value> = scanned["ruleTimings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|timing| timing["floods"] == true)
+        .collect();
+    assert_eq!(flooding.len(), 1);
+    assert_eq!(flooding[0]["ruleName"], "Every word");
+
+    // Saved with the scan: it reads back the same, and the session's history names the rule.
+    let scan_id = scanned["scanId"].as_i64().unwrap();
+    let (_, saved) = get(&app, format!("/api/scan-sessions/1/scans/{scan_id}")).await;
+    assert_eq!(saved, scanned);
+    let (_, session) = get(&app, "/api/scan-sessions/1".to_owned()).await;
+    assert_eq!(session["scans"][0]["slowRules"], json!([]));
+    assert_eq!(session["scans"][1]["slowRules"], scanned["slowRules"]);
+    let text_bytes = count(&db, "SELECT text_bytes FROM scans ORDER BY id DESC LIMIT 1").await;
+    assert_eq!(text_bytes, i64::try_from(text.len()).unwrap());
+}

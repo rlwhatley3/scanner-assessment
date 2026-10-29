@@ -6,14 +6,14 @@
 //! The engine generates the data deterministically from a seed, so it is never stored: a run
 //! regenerates it. A run's documents go through `scans::scan_in_session` like any scan, so their
 //! text is never stored or logged either; only the findings are saved, and the labels live in the
-//! report alone.
+//! report alone. Each scan's rule timings show rules whose matches flood a document.
 
 use super::{
     AppState,
     models::{self, ModelResponse},
     scans::{self, ApiError, ErrorResponse, FindingResponse},
 };
-use crate::store::{self, StoreError};
+use crate::store::{self, RuleTimingRecord, StoreError};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -312,7 +312,7 @@ impl Tallies {
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
     /// parsed_pair_only, no_value_group, example_scored_as_real, classifier_only_lowered,
-    /// model_unavailable, prefix_not_enforced, suppressed, or truncated.
+    /// model_unavailable, prefix_not_enforced, slow_rule, suppressed, or truncated.
     pub code: String,
     pub rule_id: Option<i64>,
     pub rule_name: Option<String>,
@@ -813,6 +813,7 @@ pub async fn run_test_suite(
     let mut evaluation = Evaluation::new(&version);
     for document in documents {
         let scan = scans::scan_in_session(state, scan_session_id, document.text.clone()).await?;
+        evaluation.timings(&document, &scan.rule_timings);
         results.push(evaluation.document(&document, scan));
     }
     let loaded = models::loaded_models(state);
@@ -885,6 +886,8 @@ struct Evaluation<'v> {
     rule_errors: BTreeMap<i64, RuleErrorBrief>,
     suppressed: Vec<(String, i64)>,
     truncated: Vec<String>,
+    /// Each rule's densest flood: the document, its length, and the rule's timing there.
+    floods: BTreeMap<i64, (String, usize, RuleTimingRecord)>,
 }
 
 impl<'v> Evaluation<'v> {
@@ -898,6 +901,27 @@ impl<'v> Evaluation<'v> {
             rule_errors: BTreeMap::new(),
             suppressed: Vec::new(),
             truncated: Vec::new(),
+            floods: BTreeMap::new(),
+        }
+    }
+
+    /// Keeps each rule's densest flood. The engine decides what floods; it never counts a model
+    /// rule, whose time grows with the text rather than its matches.
+    fn timings(&mut self, document: &Document, timings: &[RuleTimingRecord]) {
+        let bytes = document.text.len();
+        for timing in timings.iter().filter(|timing| timing.floods) {
+            let denser = self
+                .floods
+                .get(&timing.rule_id)
+                .is_none_or(|(_, other_bytes, other)| {
+                    timing.matches * other_bytes > other.matches * bytes
+                });
+            if denser {
+                self.floods.insert(
+                    timing.rule_id,
+                    (document.name.clone(), bytes, timing.clone()),
+                );
+            }
         }
     }
 
@@ -1366,6 +1390,24 @@ impl<'v> Evaluation<'v> {
                     "{count} match(es) in \"{name}\" were left out by the session's \
                      suppressions, so cases they cover read as missed or not reported. Run the \
                      suite in a new session to see every match."
+                ),
+            ));
+        }
+        for (&rule_id, (name, bytes, timing)) in &self.floods {
+            diagnostics.push(diagnostic(
+                "slow_rule",
+                Some(rule_id),
+                Vec::new(),
+                format!(
+                    "{} matched {} times in \"{name}\", about once every {} characters, and \
+                     spent {:.1} ms on its own work. A pattern that matches almost everything \
+                     slows every scan: each match is scored, checked against other rules' \
+                     matches, and counted toward the cap of 200 findings. Narrow the pattern \
+                     to the syntax around the secret, such as a prefix or a key name.",
+                    version.name(rule_id),
+                    timing.matches,
+                    (bytes / timing.matches).max(1),
+                    timing.micros as f64 / 1000.0
                 ),
             ));
         }
