@@ -21,6 +21,7 @@ use serde_json::{Map, Value};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
+        .route("/check", post(check_set))
         .route("/{id}", get(fetch).put(update).delete(remove))
         .route("/{id}/check", post(check))
 }
@@ -43,6 +44,13 @@ pub struct RuleBody {
     #[serde(default)]
     #[schema(value_type = Object)]
     definition: Map<String, Value>,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CheckRulesBody {
+    /// The rules to check together, as they would be checked when saved into one version.
+    rule_ids: Vec<i64>,
 }
 
 fn with_versions(connection: &Connection, rule: RuleRecord) -> Result<RuleResponse, StoreError> {
@@ -215,4 +223,29 @@ pub async fn check(
     db.call(move |connection| Ok(store::get_rule(connection, id).map(|_| ())))
         .await??;
     Ok(Json(check_definition(id, Value::Object(body.definition))?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/rules/check",
+    tag = "Rules",
+    summary = "Check rules as a set",
+    description = "Runs the checks saving a rule set version runs on these rules' current \
+                   definitions (required fields, ranges, pattern compilation, and duplicate \
+                   names) without saving anything.",
+    request_body = CheckRulesBody,
+    responses(
+        (status = 200, description = "The engine's errors and warnings", body = Object),
+        (status = 404, description = "A listed rule doesn't exist", body = ErrorBody),
+        (status = 422, description = "A rule is listed twice, or unknown fields", body = ErrorBody)
+    )
+)]
+pub async fn check_set(
+    State(db): State<Db>,
+    Json(body): Json<CheckRulesBody>,
+) -> Result<Json<RuleCheck>, ApiError> {
+    let check = db
+        .call(move |connection| Ok(store::check_rules(connection, &body.rule_ids)))
+        .await??;
+    Ok(Json(check))
 }

@@ -127,3 +127,62 @@ async fn a_definition_must_fit_the_rule_shape() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body["error"].as_str().unwrap().contains("nmae"));
 }
+
+#[tokio::test]
+async fn check_set_checks_rules_together_without_saving() {
+    let app = app();
+    let first = create_rule(&app, valid_definition("AWS key")).await;
+    let second = create_rule(&app, valid_definition("aws key")).await;
+    let other = create_rule(&app, valid_definition("Another key")).await;
+
+    let (status, check) = send(
+        &app,
+        "POST",
+        "/api/rules/check",
+        Some(json!({ "ruleIds": [first, second] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let errors = check["errors"].as_array().expect("errors should be listed");
+    assert!(!errors.is_empty());
+    assert!(errors.iter().all(|error| error["code"] == "duplicate_name"));
+
+    let (status, check) = send(
+        &app,
+        "POST",
+        "/api/rules/check",
+        Some(json!({ "ruleIds": [first, other] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(check["errors"], json!([]));
+
+    // Nothing was saved: the rules are still drafts in no version.
+    let (_, rule) = send(&app, "GET", &format!("/api/rules/{first}"), None).await;
+    assert_eq!(rule["drafting"], true);
+    assert_eq!(rule["versionIds"], json!([]));
+}
+
+#[tokio::test]
+async fn check_set_rejects_unknown_and_repeated_rules() {
+    let app = app();
+    let id = create_rule(&app, valid_definition("AWS key")).await;
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/rules/check",
+        Some(json!({ "ruleIds": [id, 999] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/rules/check",
+        Some(json!({ "ruleIds": [id, id] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
