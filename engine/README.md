@@ -300,6 +300,16 @@ let result = scan_with_options(scan_id, text, &rule_set, options)?;
 - **Trade-off:** the 200-finding cap is applied in the engine, before suppressions, so suppressed matches still use up places under the cap.
 - **Endpoints:** `GET`/`POST /api/scan-sessions/{id}/suppressions` and `DELETE /api/scan-sessions/{id}/suppressions/{suppressionId}`, and the MCP tools `list_suppressions`, `create_suppression`, and `remove_suppression`, all through `server/src/store.rs`.
 
+## Test data
+
+`generate_test_data(rule_set, rule_ids, seed)` builds labeled test data for the enabled pattern rules: for each rule, a positive that the rule finds (with a valid checksum when it has one), a copy with a broken checksum, a copy with a value from the set's placeholder rules inside it, and lookalikes it shouldn't find (prefix changed, one character short, too little randomness). Likely-credential rules with key names also get assignments in `.env`, YAML, and JSON files, plus the same value under a neutral name. A last file holds ordinary values that aren't secrets. Each case has an id, its rule, its kind, what it should get (`secret`, `example`, or `not_secret`), and its byte range.
+
+- **From the rule's own pattern:** generation walks the pattern's syntax tree (`regex-syntax`) and writes a random match, preferring letters and digits so values look like tokens, short runs of spacing, the rule's prefix at the start, and key names in the `key` group. A checksum is then computed into the value (`Checksum::repair`: CRC32 in any encoding, Luhn, Base58Check).
+- **Checked, not assumed:** every case is checked against the compiled rule the way a scan finds values, pattern matches and parsed pairs alike, and kept only if the rule finds a positive and doesn't find a lookalike. Cases are then laid out into documents and checked again in place, so a multi-line match can't run from one case into the next. A case that can't be made is listed in `skipped` with the reason, which can point at a rule problem, such as a pattern that doesn't require its declared prefix.
+- **Deterministic:** a small seeded generator (SplitMix64) with one stream per rule, so the same rule set and seed always give the same data, and adding a rule doesn't change the others' data. That is why the API never stores generated text: a test run regenerates it.
+
+`pattern_matches_value(rule, text, start, end)` says whether a rule's own pattern matched a value, as opposed to the value being found only as a parsed key/value pair. The API's test runs use it to point out key names that reach further than the pattern.
+
 ## Trade-offs
 
 - **Regex plus entropy, checksums, and format parsing first, machine learning as an optional extra:** the built-in rules are predictable, explainable, and fast, so every finding can say exactly why it was flagged. Checksums and format parsing reduce false positives and misses without leaving the machine. The cost is remaining false positives on documentation and fixtures (softened by the placeholder score) and misses on secrets with no known format and low randomness. Models target both, but only when a rule set includes them: model rules' verdicts sit beside the other rules' scores, and a value classifier only moves a match's confidence, never drops it.

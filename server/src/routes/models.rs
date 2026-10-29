@@ -7,9 +7,9 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub struct ModelResponse {
     /// A readable name for the model.
-    id: String,
+    pub id: String,
     /// The SHA-256 of the model file, which is how a rule names the model.
-    sha256: String,
+    pub sha256: String,
     /// How many token ids the model reads at once.
     input_length: usize,
     /// What the model can be used for: `model_assessment` or `model_detection` rules, or a

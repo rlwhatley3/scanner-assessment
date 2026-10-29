@@ -41,10 +41,51 @@ Scan text is never stored, and no finding contains the matched value. Only posit
 1. `create_rule` with a definition. It is stored as a draft and not validated, so you can build it up over several `update_rule` calls.
 2. `check_rules` with the rule ids you plan to save together. It runs the checks that saving a version runs (required fields, ranges, pattern compilation, duplicate names) and saves nothing. Error spans point at the exact spot in the pattern.
 3. `create_rule_set_version` with the rule ids. Each rule's current definition is snapshotted, so later edits never change a saved version. To build on the built-in rules, start a set with `create_rule_set` copying the built-in version, then save a new version that adds your rule ids.
-4. `create_scan_session` on that version, then `run_scan` with known positives and known negatives. Read each finding's `whyFlagged`, `confidence`, and `placeholderScore` to see which mechanism fired.
+4. `create_scan_session` on that version, then test it: `run_test_suite` with generated data and files of your own (see `testing`), or `run_scan` with known positives and known negatives. Read each finding's `whyFlagged`, `confidence`, and `placeholderScore` to see which mechanism fired.
 5. Adjust and save another version. Versions are numbered within their set and can be archived, never edited.
 
 Why test with negatives: most rule mistakes are false positives on ordinary text (IDs, hashes, URLs, prose). Scan the kind of file the rule will meet, not only the secret.
+
+## Testing
+
+Two tools test a rule set version against labeled data and report expected versus actual. Both are deterministic: the engine decides every result, and nothing in them is a model's opinion.
+
+`generate_test_data` builds cases for each enabled pattern rule from the rule's own pattern, and checks each against the rule before keeping it:
+
+| Kind | What it is | Expect |
+|---|---|---|
+| `positive` | A match that passes the rule's key names, entropy, and password shape, with a valid checksum when the rule has one (Luhn, CRC32 in base62, base36, or hex, or Base58Check) | `secret` |
+| `assignment` | For a `likely_credential` rule with `keyNames`: a value under one of the names in `.env`, YAML, and JSON files | `secret` |
+| `broken_checksum` | The positive with one covered character changed. A second copy sits under `APP_TOKEN=` in the `.env` file, where rules that go by names can match it too | `example` |
+| `placeholder` | The positive with a value from the set's placeholder rules inside it | `example` |
+| `wrong_prefix`, `one_short` | The positive with a prefix character changed, or one character short | `not_secret` for that rule |
+| `low_entropy` | The value with too little randomness for `minEntropy` | `example` |
+| `neutral_key` | An assignment value under a name that isn't a key name | `not_secret` for that rule |
+| `lookalike` | Ordinary values in `lookalikes.yaml`: a commit SHA, UUIDs, a digest, a URL, a path, a reference such as `${DB_PASSWORD}`, two of them under secret-sounding names | `not_secret` for every rule |
+
+The same version and seed always give the same data, so a run can regenerate it instead of storing it. Every value is made up. `skipped` lists the cases that couldn't be made and why, which can point at a rule problem: a pattern that still matches with its prefix changed doesn't require the prefix, and a format no placeholder fits inside can't have its examples marked by a placeholder rule.
+
+`run_test_suite` scans documents in a scan session and compares each case with the findings that overlap it. Pass `generated` (a seed and optional rule ids) to scan the generated data without sending its text, `documents` to scan realistic files of your own, or both. In your own documents, label each case by its exact `value` (and `occurrence`, from 1, when it repeats), with `expect` and optionally the rule (`ruleId` or `ruleName`). Each document is saved as a scan in the session, so its text is never stored and the session's suppressions apply; the labels exist only in the report.
+
+How each case is judged:
+
+- `secret`: `caught` when its rule (any rule, if none is named) reports it, `caught_as_example` when every such finding has `placeholderScore` 70 or more, otherwise `missed`.
+- `example`: `not_reported`, `flagged_as_example` when every overlapping finding has `placeholderScore` 70 or more, or `scored_as_real` when any finding, from any rule, scores it as real.
+- `not_secret`: `ignored`, or `false_alarm` when its rule (any rule, if none is named) reports it.
+
+Findings on no case are listed as unlabeled. `diagnostics` name rule problems the run showed:
+
+| Code | Meaning |
+|---|---|
+| `parsed_pair_only` | A `likely_credential` rule with `keyNames` reported values its pattern didn't match, because key names also check every parsed pair under those names (see `key-names`) |
+| `no_value_group` | A rule without a `value` group scored a match under 80 because its span holds syntax as well as the secret, which dilutes randomness (see `pitfalls`) |
+| `example_scored_as_real` | An example was scored as real, often by an overlapping rule: a failed checksum or a placeholder only marks the findings of the rule that checks it |
+| `classifier_only_lowered` | A value classifier rated reported values as not credentials. It lowers confidence to 30 and never drops a finding |
+| `model_unavailable` | A rule names a model hash this server hasn't loaded, usually after the model was retrained. The message lists the loaded models' hashes |
+| `prefix_not_enforced` | The rule still finds the value with its `prefix` changed |
+| `suppressed`, `truncated` | A scan left matches out, so cases may read as missed |
+
+Why both kinds of data: generated cases cover each rule's mechanisms exhaustively (the checksum, the prefix, the length, the placeholders), but only a file someone would really write, such as a README, a CI config, a Python settings module, or a CSV export, shows how rules meet real context and each other. Generate first, then add realistic files with the same values in them.
 
 ## Detection types
 

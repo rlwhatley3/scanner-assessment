@@ -31,15 +31,15 @@ pub struct CreateScanRequest {
 #[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanResponse {
-    scan_id: i64,
-    scan_session_id: i64,
+    pub scan_id: i64,
+    pub scan_session_id: i64,
     /// True when there were more findings than the cap and the rest were not saved.
-    truncated: bool,
+    pub truncated: bool,
     /// True when at least one rule could not run.
-    partial: bool,
+    pub partial: bool,
     /// Matches left out because one of the session's active suppressions covers their value: the
     /// same rule found the same value. They are neither returned nor saved.
-    suppressed_count: i64,
+    pub suppressed_count: i64,
     pub findings: Vec<FindingResponse>,
 }
 
@@ -65,15 +65,15 @@ when there is one.";
 #[derive(Serialize, utoipa::ToSchema, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FindingResponse {
-    id: i64,
-    rule_id: i64,
+    pub id: i64,
+    pub rule_id: i64,
     /// `match` or `rule_error`.
-    kind: String,
+    pub kind: String,
     /// Match details or the rule error, exactly as stored. Never contains the matched text.
     #[schema(value_type = Object)]
     #[schemars(description = VIOLATION_HELP)]
-    violation: serde_json::Value,
-    violation_pretty: String,
+    pub violation: serde_json::Value,
+    pub violation_pretty: String,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
