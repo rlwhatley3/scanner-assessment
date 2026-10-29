@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import ApiDocsView from "./components/docs/ApiDocsView";
+import McpDocsView from "./components/docs/McpDocsView";
 import InstructionsView from "./components/instructions/InstructionsView";
 import ApplicationNavigation from "./components/layout/ApplicationNavigation";
 import PlaygroundView from "./components/playground/PlaygroundView";
@@ -36,6 +37,7 @@ function App() {
           }
         />
         <Route path="/api-docs" element={<ApiDocsView />} />
+        <Route path="/mcp-docs" element={<McpDocsView />} />
         <Route path="*" element={<Navigate to="/instructions" replace />} />
       </Routes>
     </BrowserRouter>

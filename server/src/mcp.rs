@@ -10,12 +10,13 @@ use crate::store::{
     self, RuleRecord, RuleSetRecord, RuleSetSummary, RuleSetVersionRecord, RuleSetVersionSummary,
     ScanSessionRecord, ScanSessionSummary, StoreError,
 };
+use axum::extract::State;
 use rmcp::{
     ErrorData, Json, ServerHandler,
     handler::server::{router::tool::ToolRouter, tool::IntoCallToolResult, wrapper::Parameters},
     model::{
         CallToolResponse, CallToolResult, ContentBlock, Implementation, ServerCapabilities,
-        ServerConfig,
+        ServerConfig, Tool,
     },
     tool, tool_handler, tool_router,
     transport::streamable_http_server::{
@@ -75,6 +76,38 @@ pub fn service(state: AppState) -> StreamableHttpService<ScannerMcp, LocalSessio
         Default::default(),
         config,
     )
+}
+
+/// What the MCP server says about itself: its `initialize` result and its `tools/list` tools,
+/// exactly as an MCP client receives them. `/mcp` turns browsers away, so the docs page reads
+/// this instead.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct McpDescription {
+    /// The `initialize` result: protocol version, capabilities, server name and version, and
+    /// instructions.
+    #[schema(value_type = Object)]
+    initialize: ServerConfig,
+    /// Every tool as `tools/list` returns it, sorted by name, with its input and output JSON
+    /// Schemas and annotations.
+    #[schema(value_type = Vec<Object>)]
+    tools: Vec<Tool>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/mcp",
+    tag = "MCP",
+    summary = "Describe the MCP server",
+    description = "The MCP server's `initialize` result and its tools, as an MCP client at `/mcp` \
+                   would receive them. Read-only, and calls no tools.",
+    responses((status = 200, description = "The MCP server's description", body = McpDescription))
+)]
+pub async fn describe(State(state): State<AppState>) -> axum::Json<McpDescription> {
+    let server = ScannerMcp::new(state);
+    axum::Json(McpDescription {
+        initialize: server.get_info(),
+        tools: server.tool_router.list_all(),
+    })
 }
 
 /// A tool failure the caller can act on, returned as a tool error rather than a protocol error
