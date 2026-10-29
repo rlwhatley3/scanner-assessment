@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
 import {
   formatDate,
@@ -8,7 +9,7 @@ import {
   type StoredScan,
 } from "../api.ts";
 import { HelpLink } from "../guide/GuideView.tsx";
-import { SlowRulesNote } from "../scan/SlowRules.tsx";
+import { RuleTimingsTable, SlowRulesNote } from "../scan/SlowRules.tsx";
 import SuppressionsPanel from "../scan/SuppressionsPanel.tsx";
 import { useActiveSession } from "../session.tsx";
 import { SEVERITY_LABELS, SeverityIcon } from "../severity.tsx";
@@ -121,6 +122,7 @@ export default function SessionsView() {
 }
 
 function ScanSummary({ scan }: { scan: StoredScan }) {
+  const [showTimings, setShowTimings] = useState(false);
   const matches = scan.findings.filter(
     (finding): finding is SavedMatch => finding.kind === "match",
   );
@@ -165,6 +167,19 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
             </li>
           ))}
         </ul>
+      )}
+      {scan.ruleTimings.length > 0 && (
+        <div className="rule-timings">
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={showTimings}
+              onChange={(event) => setShowTimings(event.target.checked)}
+            />
+            Advanced: how long each rule took
+          </label>
+          {showTimings && <RuleTimingsTable timings={scan.ruleTimings} />}
+        </div>
       )}
       {matches.length > 0 && (
         <table className="data-table">

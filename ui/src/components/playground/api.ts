@@ -355,6 +355,8 @@ export interface StoredScan {
   suppressedCount: number;
   /** Rules that matched so much of the text that they slowed the scan. */
   slowRules: SlowRule[];
+  /** What each rule that ran cost the scan. Empty for a scan that didn't finish. */
+  ruleTimings: RuleTiming[];
   createdAt: string;
   findings: SavedFinding[];
 }
