@@ -159,6 +159,43 @@ async fn initializes_and_lists_every_tool() {
     );
 }
 
+/// The docs page reads `/api/mcp`, so it must say exactly what `/mcp` says, and a browser may
+/// read it.
+#[tokio::test]
+async fn describes_itself_to_the_docs_page_as_it_does_to_clients() {
+    let (app, _) = app().await;
+    let init = rpc(
+        &app,
+        "initialize",
+        json!({
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        }),
+    )
+    .await;
+    let tools = rpc(&app, "tools/list", json!({})).await;
+
+    let request = Request::get("/api/mcp")
+        .header("origin", "http://127.0.0.1:5173")
+        .body(Body::empty())
+        .expect("request should build");
+    let response = app.oneshot(request).await.expect("request should run");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    let description: Value = serde_json::from_slice(&bytes).expect("body should be JSON");
+
+    for field in ["capabilities", "serverInfo", "instructions"] {
+        assert_eq!(
+            description["initialize"][field], init["result"][field],
+            "{field}"
+        );
+    }
+    assert_eq!(description["tools"], tools["result"]["tools"]);
+}
+
 #[tokio::test]
 async fn rejects_browser_origins() {
     let (app, _) = app().await;

@@ -25,6 +25,9 @@ export default function ApplicationNavigation() {
         <NavLink className="tab" to="/api-docs">
           API Docs
         </NavLink>
+        <NavLink className="tab" to="/mcp-docs">
+          MCP Docs
+        </NavLink>
       </nav>
     </header>
   );

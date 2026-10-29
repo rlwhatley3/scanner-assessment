@@ -65,6 +65,7 @@ pub fn router(db: Db) -> Router {
     Router::new()
         .route("/api/health", get(health::health))
         .route("/api/models", get(models::list))
+        .route("/api/mcp", get(crate::mcp::describe))
         .nest("/api/rules", rules::router())
         .nest("/api/rule-sets", rule_sets::router())
         .nest("/api/rule-set-versions", rule_set_versions::router())

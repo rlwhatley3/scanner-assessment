@@ -29,6 +29,7 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         scan_sessions::create,
         scan_sessions::fetch,
         scans::create_scan,
+        mcp::describe,
     ),
     components(schemas(
         health::HealthResponse,
@@ -37,7 +38,8 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         scans::CreateScanRequest,
         scans::ScanResponse,
         scans::FindingResponse,
-        scans::ErrorResponse
+        scans::ErrorResponse,
+        mcp::McpDescription
     )),
     tags(
         (name = "API", description = "API for managing and scanning secrets"),
@@ -45,7 +47,8 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         (name = "Rules", description = "Detection rules, drafts included"),
         (name = "Rule sets", description = "Named lines of rule set versions"),
         (name = "Rule set versions", description = "Saved, immutable sets of rule snapshots"),
-        (name = "Scan sessions", description = "Scans grouped under one rule set version")
+        (name = "Scan sessions", description = "Scans grouped under one rule set version"),
+        (name = "MCP", description = "The MCP server mounted at /mcp")
     )
 )]
 pub struct ApiDoc;
