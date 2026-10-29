@@ -34,7 +34,8 @@ async fn migrations_create_the_storage_tables() {
             "rule_sets",
             "rules",
             "scan_sessions",
-            "scans"
+            "scans",
+            "suppressions"
         ]
     );
 }

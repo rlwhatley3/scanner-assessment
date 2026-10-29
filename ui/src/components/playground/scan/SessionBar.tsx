@@ -16,10 +16,22 @@ interface SessionBarProps {
   /** True while a scan is running, so the session cannot change under it. */
   locked: boolean;
   onLeave: () => void;
+  /** Suppressions that apply to the next scan; null until loaded. */
+  activeSuppressions: number | null;
+  showSuppressions: boolean;
+  onToggleSuppressions: () => void;
 }
 
 /** Shows the active scan session, or lets the user start one on a rule set's version. */
-export default function SessionBar({ visible, version, locked, onLeave }: SessionBarProps) {
+export default function SessionBar({
+  visible,
+  version,
+  locked,
+  onLeave,
+  activeSuppressions,
+  showSuppressions,
+  onToggleSuppressions,
+}: SessionBarProps) {
   const { session, setSession } = useActiveSession();
   const ruleSets = useLoad(() => listRuleSets(), [visible, session === null]);
   const [ruleSetId, setRuleSetId] = useState<number | null>(null);
@@ -72,6 +84,19 @@ export default function SessionBar({ visible, version, locked, onLeave }: Sessio
             {versionLabel({ ruleSetName: session.ruleSetName, number: session.versionNumber })}
           </Link>
           {enabled !== undefined && ` · ${enabled} ${enabled === 1 ? "rule" : "rules"} enabled`}
+          {" · "}
+          <button
+            type="button"
+            className="link-button"
+            aria-expanded={showSuppressions}
+            onClick={onToggleSuppressions}
+          >
+            {activeSuppressions === null
+              ? "Suppressions"
+              : `${activeSuppressions} active ${
+                  activeSuppressions === 1 ? "suppression" : "suppressions"
+                }`}
+          </button>
         </span>
         <button type="button" className="button" onClick={onLeave} disabled={locked}>
           Close session

@@ -163,7 +163,8 @@ async fn the_seeded_built_in_rules_save_as_a_new_version() {
     secrets_scanner_api::seed::seed_default_rule_set(&db)
         .await
         .expect("seed should run");
-    let app = secrets_scanner_api::routes::router(db);
+    let app =
+        secrets_scanner_api::routes::router(db, secrets_scanner_api::fingerprint_key::generate());
 
     let (_, rules) = send(&app, "GET", "/api/rules", None).await;
     let ids: Vec<_> = rules

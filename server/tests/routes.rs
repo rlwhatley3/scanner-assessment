@@ -12,6 +12,8 @@ mod rules;
 mod scan_sessions;
 #[path = "routes/scans.rs"]
 mod scans;
+#[path = "routes/suppressions.rs"]
+mod suppressions;
 
 use axum::{
     Router,
@@ -24,7 +26,10 @@ use tower::ServiceExt;
 
 /// A router over a fresh in-memory database.
 pub fn app() -> Router {
-    routes::router(Db::open_in_memory().expect("in-memory database should open"))
+    routes::router(
+        Db::open_in_memory().expect("in-memory database should open"),
+        secrets_scanner_api::fingerprint_key::generate(),
+    )
 }
 
 /// Sends one request and returns the status and JSON body (null when empty).

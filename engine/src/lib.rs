@@ -6,6 +6,7 @@
 
 mod checksum;
 mod defaults;
+mod fingerprint;
 mod format;
 mod location;
 mod models;
@@ -17,6 +18,7 @@ pub use checksum::{Checksum, ChecksumEncoding, Crc32Checksum};
 pub use defaults::{
     VALUE_CLASSIFIER_ONNX, VALUE_CLASSIFIER_SHA256, default_rule_set, value_classifier_setting,
 };
+pub use fingerprint::{FINGERPRINT_KEY_BYTES, FingerprintKey};
 pub use format::Format;
 pub use location::Location;
 pub use models::{ModelInfo, ModelLoadError, ModelUse, Models};
@@ -28,6 +30,6 @@ pub use rules::{
 };
 pub use scan::{
     Finding, FindingKind, LogEvent, MAX_FINDINGS, MAX_INPUT_BYTES, MIN_DETECTION_BYTES,
-    MatchDetails, ModelAssessment, ModelVerdict, ScanError, ScanResult, ValueClass, ValueLabel,
-    Violation, scan, scan_with_models,
+    MatchDetails, ModelAssessment, ModelVerdict, ScanError, ScanOptions, ScanResult, ValueClass,
+    ValueLabel, Violation, scan, scan_with_models, scan_with_options,
 };

@@ -21,7 +21,10 @@ async fn app() -> (Router, Db) {
     })
     .await
     .expect("scan session should insert");
-    (routes::router(db.clone()), db)
+    (
+        routes::router(db.clone(), secrets_scanner_api::fingerprint_key::generate()),
+        db,
+    )
 }
 
 async fn post_scan(app: &Router, session: i64, body: Value) -> (StatusCode, Value) {
@@ -232,7 +235,10 @@ async fn a_request_with_unknown_fields_is_rejected() {
 
 #[test]
 fn scans_are_capped_at_a_fixed_number_running_at_once() {
-    let state = routes::AppState::new(Db::open_in_memory().expect("database should open"));
+    let state = routes::AppState::new(
+        Db::open_in_memory().expect("database should open"),
+        secrets_scanner_api::fingerprint_key::generate(),
+    );
     assert_eq!(
         state.scan_permits.available_permits(),
         routes::MAX_CONCURRENT_SCANS

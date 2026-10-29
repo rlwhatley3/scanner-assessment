@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 crc32fast = "1.5.2"
 regex = "1.13.1"
 regex-syntax = "0.8.11"
@@ -20,3 +21,8 @@ ml = ["dep:tract-onnx"]
 [dev-dependencies]
 # Builds the small ONNX models the model rule tests run; same version tract-onnx uses.
 prost = "0.14"
+
+# Fingerprints use Argon2id, which is deliberately slow; unoptimized it is about 20 times slower,
+# which would make debug builds and tests crawl. Optimize just these crates in dev builds.
+[profile.dev.package.argon2]
+opt-level = 3

@@ -3,9 +3,11 @@ import {
   formatDate,
   getSession,
   listSessions,
-  type MatchFinding,
+  listSuppressions,
+  type SavedMatch,
   type StoredScan,
 } from "../api.ts";
+import SuppressionsPanel from "../scan/SuppressionsPanel.tsx";
 import { useActiveSession } from "../session.tsx";
 import { SEVERITY_LABELS, SeverityIcon } from "../severity.tsx";
 import { useLoad } from "../useLoad.ts";
@@ -18,6 +20,10 @@ export default function SessionsView() {
   const id = sessionId === undefined ? null : Number(sessionId);
   const detail = useLoad(() => (id === null ? Promise.resolve(null) : getSession(id)), [id]);
   const session = detail.data?.id === id ? detail.data : null;
+  const suppressions = useLoad(
+    () => (id === null ? Promise.resolve([]) : listSuppressions(id)),
+    [id],
+  );
 
   function reopen() {
     if (!session) return;
@@ -51,6 +57,10 @@ export default function SessionsView() {
                 <span className="muted small">
                   {entry.ruleSetName} v{entry.versionNumber} · {entry.scanCount}{" "}
                   {entry.scanCount === 1 ? "scan" : "scans"} ·{" "}
+                  {entry.activeSuppressionCount > 0 &&
+                    `${entry.activeSuppressionCount} active ${
+                      entry.activeSuppressionCount === 1 ? "suppression" : "suppressions"
+                    } · `}
                   {entry.lastRan ? `last ran ${formatDate(entry.lastRan)}` : "not run yet"}
                 </span>
               </NavLink>
@@ -84,6 +94,7 @@ export default function SessionsView() {
               Scan text is never stored, so past scans show where each finding was and which rule it
               broke, not the text itself.
             </p>
+            <SuppressionsPanel sessionId={session.id} suppressions={suppressions} />
             {session.scans.length === 0 ? (
               <p className="muted">No scans in this session yet.</p>
             ) : (
@@ -100,7 +111,7 @@ export default function SessionsView() {
 
 function ScanSummary({ scan }: { scan: StoredScan }) {
   const matches = scan.findings.filter(
-    (finding): finding is MatchFinding & { id: number } => finding.kind === "match",
+    (finding): finding is SavedMatch => finding.kind === "match",
   );
   const ruleErrors = scan.findings.filter((finding) => finding.kind === "rule_error");
   const outcome = ruleErrors.length > 0 ? "Partial" : matches.length === 0 ? "Clean" : "Findings";
@@ -111,6 +122,9 @@ function ScanSummary({ scan }: { scan: StoredScan }) {
         Scan {scan.id} · {formatDate(scan.createdAt)} ·{" "}
         <span className={`outcome ${outcome.toLowerCase()}`}>{outcome}</span>
         {scan.truncated && <span className="badge">Cut off at 200</span>}
+        {scan.suppressedCount > 0 && (
+          <span className="badge subtle">{scan.suppressedCount} suppressed, not flagged</span>
+        )}
       </h3>
       {ruleErrors.length > 0 && (
         <ul className="banner warning">
