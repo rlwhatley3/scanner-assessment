@@ -239,6 +239,7 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
   - **Stores a status, never the provider's response:** `active`, `inactive`, `unknown`, or `not attempted`, with when it was checked, in a separate `verifications` table. Active findings would sort first in the UI and get their own CI exit code.
 - **AI or ML triage:** this would also send text off the machine unless the model ran locally, and it would make "why flagged" harder to explain.
 - **Parsing source code into syntax trees:** this would need a parser per language, so code is scanned as text with its comment lines recognized.
+- **Finding passwords under 8 characters:** the scanner doesn't try. A model detection rule drops any finding shorter than 8 bytes (`MIN_DETECTION_BYTES`), and the built-in password rules need 8 characters too (6 for about 60 very common passwords). A secrets scanner finds secrets that leaked; it isn't a password-strength check. A 4-character password can be guessed whether or not it's in the code, so finding it doesn't help anyone. Lowering the minimum was measured on 65 held-out CredData repositories: at 4 bytes, the detector found 42 of 108 short passwords but added about 1,300 false findings, and precision fell from 0.405 to 0.283.
 
 ### Scan endpoint
 
