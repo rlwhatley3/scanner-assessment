@@ -106,7 +106,9 @@ Every table also carries `created_at` and `updated_at`.
 
 A scan session uses one rule set version and has many scans. Fixing an issue and rescanning creates a new scan in the same session, so all scans stay tied to the session. Scan sessions, scans, and findings are never deleted: together they record what was scanned with which rule set version, so they can be created and read but not removed. A scan's id doubles as its log id: the engine tags its log events with it. A rule that fails to run is recorded as a finding of kind `rule_error` on that rule, so a scan is partial when it has one, and clean when it has no findings at all.
 
-Never stored: the pasted text, matched values, or a hash of the input. A hash was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
+Never stored: the pasted text, matched values, or a plain hash of either. A hash of the whole input was considered for recognizing repeat inputs, but it changes as soon as a single character is edited (for example, when the user fixes the issue), so it adds risk without being useful.
+
+*Changed in Phase 3:* each match's value now gets a fingerprint, so a suppression can recognize the same value in a later scan of its session. It is a keyed, deliberately slow hash (Argon2id, with a secret key kept in its own file outside the database), never the value. A hash can't be worked backwards; the only way to a value is to hash guesses and compare. Without the key, guesses can't be checked at all. With it, each guess costs milliseconds and megabytes instead of nanoseconds, so short passwords can't be found by brute force. See [Fingerprints and suppressions](engine/README.md#fingerprints-and-suppressions).
 
 **A finding contains**
 
@@ -115,7 +117,7 @@ Never stored: the pasted text, matched values, or a hash of the input. A hash wa
 | Rule id and name | Text | Rule |
 | Detection type | Label (direct credential, likely credential, unsafe handling) | Engine |
 | Severity | Label | Fixed per rule by the rule author |
-| Confidence | Score, 0–100 | Engine, per finding |
+| Confidence | Score, 0–100: how likely the match is what its rule describes, from that match's own evidence (checksum, prefix, key name, randomness, where a logged secret name sits), weighed the same for every rule type | Engine, per finding |
 | Placeholder vs. real | Score, 0–100 | Engine, per finding |
 | Location | Line/column and byte offsets | Engine |
 | Redacted preview | Format prefix declared by the rule (e.g. `AKIA…`), or nothing if the rule has no known prefix | Rule |
@@ -220,10 +222,10 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
 
 1. **Regex rules** for known formats (AWS keys; GitHub, npm, GitLab, and Slack tokens; Stripe, SendGrid, Google, OpenAI, and Anthropic keys; private keys with or without PEM armor, JWKs, PuTTY keys, and keystores; payment card numbers; Bitcoin private keys), for credentials in a known syntax (URLs, auth headers, JWTs, connection strings, SQL, `.netrc`, registry auth, Kubernetes Secrets, cookies, pre-signed URLs, password hashes), and for risky code (secrets written to logs).
 2. **Entropy** for likely credentials: a random-looking value (at least 3 bits per character) assigned to a name like `password`, `secret`, or `token`.
-3. **Checksums:** some formats carry one, so the engine can tell a real value from a made-up one offline. GitHub, npm, and GitLab tokens end in a CRC32 of the rest, card numbers carry a Luhn check digit, and Bitcoin private keys use Base58Check. A valid checksum raises confidence to 99; a failed one drops it to 50 and marks the finding as a likely example. A failed checksum never hides a finding, because GitHub, npm, and GitLab haven't published test tokens to confirm the exact encoding against.
+3. **Checksums:** some formats carry one, so the engine can tell a real value from a made-up one offline. GitHub, npm, and GitLab tokens end in a CRC32 of the rest, card numbers carry a Luhn check digit, and Bitcoin private keys use Base58Check. A valid checksum is the strongest evidence a finding can have and a failed one is equally strong evidence against; a failed one also marks the finding as a likely example. A failed checksum never hides a finding, because GitHub, npm, and GitLab haven't published test tokens to confirm the exact encoding against.
    - **Seeded and custom setups:** a checksum is a small description on the rule. `luhn` and `base58check` need nothing else; `crc32` also takes an encoding (`base62`, `base36`, or `hex`), a prefix length, and a checksum length. The built-in rules seed the common setups: GitHub, npm, GitLab (routable tokens, plus a separate rule for the older format, which has no checksum), payment cards, and Bitcoin private keys. A rule author can describe their own, e.g. for an in-house token format.
    - **Not seeded:** Microsoft/Azure identifiable keys (their checksum algorithm couldn't be confirmed); Ethereum addresses and IBANs (public identifiers, not secrets). A wrong custom setup only lowers confidence on real tokens, so it can't hide them, and a length too short to hold the value is rejected as a rule error.
-4. **File format parsing:** the text is read as JSON, YAML, `.env`, or plain text. Parsed key/value pairs catch secrets a pattern alone misses (a quoted value containing `$` or `;`, a JSON key and value on separate lines). Comments are recognized, so a secret in a comment scores as a likely example, and commented-out code that logs a secret drops to low confidence.
+4. **File format parsing:** the text is read as JSON, YAML, `.env`, or plain text. Parsed key/value pairs catch secrets a pattern alone misses (a quoted value containing `$` or `;`, a JSON key and value on separate lines). Comments are recognized, so a secret in a comment scores as a likely example, and commented-out code that logs a secret drops to low confidence. In a logging call, a secret name used as code (`log(dbPassword)`) raises confidence, and one that's only a word in a quoted message (`log("token refresh scheduled")`) lowers it.
 
 **Placeholder vs. real is a rule type.** Known fake values (`changeme`, `example`, ...) are rules like any other, edited and versioned the same way. They never create findings of their own; when one matches inside another rule's finding, that finding scores as a likely example. This is the fourth detection type from Phase 1, coming back as a rule type instead of a separate list.
 
@@ -237,6 +239,7 @@ The engine (`engine/`, documented in [engine/README.md](engine/README.md)) is a 
   - **Stores a status, never the provider's response:** `active`, `inactive`, `unknown`, or `not attempted`, with when it was checked, in a separate `verifications` table. Active findings would sort first in the UI and get their own CI exit code.
 - **AI or ML triage:** this would also send text off the machine unless the model ran locally, and it would make "why flagged" harder to explain.
 - **Parsing source code into syntax trees:** this would need a parser per language, so code is scanned as text with its comment lines recognized.
+- **Finding passwords under 8 characters:** the scanner doesn't try. A model detection rule drops any finding shorter than 8 bytes (`MIN_DETECTION_BYTES`), and the built-in password rules need 8 characters too (6 for about 60 very common passwords). A secrets scanner finds secrets that leaked; it isn't a password-strength check. A 4-character password can be guessed whether or not it's in the code, so finding it doesn't help anyone. Lowering the minimum was measured on 65 held-out CredData repositories: at 4 bytes, the detector found 42 of 108 short passwords but added about 1,300 false findings, and precision fell from 0.405 to 0.283.
 
 ### Models: what the secret detector was trained and evaluated on
 
@@ -287,7 +290,9 @@ It was trained on two sources, and each is evaluated on held-out data of its own
 
 ### Scan endpoint
 
-`POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged.
+`POST /api/scan-sessions/{id}/scans` loads the session's rule set version, runs the engine, and saves the scan and its findings. The text itself is never stored or logged. `GET /api/scan-sessions/{id}/scans/{scanId}` reads a saved scan back in the same shape.
+
+Rules, rule sets, rule set versions, and scan sessions have REST routes too (`/api/rules`, `/api/rule-sets`, `/api/rule-set-versions`, `/api/scan-sessions`), including `POST /api/rules/check` to check rules as one set without saving. They cover everything the MCP tools do except reading the rule authoring guide, through the same storage module. Swagger UI at `/swagger-ui` lists them all.
 
 - **Concurrency cap:** at most 4 scans run at once. Others wait their turn, so a burst of scans can't starve the rest of the API.
 - **At scale:** scanning in the API process would compete with every other request. The intended production shape avoids that entirely: scanning runs on the client (a CLI or a real local app calling the engine in-process), and the hosted API only serves rule sets. If a hosted scanning service were ever needed, the next steps would be a separate worker pool, then a queue with independently scaled workers.
@@ -311,7 +316,25 @@ The tools follow the same rules as the rest of the API, through a shared storage
 - **Local only:** like the API, the server listens on loopback. It accepts only loopback `Host` headers, which protects against DNS rebinding, and it rejects any request that has an `Origin` header, so a web page can't drive the write tools through the user's browser.
 - **Stateless:** each tool call is one request and one JSON response, with no MCP session to keep.
 
+### Models: what the value classifier was trained and evaluated on
+
+The value classifier (`engine/models/value-classifier.onnx`) runs locally on the CPU as a rule's `valueClassifier` setting. For each value a rule matches, it says whether it's a credential, a non-secret string (a hash, ID, or encoded data), or a placeholder, from the value's own line. Details are in [ml/README.md](ml/README.md).
+
+It was trained on two sources, each evaluated on held-out data of its own:
+
+- **Synthetic samples** (`ml/data.py`, 40,000): one config or code line setting a name to a value. Credentials in known formats and generic keys and passwords; non-secret hashes, digests, UUIDs, IDs, encoded data, URLs, and paths, sometimes under secret-sounding names; and placeholder and documentation values. Real-shaped values are random at generation time.
+- **CredData** ([Samsung/CredData](https://github.com/Samsung/CredData) at commit `fc9b64b`), the same checkout the secret detector uses: single-line rows that mark their value, with `T` as credential, `F` as non-secret, and `X` as placeholder. Split by a hash of the repository ID into 241 training, 28 validation, and 63 test repositories. Each training repository contributes at most 400 values per class (18,806 in all). No CredData file is committed; each keeps its source project's license (by a count of license files: MIT 186 repositories, Apache-2.0 95, BSD 20, LGPL 10, GPL or AGPL 7, ISC 5, CC0 or Creative Commons 3, EPL 1, other 3, no license file 7).
+
+**Results**, kept separate by source:
+
+| Held-out data | Synthetic-only model | Shipped model (synthetic + CredData) |
+|---|---|---|
+| CredData, 63 test repositories | accuracy 0.491; 39% of credentials would get lower confidence | accuracy 0.854; 9% |
+| CredData, the 62 test repositories other than the one with the most credentials | accuracy 0.541; 35% | accuracy 0.840; 11% |
+| Synthetic | accuracy 0.986 | accuracy 0.974 |
+
+The synthetic-only model's near-perfect synthetic score and poor CredData score show why the real data mattered: it had learned the generator, not real code.
+
 ### Known gaps
 
 - **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.
-- **No REST endpoints for rules, versions, or sessions yet.** The MCP server's tools cover them, and the REST routes can reuse the same storage module.

@@ -5,7 +5,8 @@ use prost::Message;
 use secrets_scanner_engine::{
     DetectionType, ErrorCode, MIN_DETECTION_BYTES, MatchDetails, ModelAssessment, ModelInfo,
     ModelLoadError, ModelRef, ModelUse, ModelVerdict, Models, Rule, RuleDefinition, RuleField,
-    RuleSet, ScanError, ScanResult, Severity, Violation, default_rule_set, scan, scan_with_models,
+    RuleSet, ScanError, ScanResult, Severity, ValueClassifierSetting, ValueLabel, Violation,
+    default_rule_set, scan, scan_with_models,
 };
 use tract_onnx::pb;
 
@@ -138,6 +139,31 @@ fn constant_assessor(score: f32) -> Vec<u8> {
         vec![float_scalar("zero", 0.0), float_scalar("score", score)],
         32,
         &[1, 1],
+    )
+}
+
+/// A value classifier that gives every value the same three scores: credential, non-secret,
+/// placeholder.
+fn constant_classifier(scores: [f32; 3]) -> Vec<u8> {
+    onnx(
+        vec![
+            node("Cast", &["ids"], "as_float", cast_to_float()),
+            node("ReduceSum", &["as_float"], "sum", reduce_over_row()),
+            node("Mul", &["sum", "zero"], "zeroed", vec![]),
+            node("Add", &["zeroed", "classes"], "scores", vec![]),
+        ],
+        vec![
+            float_scalar("zero", 0.0),
+            pb::TensorProto {
+                name: "classes".into(),
+                data_type: FLOAT,
+                dims: vec![3],
+                float_data: scores.to_vec(),
+                ..Default::default()
+            },
+        ],
+        32,
+        &[1, 3],
     )
 }
 
@@ -446,4 +472,55 @@ fn listing_models_says_what_each_can_be_used_for() {
     ];
     expected.sort_by(|a, b| a.sha256.cmp(&b.sha256));
     assert_eq!(models.list(), expected);
+}
+
+#[test]
+fn a_detection_rule_s_findings_go_through_its_value_classifier() {
+    let mut models = Models::new();
+    let detector = models.load(&trigger_detector(16)).unwrap();
+    let classifier = models.load(&constant_classifier([0.1, 0.8, 0.1])).unwrap();
+    let mut rule = model_rule(1, DetectionType::ModelDetection, &detector, 50);
+    rule.definition.value_classifier = Some(ValueClassifierSetting {
+        model: Some(ModelRef {
+            id: Some("classifier".into()),
+            sha256: Some(classifier),
+        }),
+        min_score: Some(50),
+    });
+    let rule_set = RuleSet { rules: vec![rule] };
+    let result = scan_with_models(1, "config: ~~~~~~~~~~~~ end", &rule_set, &models).unwrap();
+    let found = matches(&result);
+    assert_eq!(found.len(), 1);
+    let class = found[0]
+        .value_class
+        .expect("the detector's finding should be classified");
+    assert_eq!(class.label, ValueLabel::NonSecret);
+    assert_eq!(class.credential, 10);
+    assert_eq!(found[0].confidence, 30);
+}
+
+#[test]
+fn a_higher_credential_score_raises_confidence_halfway_up_to_95() {
+    let text = "database:\n  password: q8Z!fP2xL7mR\n";
+    let plain = scan(1, text, &default_rule_set()).unwrap();
+    let base = matches(&plain)[0].confidence;
+    assert!(base < 95, "{base}");
+
+    let mut models = Models::new();
+    let classifier = models.load(&constant_classifier([1.0, 0.0, 0.0])).unwrap();
+    let mut rule_set = default_rule_set();
+    rule_set.rules[3].definition.value_classifier = Some(ValueClassifierSetting {
+        model: Some(ModelRef {
+            id: None,
+            sha256: Some(classifier),
+        }),
+        min_score: Some(50),
+    });
+    let raised = scan_with_models(1, text, &rule_set, &models).unwrap();
+    let found = matches(&raised)[0];
+    assert_eq!(found.confidence, (base + (100 - base) / 2).min(95));
+    assert!(found.why_flagged.contains(&format!(
+        "raising confidence from {base} to {}",
+        found.confidence
+    )));
 }

@@ -1,3 +1,4 @@
+use crate::fingerprint::FingerprintKey;
 use crate::format::{self, Format, Structure};
 use crate::location::{LineIndex, Location};
 use crate::models::{
@@ -31,6 +32,43 @@ const MAX_CLASSIFIER_CONFIDENCE: u8 = 95;
 /// the same as commented-out code.
 const NOT_A_CREDENTIAL_CONFIDENCE: u8 = 30;
 
+// How much each piece of evidence moves a match's confidence, in log-odds. Every match starts
+// even (50) and the evidence about it moves it up or down, whatever the rule's type. A weight
+// of 1 moves an even match to about 73, 2 to about 88, and 3.5 to about 97.
+
+/// The value passes the rule's checksum, which a made-up value almost never does.
+const CHECKSUM_VALID: f64 = 3.5;
+/// The value fails the rule's checksum, so it isn't a value of the rule's format.
+const CHECKSUM_FAILED: f64 = -3.5;
+/// The match starts with the format's public prefix, which ordinary text rarely does.
+const DECLARED_PREFIX: f64 = 2.0;
+/// The value is assigned to one of the rule's key names.
+const KEY_NAME: f64 = 1.0;
+/// The pattern needed text around the value, such as a header name, to match.
+const REQUIRED_CONTEXT: f64 = 1.0;
+/// Per unit of randomness away from halfway, where randomness is the value's entropy as a share
+/// of the most a value its length can have. Spans -1.5 (no variety) to 1.5 (every character
+/// differs).
+const RANDOMNESS: f64 = 3.0;
+/// A password shape score of 3 is about even; each point above it adds this much.
+const SHAPE_PER_POINT: f64 = 0.35;
+const SHAPE_EVEN_SCORE: f64 = 3.0;
+/// The secret name a match mentions is code, such as a variable or an interpolation.
+const NAME_IN_CODE: f64 = 1.5;
+/// The secret name labels the value logged with it, such as `"password:", pw` or
+/// `f"token={t}"`: the code says outright that the value is a secret.
+const NAME_LABELS_A_VALUE: f64 = 1.5;
+/// The secret name is a word in a message that another value comes with, such as
+/// `"password reset for", user`: the value might be the secret, but the message doesn't say so.
+const NAME_BESIDE_A_VALUE: f64 = 0.5;
+/// The secret name is only a word in a quoted message.
+const NAME_IN_MESSAGE: f64 = -2.0;
+/// The matched code is commented out, so it doesn't run.
+const COMMENTED_OUT: f64 = -2.5;
+/// Evidence alone never makes a match certain or rules it out.
+const MIN_CONFIDENCE: u8 = 1;
+const MAX_CONFIDENCE: u8 = 99;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FindingKind {
@@ -47,7 +85,9 @@ pub struct MatchDetails {
     pub rule_name: String,
     pub detection_type: DetectionType,
     pub severity: Severity,
-    /// How sure the engine is that this is a secret of the rule's kind, 0–100.
+    /// How likely this match is what its rule describes, 0–100, from the evidence about this
+    /// match (checksum, prefix, key name, randomness, where a secret name sits). Every kind of
+    /// evidence weighs the same whatever the rule's type.
     pub confidence: u8,
     /// How likely the value is a placeholder or example rather than a real secret, 0–100.
     /// Absent for unsafe handling, which has no value.
@@ -126,6 +166,11 @@ pub struct Finding {
     pub violation: Violation,
     /// A one-line human-readable summary.
     pub violation_pretty: String,
+    /// Keyed Argon2id of the matched value under the caller's [`FingerprintKey`], so a later scan
+    /// can recognize the same value without anyone storing it. Absent for rule errors and when
+    /// the caller passed no key. Kept out of `violation`, so it is never shown as a detail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
 }
 
 /// A log line about one scan. It never contains the scanned text or a matched value.
@@ -181,6 +226,13 @@ struct Candidate<'r> {
     checksum_valid: Option<bool>,
     /// How password-like the value is, for rules with a password shape setting.
     shape: Option<password_shape::Assessment>,
+    /// Whether the match starts with the rule's declared prefix.
+    has_prefix: bool,
+    /// Whether the pattern needed fixed syntax around the value to match, such as a header name.
+    /// A name the value is assigned to doesn't count; key names weigh that.
+    in_context: bool,
+    /// For a match with no value, where the secret name in its `key` group sits.
+    name_use: Option<NameUse>,
     placeholder_hit: bool,
     in_comment: bool,
     /// The model's score, for a model detection finding.
@@ -191,10 +243,19 @@ struct Candidate<'r> {
     value_class: Option<ValueClass>,
 }
 
+/// What a scan runs with besides the text and the rules.
+#[derive(Clone, Copy, Default)]
+pub struct ScanOptions<'a> {
+    /// Models for model rules to run. None runs every model rule as a rule error.
+    pub models: Option<&'a Models>,
+    /// Fingerprints each match's value with this key. None leaves findings without one.
+    pub fingerprint_key: Option<&'a FingerprintKey>,
+}
+
 /// Scans `text` with the enabled rules. Rules that fail their checks are skipped and reported
 /// as rule-error findings; the rest still run. Model rules need [`scan_with_models`].
 pub fn scan(scan_id: i64, text: &str, rule_set: &RuleSet) -> Result<ScanResult, ScanError> {
-    scan_with_models(scan_id, text, rule_set, &Models::default())
+    scan_with_options(scan_id, text, rule_set, ScanOptions::default())
 }
 
 /// Like [`scan`], with models for model rules to run. A model rule whose model is missing, does
@@ -206,6 +267,23 @@ pub fn scan_with_models(
     rule_set: &RuleSet,
     models: &Models,
 ) -> Result<ScanResult, ScanError> {
+    let options = ScanOptions {
+        models: Some(models),
+        ..ScanOptions::default()
+    };
+    scan_with_options(scan_id, text, rule_set, options)
+}
+
+/// Like [`scan_with_models`], with every option. With a fingerprint key, each match carries a
+/// keyed hash of its value, computed here because this is the only place the value exists.
+pub fn scan_with_options(
+    scan_id: i64,
+    text: &str,
+    rule_set: &RuleSet,
+    options: ScanOptions,
+) -> Result<ScanResult, ScanError> {
+    let no_models = Models::default();
+    let models = options.models.unwrap_or(&no_models);
     if text.trim().is_empty() {
         return Err(ScanError::Empty);
     }
@@ -377,6 +455,8 @@ pub fn scan_with_models(
     let groups = overlap_groups(&candidates);
     let index = LineIndex::new(text);
     let mut findings = Vec::new();
+    // A fingerprint is deliberately slow, so a value found more than once is hashed once.
+    let mut fingerprints: HashMap<&str, String> = HashMap::new();
     for (candidate, overlap_group) in candidates.iter().zip(groups) {
         let details = match_details(candidate, &index, overlap_group);
         let pretty = format!(
@@ -402,6 +482,13 @@ pub fn scan_with_models(
             kind: FindingKind::Match,
             violation: Violation::Match(details),
             violation_pretty: pretty,
+            fingerprint: options.fingerprint_key.map(|key| {
+                let value = &text[candidate.start..candidate.end];
+                fingerprints
+                    .entry(value)
+                    .or_insert_with(|| key.fingerprint(value.as_bytes()))
+                    .clone()
+            }),
         });
     }
     for error in rule_errors {
@@ -421,6 +508,7 @@ pub fn scan_with_models(
             kind: FindingKind::RuleError,
             violation_pretty: format!("{name}: {}", error.message),
             violation: Violation::RuleError(error),
+            fingerprint: None,
         });
     }
 
@@ -459,7 +547,12 @@ fn find_candidates<'r>(
                 continue;
             }
         }
-        candidates.extend(candidate(rule, text, value.start(), value.end()));
+        let found = Found {
+            value: (value.start(), value.end()),
+            whole: (whole.start(), whole.end()),
+            secret_name: captures.name("key").map(|key| (key.start(), key.end())),
+        };
+        candidates.extend(candidate(rule, text, found));
     }
 
     // Parsed key/value pairs catch values the pattern can't, such as quoted values containing
@@ -480,21 +573,31 @@ fn find_candidates<'r>(
                     .any(|name| key.contains(name.as_str()));
             let reference = value.starts_with(['$', '{', '(']);
             if suspicious && !reference && value.chars().count() >= min_length {
-                candidates.extend(candidate(rule, text, pair.value.0, pair.value.1));
+                let found = Found {
+                    value: pair.value,
+                    whole: pair.value,
+                    secret_name: None,
+                };
+                candidates.extend(candidate(rule, text, found));
             }
         }
     }
     candidates
 }
 
-/// A candidate for the value at `start..end`, unless it falls short of the rule's entropy or
-/// password shape.
-fn candidate<'r>(
-    rule: &'r CompiledRule,
-    text: &str,
-    start: usize,
-    end: usize,
-) -> Option<Candidate<'r>> {
+/// Where a pattern matched, as byte ranges into the text.
+struct Found {
+    /// The `value` group, or the whole match without one.
+    value: (usize, usize),
+    whole: (usize, usize),
+    /// The `key` group, if the pattern has one.
+    secret_name: Option<(usize, usize)>,
+}
+
+/// A candidate for the found value, unless it falls short of the rule's entropy or password
+/// shape.
+fn candidate<'r>(rule: &'r CompiledRule, text: &str, found: Found) -> Option<Candidate<'r>> {
+    let (start, end) = found.value;
     let value = &text[start..end];
     let entropy =
         (rule.detection_type != DetectionType::UnsafeHandling).then(|| shannon_entropy(value));
@@ -521,6 +624,16 @@ fn candidate<'r>(
         max_entropy: max_entropy(value),
         checksum_valid: rule.checksum.map(|checksum| checksum.is_valid(value)),
         shape,
+        has_prefix: rule.prefix.as_deref().is_some_and(|prefix| {
+            text[found.whole.0..].starts_with(prefix) || value.starts_with(prefix)
+        }),
+        in_context: found.whole != found.value
+            && found.secret_name.is_none()
+            && rule.key_names.is_empty(),
+        name_use: found
+            .secret_name
+            .filter(|_| entropy.is_none())
+            .map(|(name_start, name_end)| name_use(text, name_start, name_end)),
         // Both set once every rule has run and the text has been parsed.
         placeholder_hit: false,
         in_comment: false,
@@ -714,6 +827,9 @@ fn detect<'r>(
             max_entropy: max_entropy(&text[start..end]),
             checksum_valid: None,
             shape: None,
+            has_prefix: false,
+            in_context: false,
+            name_use: None,
             // Both set once every rule has run and the text has been parsed.
             placeholder_hit: false,
             in_comment: false,
@@ -801,7 +917,12 @@ fn match_details(
             "contains a known placeholder value",
         ),
         (
-            candidate.entropy.is_some_and(|entropy| entropy < 2.0),
+            // Under 2 bits per character, and under two thirds of what a value this long can
+            // have, so a short value isn't an example just because it's short. From 8
+            // characters on, the second limit is never the lower one.
+            candidate
+                .entropy
+                .is_some_and(|entropy| entropy < 2.0_f64.min(candidate.max_entropy * 2.0 / 3.0)),
             "very little randomness",
         ),
         (
@@ -828,86 +949,34 @@ fn match_details(
             5
         }
     });
-    let (mut confidence, mut why) = match (rule.detection_type, candidate.entropy) {
-        (DetectionType::DirectCredential, _) => {
-            let confidence = match candidate.checksum_valid {
-                Some(true) => 99,
-                Some(false) => 50,
-                None => 95,
-            };
-            let mut why = format!("Matches the {} format.", rule.name);
-            if candidate.checksum_valid == Some(true) {
-                why.push_str(" Its checksum is valid, so it's a real-format token.");
-            }
-            (confidence, why)
-        }
-        (DetectionType::LikelyCredential, _) if candidate.shape.is_some() => {
-            let shape = candidate.shape.as_ref().expect("checked above");
-            // A shape alone is weaker evidence than a known format, so it tops out lower.
-            let confidence = (35 + u16::from(shape.score) * 8).min(80) as u8;
-            let mut why = format!(
-                "Looks like a password a person made up: it {}",
-                shape.signals.join(", ")
-            );
-            if rule.key_names.is_empty() {
-                why.push_str(". Its name doesn't suggest a secret, so this is a weaker signal");
-            } else {
-                why.push_str(", and it's assigned to a name that suggests a secret");
-            }
-            why.push('.');
-            (confidence, why)
-        }
-        (DetectionType::LikelyCredential, Some(entropy)) => {
-            // Judged against the most a value this long can have, since a short value can't
-            // reach a long one's entropy however random it is: 50 when it has none, 90 when
-            // every character differs.
-            let randomness = if candidate.max_entropy > 0.0 {
-                (entropy / candidate.max_entropy).min(1.0)
-            } else {
-                0.0
-            };
-            let confidence = (50.0 + 40.0 * randomness).round() as u8;
-            let minimum = rule.min_entropy.unwrap_or(0.0);
-            let mut why = format!(
-                "High-entropy value ({entropy:.1} of a possible {:.1} bits per character for \
-                 its length",
-                candidate.max_entropy
-            );
-            if rule.min_entropy.is_some() {
-                why.push_str(&format!(", threshold {minimum:.1}"));
-            }
-            why.push(')');
-            if !rule.key_names.is_empty() {
-                why.push_str(" assigned to a name that suggests a secret");
-            }
-            why.push('.');
-            (confidence, why)
-        }
-        (DetectionType::ModelDetection, _) => {
-            let score = candidate.model_score.unwrap_or(0);
-            (
-                score,
-                format!(
-                    "Flagged by the {} model (score {score}, threshold {}).",
-                    rule.name,
-                    threshold(rule)
-                ),
-            )
-        }
-        _ if candidate.in_comment => (
-            30,
+    let (mut confidence, mut why) = match candidate.model_score {
+        // A detection model's score is already its judgment of this span.
+        Some(score) => (
+            score,
             format!(
-                "Matches the {} pattern, but it's commented out, so it doesn't run.",
-                rule.name
+                "Flagged by the {} model (score {score}, threshold {}).",
+                rule.name,
+                threshold(rule)
             ),
         ),
-        _ => (
-            70,
-            format!(
-                "Matches the {} pattern; no secret value is involved.",
-                rule.name
-            ),
-        ),
+        None => {
+            let evidence = evidence(candidate);
+            let total: f64 = evidence.iter().map(|(weight, _)| weight).sum();
+            let what = if candidate.entropy.is_some() {
+                "format"
+            } else {
+                "pattern"
+            };
+            let mut why = format!("Matches the {} {what}", rule.name);
+            if evidence.is_empty() {
+                why.push_str("; nothing else about this match raises or lowers confidence.");
+            } else {
+                let reasons: Vec<&str> =
+                    evidence.iter().map(|(_, reason)| reason.as_str()).collect();
+                why.push_str(&format!(": {}.", reasons.join("; ")));
+            }
+            (to_confidence(total), why)
+        }
     };
     if placeholder_score.is_some() {
         if example_signals.is_empty() {
@@ -988,6 +1057,229 @@ fn match_details(
         in_comment: candidate.in_comment,
         checksum_valid: candidate.checksum_valid,
     }
+}
+
+/// The evidence about a match, as (weight, reason) pairs. Each rule type has its own kinds of
+/// evidence available (a match with no value has no entropy, for example), but every kind
+/// weighs the same whichever rule found it.
+fn evidence(candidate: &Candidate) -> Vec<(f64, String)> {
+    let rule = candidate.rule;
+    let mut evidence = Vec::new();
+    match candidate.checksum_valid {
+        Some(true) => evidence.push((CHECKSUM_VALID, "its checksum is valid".to_string())),
+        Some(false) => evidence.push((CHECKSUM_FAILED, "its checksum doesn't match".to_string())),
+        None => {}
+    }
+    if candidate.has_prefix {
+        evidence.push((
+            DECLARED_PREFIX,
+            "it starts with the format's prefix".to_string(),
+        ));
+    }
+    if !rule.key_names.is_empty() {
+        evidence.push((
+            KEY_NAME,
+            "it's assigned to a name that suggests a secret".to_string(),
+        ));
+    }
+    if candidate.in_context {
+        evidence.push((
+            REQUIRED_CONTEXT,
+            "it sits in the syntax the rule looks for".to_string(),
+        ));
+    }
+    if let Some(shape) = &candidate.shape {
+        // A password a person made up isn't random, so its shape stands in for entropy.
+        evidence.push((
+            (f64::from(shape.score) - SHAPE_EVEN_SCORE) * SHAPE_PER_POINT,
+            format!(
+                "it looks like a password a person made up (shape score {}: it {}){}",
+                shape.score,
+                shape.signals.join(", "),
+                if rule.key_names.is_empty() {
+                    ", though its name doesn't suggest a secret"
+                } else {
+                    ""
+                }
+            ),
+        ));
+    } else if let Some(entropy) = candidate.entropy {
+        // Judged against the most a value this long can have, since a short value can't reach
+        // a long one's entropy however random it is.
+        let randomness = if candidate.max_entropy > 0.0 {
+            (entropy / candidate.max_entropy).min(1.0)
+        } else {
+            0.0
+        };
+        let how = if randomness >= 0.75 {
+            "highly random"
+        } else if randomness >= 0.4 {
+            "somewhat random"
+        } else {
+            "barely random"
+        };
+        let mut reason = format!(
+            "it's {how} ({entropy:.1} of a possible {:.1} bits per character for its length",
+            candidate.max_entropy
+        );
+        if let Some(minimum) = rule.min_entropy {
+            reason.push_str(&format!(", threshold {minimum:.1}"));
+        }
+        reason.push(')');
+        evidence.push(((randomness - 0.5) * RANDOMNESS, reason));
+    }
+    // Evidence for a match with no value: code that mishandles a secret.
+    if candidate.entropy.is_none() {
+        if let Some(name_use) = candidate.name_use {
+            evidence.push(match name_use {
+                NameUse::Code => (
+                    NAME_IN_CODE,
+                    "the secret name it mentions is code, not just a word in a message".to_string(),
+                ),
+                NameUse::Label => (
+                    NAME_LABELS_A_VALUE,
+                    "the secret name it mentions labels the value it logs".to_string(),
+                ),
+                NameUse::Beside => (
+                    NAME_BESIDE_A_VALUE,
+                    "the secret name it mentions is a word in a message logged with another value"
+                        .to_string(),
+                ),
+                NameUse::Message => (
+                    NAME_IN_MESSAGE,
+                    "the secret name it mentions is only a word in a quoted message".to_string(),
+                ),
+            });
+        }
+        if candidate.in_comment {
+            evidence.push((
+                COMMENTED_OUT,
+                "it's commented out, so it doesn't run".to_string(),
+            ));
+        }
+    }
+    evidence
+}
+
+/// Turns summed log-odds evidence into a 0–100 confidence.
+fn to_confidence(total: f64) -> u8 {
+    let probability = 1.0 / (1.0 + (-total).exp());
+    ((probability * 100.0).round() as u8).clamp(MIN_CONFIDENCE, MAX_CONFIDENCE)
+}
+
+/// Where a secret name sits in a line of code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NameUse {
+    /// Outside any string, or inside an interpolation such as `{token}` or `${token}`.
+    Code,
+    /// A label for the value logged with it: in a string that ends right after the name, apart
+    /// from separators and placeholders, with a value following the string or interpolated in
+    /// it, such as `"password:", pw`, `"token=%s" % t`, or `f"secret: {s}"`.
+    Label,
+    /// A word in a longer message that another value follows, such as
+    /// `"password reset for", user`.
+    Beside,
+    /// Only inside a quoted message, such as `"token refresh scheduled"`.
+    Message,
+}
+
+/// Tracks whether a scan through a line is inside a quoted string, and inside an interpolation
+/// within it. It reads one line and doesn't know the language, so it's a close guess: nested
+/// strings inside an interpolation aren't tracked.
+#[derive(Default)]
+struct Quotes {
+    quote: Option<char>,
+    braces: usize,
+    escaped: bool,
+}
+
+impl Quotes {
+    fn step(&mut self, character: char) {
+        let Some(quote) = self.quote else {
+            if matches!(character, '"' | '\'' | '`') {
+                self.quote = Some(character);
+            }
+            return;
+        };
+        if self.escaped {
+            self.escaped = false;
+        } else if character == '\\' {
+            self.escaped = true;
+        } else if self.braces > 0 {
+            match character {
+                '{' => self.braces += 1,
+                '}' => self.braces -= 1,
+                _ => {}
+            }
+        } else if character == '{' {
+            self.braces = 1;
+        } else if character == quote {
+            self.quote = None;
+        }
+    }
+
+    fn in_plain_string(&self) -> bool {
+        self.quote.is_some() && self.braces == 0
+    }
+}
+
+/// Whether the secret name at `start..end` is code or part of a quoted string, judged from its
+/// own line.
+fn name_use(text: &str, start: usize, end: usize) -> NameUse {
+    let line_start = text[..start].rfind('\n').map_or(0, |newline| newline + 1);
+    let line_end = text[end..]
+        .find('\n')
+        .map_or(text.len(), |newline| end + newline);
+    let mut quotes = Quotes::default();
+    text[line_start..start]
+        .chars()
+        .for_each(|character| quotes.step(character));
+    if !quotes.in_plain_string() {
+        return NameUse::Code;
+    }
+    // Read to the end of the string, then see whether another value follows it.
+    let mut tail = &text[end..line_end];
+    let mut rest = "";
+    for (offset, character) in tail.char_indices() {
+        quotes.step(character);
+        if quotes.quote.is_none() {
+            rest = &tail[offset + character.len_utf8()..];
+            tail = &tail[..offset];
+            break;
+        }
+    }
+    let value_follows = quotes.quote.is_none() && rest.trim_start().starts_with([',', '+', '%']);
+    match label_tail(tail) {
+        Some(interpolates) if value_follows || interpolates => NameUse::Label,
+        _ if value_follows => NameUse::Beside,
+        _ => NameUse::Message,
+    }
+}
+
+/// Whether the rest of a string after a secret name only finishes a label: the rest of the word
+/// (`tokens`, `passwordHash`), then separators (`:`, `=`, `-`, spaces) and placeholders (`%s`,
+/// `{}`, `{pw}`). Returns whether it has a placeholder, or `None` when other words follow.
+fn label_tail(tail: &str) -> Option<bool> {
+    let mut characters = tail
+        .trim_start_matches(|character: char| character.is_alphanumeric() || character == '_')
+        .chars();
+    let mut placeholder = false;
+    while let Some(character) = characters.next() {
+        match character {
+            ' ' | '\t' | ':' | '=' | '-' => {}
+            '%' => {
+                placeholder = true;
+                // A printf-style conversion: `%s`, `%d`, `%r`, `%v`.
+                characters.next();
+            }
+            '{' => {
+                placeholder = true;
+                characters.find(|&character| character == '}')?;
+            }
+            _ => return None,
+        }
+    }
+    Some(placeholder)
 }
 
 /// The most entropy per character a value this long can have: log2 of its length in characters.

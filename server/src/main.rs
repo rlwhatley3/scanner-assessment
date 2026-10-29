@@ -1,4 +1,4 @@
-use secrets_scanner_api::{ApiDoc, db, routes, seed};
+use secrets_scanner_api::{ApiDoc, db, fingerprint_key, routes, seed};
 use std::net::{IpAddr, SocketAddr};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -10,11 +10,14 @@ async fn main() {
         std::fs::create_dir_all(directory).expect("failed to create database directory");
     }
     let db = db::Db::open(&database_path).expect("failed to open database");
+    let fingerprint_key =
+        fingerprint_key::load_or_create(&fingerprint_key::default_path(&database_path))
+            .expect("failed to read or create the fingerprint key");
     seed::seed_default_rule_set(&db)
         .await
         .expect("failed to seed the built-in rule set");
 
-    let app = routes::router(db)
+    let app = routes::router(db, fingerprint_key)
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))
         .merge(SwaggerUi::new("/swagger-ui").url("/api/openapi.json", ApiDoc::openapi()));
     let port = std::env::var("API_PORT")

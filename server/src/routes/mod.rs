@@ -6,13 +6,14 @@ pub mod rule_sets;
 pub mod rules;
 pub mod scan_sessions;
 pub mod scans;
+pub mod suppressions;
 mod whiteboard;
 
 pub use error::ErrorBody;
 
 use crate::db::Db;
 use axum::{Router, extract::FromRef, routing::get};
-use secrets_scanner_engine::{Models, SECRET_DETECTOR_ONNX, VALUE_CLASSIFIER_ONNX};
+use secrets_scanner_engine::{FingerprintKey, Models, SECRET_DETECTOR_ONNX, VALUE_CLASSIFIER_ONNX};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -35,10 +36,12 @@ pub struct AppState {
     pub models: Arc<Models>,
     /// Each loaded model's readable name, by SHA-256.
     pub model_names: Arc<HashMap<String, String>>,
+    /// Fingerprints matched values for suppressions. See `crate::fingerprint_key`.
+    pub fingerprint_key: Arc<FingerprintKey>,
 }
 
 impl AppState {
-    pub fn new(db: Db) -> Self {
+    pub fn new(db: Db, fingerprint_key: FingerprintKey) -> Self {
         let mut models = Models::new();
         let mut model_names = HashMap::new();
         for &(name, bytes) in BUNDLED_MODELS {
@@ -52,6 +55,7 @@ impl AppState {
             scan_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_SCANS)),
             models: Arc::new(models),
             model_names: Arc::new(model_names),
+            fingerprint_key: Arc::new(fingerprint_key),
         }
     }
 }
@@ -63,17 +67,20 @@ impl FromRef<AppState> for Db {
     }
 }
 
-pub fn router(db: Db) -> Router {
-    let state = AppState::new(db);
+pub fn router(db: Db, fingerprint_key: FingerprintKey) -> Router {
+    let state = AppState::new(db, fingerprint_key);
     Router::new()
         .route("/api/health", get(health::health))
         .route("/api/models", get(models::list))
+        .route("/api/mcp", get(crate::mcp::describe))
         .nest("/api/rules", rules::router())
         .nest("/api/rule-sets", rule_sets::router())
         .nest("/api/rule-set-versions", rule_set_versions::router())
         .nest(
             "/api/scan-sessions",
-            scan_sessions::router().merge(scans::router()),
+            scan_sessions::router()
+                .merge(scans::router())
+                .merge(suppressions::router()),
         )
         .nest("/api/whiteboards", whiteboard::router())
         .nest_service("/mcp", crate::mcp::service(state.clone()))

@@ -1,10 +1,13 @@
 pub mod db;
+pub mod fingerprint_key;
 pub mod mcp;
 pub mod routes;
 pub mod seed;
 pub mod store;
 
-use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions, scans};
+use routes::{
+    health, models, rule_set_versions, rule_sets, rules, scan_sessions, scans, suppressions,
+};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -17,6 +20,7 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         rules::update,
         rules::remove,
         rules::check,
+        rules::check_set,
         rule_sets::list,
         rule_sets::create,
         rule_sets::fetch,
@@ -29,6 +33,11 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         scan_sessions::create,
         scan_sessions::fetch,
         scans::create_scan,
+        scans::fetch_scan,
+        suppressions::list,
+        suppressions::create,
+        suppressions::remove,
+        mcp::describe,
     ),
     components(schemas(
         health::HealthResponse,
@@ -37,7 +46,11 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         scans::CreateScanRequest,
         scans::ScanResponse,
         scans::FindingResponse,
-        scans::ErrorResponse
+        scans::ErrorResponse,
+        suppressions::CreateSuppression,
+        store::SuppressionRecord,
+        store::SuppressionStatus,
+        mcp::McpDescription
     )),
     tags(
         (name = "API", description = "API for managing and scanning secrets"),
@@ -45,7 +58,9 @@ use routes::{health, models, rule_set_versions, rule_sets, rules, scan_sessions,
         (name = "Rules", description = "Detection rules, drafts included"),
         (name = "Rule sets", description = "Named lines of rule set versions"),
         (name = "Rule set versions", description = "Saved, immutable sets of rule snapshots"),
-        (name = "Scan sessions", description = "Scans grouped under one rule set version")
+        (name = "Scan sessions", description = "Scans grouped under one rule set version"),
+        (name = "Suppressions", description = "Known-safe values, suppressed within one scan session"),
+        (name = "MCP", description = "The MCP server mounted at /mcp")
     )
 )]
 pub struct ApiDoc;

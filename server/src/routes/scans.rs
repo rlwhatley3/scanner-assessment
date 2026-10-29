@@ -1,19 +1,24 @@
 use super::AppState;
+use crate::store;
 use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
 };
 use rusqlite::{Connection, OptionalExtension};
 use secrets_scanner_engine::{
-    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanResult, scan_with_models,
+    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanOptions, ScanResult,
+    scan_with_options,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/{scan_session_id}/scans", post(create_scan))
+    Router::new()
+        .route("/{scan_session_id}/scans", post(create_scan))
+        .route("/{scan_session_id}/scans/{scan_id}", get(fetch_scan))
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -32,16 +37,22 @@ pub struct ScanResponse {
     truncated: bool,
     /// True when at least one rule could not run.
     partial: bool,
+    /// Matches left out because one of the session's active suppressions covers their value: the
+    /// same rule found the same value. They are neither returned nor saved.
+    suppressed_count: i64,
     pub findings: Vec<FindingResponse>,
 }
 
 /// How to read a finding's violation, for API docs and MCP clients.
 const VIOLATION_HELP: &str = "Each match's violation holds ruleName, detectionType, severity, \
 location (byte offsets plus 1-based line and column), and redactedPreview (the rule's prefix only). \
-confidence (0-100) is how sure the engine is that it's a secret of the rule's kind: direct \
-credentials 95 (99 with a passing checksum, 50 with a failing one), likely credentials 50-90 by \
-how random the value is for its length (35-80 by password shape when the rule has one), unsafe \
-handling 70 (30 when commented out), and model_detection matches the model's score. A rule's value classifier lowers it to 30 when the \
+confidence (0-100) is how likely the match is what its rule describes, from the evidence about \
+that match, weighed the same whatever the rule's type: every match starts at 50, and a passing \
+or failing checksum, the format's prefix, a secret-sounding key name, required syntax around the \
+value, how random the value is for its length (or its password shape), and, for a match with no \
+value, whether the secret name it mentions is code or only a word in a quoted message and whether \
+it's commented out each move it up or down, between 1 and 99; whyFlagged lists the evidence. \
+model_detection matches the model's score. A rule's value classifier lowers it to 30 when the \
 credential score is below its minScore, or raises it halfway toward a higher credential score, up \
 to 95. placeholderScore (0-100, higher = more likely an example; null for unsafe handling). \
 valueClass (null unless the rule has a value classifier): label credential, non_secret, or \
@@ -125,7 +136,9 @@ fn internal(error: impl std::fmt::Display) -> ApiError {
     tag = "API",
     summary = "Scan text in a scan session",
     description = "Scans the text with the session's rule set version and saves the scan and its findings. \
-                   The text itself is never stored or logged. Findings are capped at 200.",
+                   The text itself is never stored or logged. Findings are capped at 200. A match \
+                   whose value one of the session's active suppressions covers is not reported \
+                   or saved; suppressedCount says how many were left out.",
     params(("scan_session_id" = i64, Path, description = "The scan session to add this scan to")),
     request_body = CreateScanRequest,
     responses(
@@ -143,6 +156,40 @@ pub async fn create_scan(
 ) -> Result<(StatusCode, Json<ScanResponse>), ApiError> {
     let response = scan_in_session(&state, scan_session_id, request.text).await?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/scan-sessions/{scan_session_id}/scans/{scan_id}",
+    tag = "API",
+    summary = "Get a saved scan",
+    description = "A saved scan and its findings, in the same shape the scan endpoint returns. \
+                   Findings never contain the matched text.",
+    params(
+        ("scan_session_id" = i64, Path, description = "The scan session the scan belongs to"),
+        ("scan_id" = i64, Path, description = "Scan id")
+    ),
+    responses(
+        (status = 200, description = "The scan and its findings", body = ScanResponse),
+        (status = 404, description = "No such scan in this scan session", body = ErrorResponse)
+    )
+)]
+pub async fn fetch_scan(
+    State(state): State<AppState>,
+    Path((scan_session_id, scan_id)): Path<(i64, i64)>,
+) -> Result<Json<ScanResponse>, ApiError> {
+    state
+        .db
+        .call(move |connection| load_scan(connection, scan_id))
+        .await
+        .map_err(internal)?
+        .filter(|scan| scan.scan_session_id == scan_session_id)
+        .map(Json)
+        .ok_or_else(|| {
+            ApiError::NotFound(format!(
+                "Scan {scan_id} not found in scan session {scan_session_id}."
+            ))
+        })
 }
 
 /// Scans `text` with the session's rule set version and saves the scan and its findings. Shared
@@ -209,10 +256,17 @@ async fn run_scan(
         .await
         .map_err(internal)?;
     let models = state.models.clone();
-    tokio::task::spawn_blocking(move || scan_with_models(scan_id, &text, &rule_set, &models))
-        .await
-        .map_err(internal)?
-        .map_err(ApiError::from)
+    let fingerprint_key = state.fingerprint_key.clone();
+    tokio::task::spawn_blocking(move || {
+        let options = ScanOptions {
+            models: Some(&models),
+            fingerprint_key: Some(&fingerprint_key),
+        };
+        scan_with_options(scan_id, &text, &rule_set, options)
+    })
+    .await
+    .map_err(internal)?
+    .map_err(ApiError::from)
 }
 
 async fn save_results(
@@ -235,21 +289,37 @@ async fn save_results(
         .db
         .call(move |connection| {
             let transaction = connection.transaction()?;
+            // The rule and fingerprint each of the session's active suppressions covers. An
+            // expired or removed one is left out, so its value is reported again.
+            let suppressed: HashSet<(i64, String)> =
+                store::active_suppressions(&transaction, scan_session_id)?
+                    .into_iter()
+                    .map(|active| (active.rule_id, active.fingerprint))
+                    .collect();
             let mut findings = Vec::with_capacity(rows.len());
+            let mut suppressed_count = 0;
             for (finding, violation) in rows {
+                if let Some(fingerprint) = &finding.fingerprint
+                    && suppressed.contains(&(finding.rule_id, fingerprint.clone()))
+                {
+                    suppressed_count += 1;
+                    continue;
+                }
                 let kind = match finding.kind {
                     FindingKind::Match => "match",
                     FindingKind::RuleError => "rule_error",
                 };
                 transaction.execute(
-                    "INSERT INTO findings (scan_id, rule_id, kind, violation, violation_pretty)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    "INSERT INTO findings
+                         (scan_id, rule_id, kind, violation, violation_pretty, fingerprint)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     rusqlite::params![
                         scan_id,
                         finding.rule_id,
                         kind,
                         violation.to_string(),
-                        finding.violation_pretty
+                        finding.violation_pretty,
+                        finding.fingerprint
                     ],
                 )?;
                 findings.push(FindingResponse {
@@ -261,10 +331,10 @@ async fn save_results(
                 });
             }
             transaction.execute(
-                "UPDATE scans SET truncated = ?1,
+                "UPDATE scans SET truncated = ?1, suppressed_count = ?2,
                      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 WHERE id = ?2",
-                rusqlite::params![truncated, scan_id],
+                 WHERE id = ?3",
+                rusqlite::params![truncated, suppressed_count, scan_id],
             )?;
             transaction.execute(
                 "UPDATE scan_sessions SET last_ran = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
@@ -278,6 +348,7 @@ async fn save_results(
                 scan_session_id,
                 truncated,
                 partial: findings.iter().any(|finding| finding.kind == "rule_error"),
+                suppressed_count,
                 findings,
             })
         })
@@ -288,11 +359,17 @@ async fn save_results(
 /// A saved scan and its findings, in the same shape the scan endpoint returns. `None` if the
 /// scan doesn't exist.
 pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Option<ScanResponse>> {
-    let Some((scan_session_id, truncated)) = connection
+    let Some((scan_session_id, truncated, suppressed_count)) = connection
         .query_row(
-            "SELECT scan_session_id, truncated FROM scans WHERE id = ?1",
+            "SELECT scan_session_id, truncated, suppressed_count FROM scans WHERE id = ?1",
             [scan_id],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
         )
         .optional()?
     else {
@@ -325,6 +402,7 @@ pub fn load_scan(connection: &Connection, scan_id: i64) -> rusqlite::Result<Opti
         scan_session_id,
         truncated,
         partial: findings.iter().any(|finding| finding.kind == "rule_error"),
+        suppressed_count,
         findings,
     }))
 }

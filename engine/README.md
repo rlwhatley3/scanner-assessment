@@ -7,7 +7,7 @@ let result = scan(scan_id, text, &rule_set)?;
 // result.findings, result.truncated, result.log
 ```
 
-Rule sets with [model rules](#model-rules) use `scan_with_models` and need the `ml` feature.
+Rule sets with [model rules](#model-rules) use `scan_with_models` and need the `ml` feature. `scan_with_options` takes models and a [fingerprint key](#fingerprints-and-suppressions) together.
 
 ## The rule set contract
 
@@ -108,18 +108,18 @@ A pattern rule can run a model on its own matches to say what each matched value
 
 - **Input and output:** the same value-between-markers input as a model assessment, but built from the value's own line only, so the name it's assigned to counts and other lines don't. The output is three scores, `float[1, 3]`, that sum to 1: credential, non-secret, placeholder.
 - **What it changes:** a value whose credential score (0–100) is below `minScore` keeps its finding, but its confidence drops to 30, the same as commented-out code, and "why flagged" says what the value looks like instead. A credential score above the rule's own confidence raises it halfway toward that score, up to 95, so a model alone is never surer than a known format. A value rated a placeholder also counts as an example signal for the placeholder score. The finding records the scores as `valueClass`.
-- **Where it helps:** rules that match by randomness or password shape, which can't tell a password from a commit hash, UUID, or digest under a secret-sounding name. Fixed-format rules (`AKIA…`, `ghp_…`) don't need it.
+- **Where it helps:** rules that match by randomness or password shape, which can't tell a password from a commit hash, UUID, or digest under a secret-sounding name. Fixed-format rules (`AKIA…`, `ghp_…`) don't need it. A `model_detection` rule can carry it too: its findings are classified like any match, so a span the detector flags but the classifier doesn't rate as a credential keeps its finding at confidence 30.
 - **Checked like a checksum:** `model.sha256` must be 64 hexadecimal characters and `minScore` 0–100. A model that wasn't loaded or doesn't return three scores makes the rule a `rule_error` (field `value_classifier`), so none of its matches are reported. Each value is classified once per model, after the 200-finding cap. Rules with no value (unsafe handling) ignore the setting.
 
 ### The value classifier
 
-[`models/value-classifier.onnx`](models/value-classifier.onnx) is a trained model for the value classifier setting (about 140 KB, `L = 128`, SHA-256 `e620ed64…1459`). The engine exports it as `VALUE_CLASSIFIER_ONNX`, with `value_classifier_setting()` naming it at a minimum score of 50. The engine's built-in rule set doesn't use it, since that runs without models. The API loads it at startup, lists it at `GET /api/models` (and the MCP `list_models` tool), and turns it on for every likely-credential built-in rule (secret-looking assignment, password-shaped value, Bearer tokens, session cookies) when it seeds a new database. [`ml/`](../ml/README.md) has the code that trains it and how to retrain it.
+[`models/value-classifier.onnx`](models/value-classifier.onnx) is a trained model for the value classifier setting (about 140 KB, `L = 128`, SHA-256 `6980e353…c6cc`). The engine exports it as `VALUE_CLASSIFIER_ONNX`, with `value_classifier_setting()` naming it at a minimum score of 50. The engine's built-in rule set doesn't use it, since that runs without models. The API loads it at startup, lists it at `GET /api/models` (and the MCP `list_models` tool), and turns it on for every likely-credential built-in rule (secret-looking assignment, password-shaped value, Bearer tokens, session cookies) when it seeds a new database. [`ml/`](../ml/README.md) has the code that trains it and how to retrain it.
 
-It judges the matched value and the name it's assigned to, not the file around it: it doesn't try to tell a test from production config. It is a small byte-level convolutional network trained only on synthetic data, so its held-out accuracy (99%) says little about real repositories. Known limits:
+It judges the matched value and the name it's assigned to, not the file around it: it doesn't try to tell a test from production config. It is a small byte-level convolutional network trained on synthetic data and on [CredData](https://github.com/Samsung/CredData), hand-labeled values from public repositories. On 63 held-out CredData repositories it classifies 85% of values correctly, and 9% of real credentials would get lower confidence (39% for the earlier synthetic-only model). Known limits:
 
-- A hex string under a secret-sounding name is genuinely ambiguous (an API key or a hash), and it may call it either way.
-- Some values get the wrong "not a credential" class: a resource path can come back as a placeholder rather than a non-secret. The outcome, lower confidence, is still right.
-- Credentials whose format looks like an ID, such as API keys that are UUIDs, will be rated non-secret.
+- About 1 in 10 real credentials still scores below 50 as a credential, and so gets confidence 30. The finding is still reported.
+- A hex string or UUID under a secret-sounding name is genuinely ambiguous (an API key or an ID), and it may call it either way.
+- About 1 in 4 placeholders is classed as something else, and when that is a credential, it keeps its confidence.
 - Retraining changes the file's hash. Rule set versions that name the old hash keep naming it, so their rules report the classifier as unavailable until a new version uses the new setting.
 
 `tests/value_classifier.rs` runs it through the engine on hand-written cases: passwords and keys, hashes and UUIDs under secret-sounding names, URLs and paths, and placeholders.
@@ -198,12 +198,14 @@ These are seeded as the first rule set version from [`rule_sets/default.json`](r
 
 ## Scores
 
-- **Confidence (0–100):** how sure the engine is that this is a secret of the rule's kind.
-  - Direct credentials: 95, or 99 when the checksum passes and 50 when it fails.
-  - Likely credentials: 50–90, rising with how random the value is for its length: its entropy compared with the most a value that long can have (log2 of its length, when every character differs). A short value with no repeated characters scores as high as a long random one. With a password shape setting, 35–80, rising with the shape score.
-  - With a value classifier: a credential score above the rule's confidence raises it halfway toward that score, up to 95; a score below the setting's minimum lowers it to 30.
-  - Unsafe handling: 70, or 30 when it's commented out.
-- **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
+- **Confidence (0–100):** how likely this match is what its rule describes, from the evidence about this match. The rule's type doesn't set it: every match starts at 50, and each kind of evidence moves it by the same amount whichever rule found it. Weights are log-odds summed and turned back into a 1–99 score, so a weight of 1 takes an even match to 73, 2 to 88, and 3.5 to 97. "Why flagged" lists the evidence.
+  - Checksum: +3.5 when it passes, −3.5 when it fails.
+  - The rule's `prefix` starts the match: +2. Assigned to one of the rule's `keyNames`: +1. The pattern needed fixed syntax around its `value` group, such as a header name: +1.
+  - Randomness: the value's entropy compared with the most a value that long can have (log2 of its length, when every character differs), from −1.5 with no variety to +1.5 when every character differs. A short value with no repeated characters counts as just as random as a long one. With a password shape setting, the shape score takes its place: +0.35 per point above 3.
+  - A match with no value (unsafe handling) is judged by the secret name in its `key` group: +1.5 when it's code (`dbPassword`, `{token}`, `${token}`) or labels the value logged with it (`"password:", pw`, `"token=%s" % t`, `f"secret: {s}"`), +0.5 when it's a word in a longer message logged with another value (`"password reset for", user`), −2 when it's only a word in a quoted message. Commented out: −2.5.
+  - Model detection: the model's highest score in the span.
+  - With a value classifier: a credential score above the evidence-based confidence raises it halfway toward that score, up to 95; a score below the setting's minimum lowers it to 30.
+- **Placeholder vs. real (0–100, higher = more likely an example):** 95 when a placeholder vs. real rule matches inside the value. 70 when any other example signal is present: very little randomness (under 2 bits per character, and under two thirds of what a value its length can have, so a short value with no repeated characters isn't an example just for being short), a failed checksum, or the value sitting in a comment. Otherwise 5. There is no score for unsafe handling, which has no value.
 
 Every match also reports `inComment` and `checksumValid` (absent when the rule has no checksum), and the scan result reports the `format` the text was read as.
 
@@ -289,9 +291,37 @@ Quotes are stripped from parsed values, and a `#` inside quotes is not a comment
 
 What it changes:
 - **Fewer misses:** likely-credential rules also check parsed values under suspicious key names, so a quoted value containing `$` or `;`, or a JSON key and value on separate lines, is still caught. A value found both ways is reported once.
-- **Fewer false alarms:** a secret inside a comment is still reported, but it scores as a likely example, since comments are where examples live. Commented-out code that logs a secret drops to low confidence, since it doesn't run.
+- **Fewer false alarms:** a secret inside a comment is still reported, but it scores as a likely example, since comments are where examples live. Commented-out code that logs a secret drops to low confidence, since it doesn't run, and so does a log message that only mentions a secret-sounding word.
 
 Source code isn't parsed into a syntax tree. That would need a parser per language (e.g. tree-sitter), so code is only scanned as text, with its `//` and `#` comment lines recognized.
+
+## Fingerprints and suppressions
+
+A user can mark a finding's value as known to be safe (a documented example key, a test fixture) so later scans in the same session don't flag it again. That needs a way to recognize the same value later without storing it, so the engine can fingerprint each match:
+
+```rust
+let options = ScanOptions { models: Some(&models), fingerprint_key: Some(&key) };
+let result = scan_with_options(scan_id, text, &rule_set, options)?;
+// result.findings[i].fingerprint: Some("…64 hex characters…") for every match
+```
+
+- **A fingerprint is Argon2id of the matched value** (the finding's `location` range), with a 32-byte key as Argon2's secret input and a fixed salt, as 64 hex characters: 4 MiB of memory and 3 passes. It sits on `Finding`, not in `violation`, so it is never shown as a detail. Rule errors, and scans without a key, have none.
+- **It can't be reversed, only guessed at.** A hash has no inverse. The only way back to a value is to hash guesses and compare.
+- **Keyed:** without the key, guesses can't even be tested, so a copy of the stored fingerprints alone says nothing about the values.
+- **Slow:** with the key, each guess still costs about 4.5 ms and 4 MiB, instead of the nanoseconds a fast hash (SHA-256, HMAC) takes, so trying billions of short passwords is out of reach. Random tokens (AWS keys, GitHub tokens) were never guessable either way. A value found more than once in a scan is hashed once, so a scan adds at most about a second (200 distinct values).
+- **Trade-off:** the cost is below OWASP's minimum for password storage (7 MiB and 5 passes, about 13 ms here), to keep scans fast. Password storage relies on the hash alone; here the key comes first and the slow hash is a second layer. Changing the parameters ends every stored suppression, so a test pins them.
+- **Equal values are visible:** two findings of the same value have the same fingerprint, so a reader of the database can tell they match, but not what the value is.
+- **Computed in the engine:** it is the only place that knows exactly which bytes are the value, and the text is gone once the scan returns, so a fingerprint can't be added later. Doing it here also gives a future CLI the same fingerprints as the API. The engine still does no I/O: the caller generates the key, keeps it, and passes it in.
+- **Exact:** one changed character, or the same value reformatted (a card number with spaces instead of dashes), is a different fingerprint. A suppression can only fail toward flagging a value again, never toward hiding a different one.
+
+**How the API uses it.** A suppression belongs to one scan session, since input is still pasted text with no file path to scope it to. It covers one rule plus one fingerprint, never a whole rule or a line, and needs a reason and an expiry (at most 365 days ahead).
+
+- **Key:** generated once from the OS's random source into `server/data/fingerprint.key` (beside the database, or `FINGERPRINT_KEY_PATH`), readable by its owner only, and git-ignored with the rest of `server/data/`. It is kept out of the SQLite file, so a copy of the database alone has fingerprints that can't be tested against guesses. It is never logged or returned by the API or MCP server. Deleting it is safe: every suppression stops matching and its values are flagged again.
+- **Scanning:** in a scan in the suppression's session, a match whose rule and fingerprint equal an active suppression (not removed, not expired) is not flagged: it is neither saved nor returned. The scan keeps only how many were left out (`scans.suppressed_count`, `suppressedCount` in responses). Every other finding's fingerprint is saved in `findings.fingerprint`, so it can be suppressed later. Scans already saved keep their findings, including the one a suppression was made from.
+- **Never returned:** the API takes a finding id to suppress, so fingerprints never leave the server.
+- **Removing** a suppression sets `removed_at`, so later scans flag its value again, and keeps the row as a record of what was suppressed, why, and until when. An expired one stays on record the same way.
+- **Trade-off:** the 200-finding cap is applied in the engine, before suppressions, so suppressed matches still use up places under the cap.
+- **Endpoints:** `GET`/`POST /api/scan-sessions/{id}/suppressions` and `DELETE /api/scan-sessions/{id}/suppressions/{suppressionId}`, and the MCP tools `list_suppressions`, `create_suppression`, and `remove_suppression`, all through `server/src/store.rs`.
 
 ## Trade-offs
 

@@ -92,6 +92,28 @@ export type MatchFinding = Extract<Finding, { kind: "match" }>;
 /** A finding as stored and returned by the API. */
 export type SavedFinding = Finding & { id: number };
 
+/** A saved match. */
+export type SavedMatch = Extract<SavedFinding, { kind: "match" }>;
+
+/** One value found by one rule, marked as known to be safe within one scan session. Later scans
+ * in the session don't report it until it expires or is removed. The value and its fingerprint
+ * never reach the UI. */
+export interface Suppression {
+  id: number;
+  scanSessionId: number;
+  ruleId: number;
+  ruleName: string;
+  /** The finding it was made from, and that finding's scan. */
+  findingId: number;
+  scanId: number;
+  reason: string;
+  expiresAt: string;
+  removedAt: string | null;
+  status: "active" | "expired" | "removed";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ScanResponse {
   scanId: number;
   scanSessionId: number;
@@ -100,6 +122,8 @@ export interface ScanResponse {
   truncated: boolean;
   /** True when at least one rule could not run. */
   partial: boolean;
+  /** Matches left out because an active suppression in the session covers their value. */
+  suppressedCount: number;
 }
 
 export type ChecksumEncoding = "base62" | "base36" | "hex";
@@ -229,6 +253,8 @@ export interface ScanSession {
   versionNumber: number;
   lastRan: string | null;
   scanCount: number;
+  /** Suppressions that apply to the next scan: not removed and not expired. */
+  activeSuppressionCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -240,6 +266,8 @@ export interface StoredScan {
   partial: boolean;
   /** Matches only; rule errors are counted by `partial`. */
   matchCount: number;
+  /** Matches left out because an active suppression covered their value. */
+  suppressedCount: number;
   createdAt: string;
   findings: SavedFinding[];
 }
@@ -365,6 +393,17 @@ export const createSession = (ruleSetVersionId: number) =>
 
 export const runScan = (sessionId: number, text: string, signal: AbortSignal) =>
   request<ScanResponse>("POST", `/api/scan-sessions/${sessionId}/scans`, { text }, signal);
+export const getScan = (sessionId: number, scanId: number) =>
+  request<ScanResponse>("GET", `/api/scan-sessions/${sessionId}/scans/${scanId}`);
+
+export const listSuppressions = (sessionId: number) =>
+  request<Suppression[]>("GET", `/api/scan-sessions/${sessionId}/suppressions`);
+export const createSuppression = (
+  sessionId: number,
+  body: { findingId: number; reason: string; expiresAt: string },
+) => request<Suppression>("POST", `/api/scan-sessions/${sessionId}/suppressions`, body);
+export const removeSuppression = (sessionId: number, suppressionId: number) =>
+  request<Suppression>("DELETE", `/api/scan-sessions/${sessionId}/suppressions/${suppressionId}`);
 
 /** How a version is named in the UI, e.g. "Payments v2". */
 export function versionLabel(version: { ruleSetName: string; number: number }): string {

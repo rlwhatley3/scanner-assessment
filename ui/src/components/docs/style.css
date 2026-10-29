@@ -11,3 +11,274 @@
   min-height: 0;
   border: 0;
 }
+
+.mcp-docs {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  scroll-padding-top: 1.5rem;
+}
+
+.mcp-status {
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.mcp-error {
+  color: var(--danger);
+}
+
+.mcp-index {
+  position: sticky;
+  top: 0;
+  flex: 0 0 15rem;
+  align-self: flex-start;
+  max-height: 100%;
+  overflow: auto;
+  padding: 1.75rem 1rem 1.75rem var(--page-gutter);
+
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  a {
+    display: block;
+    padding: 0.125rem 0;
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: var(--font-small);
+    text-decoration: none;
+
+    &:hover {
+      color: var(--accent);
+    }
+  }
+}
+
+.mcp-index-heading {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: var(--font-small);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mcp-content {
+  display: flex;
+  min-width: 0;
+  max-width: 60rem;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.75rem var(--page-gutter) 3rem 1rem;
+}
+
+.mcp-intro,
+.mcp-tool {
+  padding: 1.25rem 1.5rem;
+  border: 0.0625rem solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+  }
+
+  h2 {
+    font-size: 1.0625rem;
+  }
+
+  h3 {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    color: var(--muted);
+    font-size: var(--font-small);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  p {
+    margin: 0.5rem 0 0;
+  }
+}
+
+.mcp-intro h1 {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  font-size: var(--font-display);
+}
+
+.mcp-intro h2 {
+  margin-top: 1.25rem;
+}
+
+.mcp-version {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-small);
+  font-weight: 500;
+}
+
+.mcp-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  margin: 0.75rem 0 0;
+  font-size: var(--font-small);
+
+  dt {
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  dd {
+    margin: 0;
+  }
+}
+
+.mcp-command,
+.mcp-raw pre {
+  overflow: auto;
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-small);
+  background: var(--page);
+  font-family: var(--font-mono);
+  font-size: var(--font-small);
+}
+
+.mcp-note,
+.mcp-none {
+  color: var(--muted);
+  font-size: var(--font-small);
+}
+
+.mcp-text {
+  color: var(--ink-soft);
+  white-space: pre-line;
+}
+
+.mcp-tool-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.mcp-badge {
+  padding: 0 0.5rem;
+  border: 0.0625rem solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.mcp-badge-read-only {
+  border-color: color-mix(in srgb, var(--accent) 35%, white);
+  color: var(--accent);
+}
+
+.mcp-badge-destructive {
+  border-color: color-mix(in srgb, var(--danger) 35%, white);
+  color: var(--danger);
+}
+
+.mcp-title {
+  font-weight: 600;
+}
+
+.mcp-params {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-small);
+
+  th {
+    color: var(--muted);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  th,
+  td {
+    padding: 0.5rem 0.75rem 0.5rem 0;
+    border-bottom: 0.0625rem solid var(--line);
+    vertical-align: top;
+  }
+
+  td:first-child {
+    white-space: nowrap;
+  }
+}
+
+.mcp-required {
+  margin-left: 0.5rem;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.mcp-type {
+  color: var(--accent);
+}
+
+.mcp-raw {
+  margin-top: 0.75rem;
+
+  summary {
+    color: var(--accent);
+    font-size: var(--font-small);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  pre {
+    max-height: 30rem;
+  }
+}
+
+@media (max-width: 48rem) {
+  .mcp-index {
+    display: none;
+  }
+
+  .mcp-content {
+    padding-left: var(--page-gutter);
+  }
+
+  .mcp-intro,
+  .mcp-tool {
+    padding: 1rem;
+  }
+
+  /* One parameter per block: name and type on a line, the description under them. */
+  .mcp-params {
+    thead {
+      display: none;
+    }
+
+    tr {
+      display: block;
+      padding: 0.5rem 0;
+      border-bottom: 0.0625rem solid var(--line);
+    }
+
+    td {
+      display: inline;
+      padding: 0 0.5rem 0 0;
+      border: 0;
+    }
+
+    td.mcp-text {
+      display: block;
+      margin-top: 0.25rem;
+    }
+  }
+}
