@@ -9,8 +9,8 @@ use axum::{
 };
 use rusqlite::{Connection, OptionalExtension};
 use secrets_scanner_engine::{
-    Finding, FindingKind, Rule, RuleDefinition, RuleSet, ScanError, ScanOptions, ScanResult,
-    scan_with_options,
+    Finding, FindingKind, Rule, RuleDefinition, RuleSet, RuleTiming, ScanError, ScanOptions,
+    ScanResult, scan_with_options,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -210,6 +210,17 @@ pub async fn scan_in_session(
     scan_session_id: i64,
     text: String,
 ) -> Result<ScanResponse, ApiError> {
+    scan_in_session_timed(state, scan_session_id, text)
+        .await
+        .map(|(scan, _)| scan)
+}
+
+/// Like [`scan_in_session`], with each rule's time and match count, which aren't saved.
+pub async fn scan_in_session_timed(
+    state: &AppState,
+    scan_session_id: i64,
+    text: String,
+) -> Result<(ScanResponse, Vec<RuleTiming>), ApiError> {
     let (_caller, caller_left) = oneshot::channel::<()>();
     let state = state.clone();
     tokio::spawn(async move { scan_and_save(&state, scan_session_id, text, caller_left).await })
@@ -223,7 +234,7 @@ async fn scan_and_save(
     scan_session_id: i64,
     text: String,
     mut caller_left: oneshot::Receiver<()>,
-) -> Result<ScanResponse, ApiError> {
+) -> Result<(ScanResponse, Vec<RuleTiming>), ApiError> {
     let rule_set = state
         .db
         .call(move |connection| load_rule_set(connection, scan_session_id))
@@ -254,7 +265,7 @@ async fn scan_and_save(
             return Err(ApiError::Internal("The caller left before the scan finished.".into()));
         }
     };
-    let result = match result {
+    let mut result = match result {
         Ok(result) => result,
         Err(error @ ApiError::Internal(_)) => {
             interrupt(state, scan_id).await;
@@ -276,11 +287,12 @@ async fn scan_and_save(
         eprintln!("[scan {}] {}", event.scan_id, event.message);
     }
 
+    let rule_timings = std::mem::take(&mut result.rule_timings);
     let saved = save_results(state, scan_session_id, scan_id, result).await;
     if saved.is_err() {
         interrupt(state, scan_id).await;
     }
-    saved
+    saved.map(|scan| (scan, rule_timings))
 }
 
 /// Marks a scan that ended before its findings were saved as interrupted. If even that fails,

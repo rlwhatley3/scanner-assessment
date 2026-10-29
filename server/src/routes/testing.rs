@@ -6,8 +6,8 @@
 //! The engine generates the data deterministically from a seed, so it is never stored: a run
 //! regenerates it. A run's documents go through `scans::scan_in_session` like any scan, so their
 //! text is never stored or logged either; only the findings are saved, and the labels live in the
-//! report alone. Each document is also timed rule by rule, without saving anything, to find
-//! rules whose matches flood the scan.
+//! report alone. Each scan's per-rule timings, which aren't saved either, show rules whose
+//! matches flood a document.
 
 use super::{
     AppState,
@@ -23,7 +23,7 @@ use axum::{
 };
 use secrets_scanner_engine::{
     CaseKind, DetectionType, Expectation, MAX_INPUT_BYTES, Rule, RuleDefinition, RuleSet,
-    RuleTiming, ScanOptions, generate_test_data, pattern_matches_value, scan_with_options,
+    RuleTiming, generate_test_data, pattern_matches_value,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -821,56 +821,13 @@ pub async fn run_test_suite(
     let mut results = Vec::new();
     let mut evaluation = Evaluation::new(&version);
     for document in documents {
-        let scan = scans::scan_in_session(state, scan_session_id, document.text.clone()).await?;
-        let timings = time_rules(state, &version.rule_set, document.text.clone()).await?;
+        let (scan, timings) =
+            scans::scan_in_session_timed(state, scan_session_id, document.text.clone()).await?;
         evaluation.timings(&document, &timings);
         results.push(evaluation.document(&document, scan));
     }
     let loaded = models::loaded_models(state);
     Ok(evaluation.report(scan_session_id, seed, results, skipped, &loaded))
-}
-
-/// Times each pattern rule on `text` and counts its matches. A session scan's response carries
-/// neither, so this scans again, saving and fingerprinting nothing. Model rules are left out:
-/// their time depends on the text's length rather than their matches (the secret detector takes
-/// about 3.5 s a megabyte), so they are never a flood.
-async fn time_rules(
-    state: &AppState,
-    rule_set: &RuleSet,
-    text: String,
-) -> Result<Vec<RuleTiming>, ApiError> {
-    let rule_set = RuleSet {
-        rules: rule_set
-            .rules
-            .iter()
-            .filter(|rule| {
-                rule.definition
-                    .detection_type
-                    .is_none_or(|detection_type| !detection_type.uses_model())
-            })
-            .cloned()
-            .collect(),
-    };
-    let _permit = state
-        .scan_permits
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|error| ApiError::Internal(format!("Internal error: {error}")))?;
-    let models = state.models.clone();
-    let timings = tokio::task::spawn_blocking(move || {
-        let options = ScanOptions {
-            models: Some(&models),
-            fingerprint_key: None,
-        };
-        // A version of only model and placeholder rules has nothing left to time.
-        scan_with_options(0, &text, &rule_set, options)
-            .map(|result| result.rule_timings)
-            .unwrap_or_default()
-    })
-    .await
-    .map_err(|error| ApiError::Internal(format!("Internal error: {error}")))?;
-    Ok(timings)
 }
 
 /// What a saved match says, read back from its violation.
@@ -958,10 +915,20 @@ impl<'v> Evaluation<'v> {
         }
     }
 
+    /// Keeps each pattern rule's densest flood. Model rules are left out: their time depends on
+    /// the text's length rather than their matches (the secret detector takes about 3.5 s a
+    /// megabyte), so they are never a flood.
     fn timings(&mut self, document: &Document, timings: &[RuleTiming]) {
         let bytes = document.text.len();
         for &timing in timings {
-            if timing.matches < FLOOD_MIN_MATCHES || timing.matches * FLOOD_BYTES_PER_MATCH < bytes
+            let uses_model = self
+                .version
+                .rule(timing.rule_id)
+                .and_then(|rule| rule.definition.detection_type)
+                .is_some_and(DetectionType::uses_model);
+            if uses_model
+                || timing.matches < FLOOD_MIN_MATCHES
+                || timing.matches * FLOOD_BYTES_PER_MATCH < bytes
             {
                 continue;
             }
