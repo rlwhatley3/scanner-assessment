@@ -397,14 +397,15 @@ Each report below says what was built, what the design guarantees, what it doesn
 - **Built:** locations are byte offsets plus line and column, counting `\n`, `\r\n`, and a lone `\r` as line breaks. The UI converts byte offsets to string positions, so multi-byte text before a match doesn't shift the highlight. Long lines wrap in the results view instead of scrolling sideways. The text is locked while scanning and read-only after; changing it means a new scan.
 - **Guarantee:** a finding always points into the exact text that was scanned.
 - **Gaps:** past scans don't keep the text, so an old finding's location can't be checked against anything. Columns count code points, so an emoji made of several counts as more than one column. No file scanning, so files changing mid-scan isn't handled yet.
-- **Next:** with file scanning, store a hash of each file's content with its findings and mark a finding stale when the file no longer matches.
+- **Next:** with repository scanning, each finding is recorded against the commit SHA it was scanned at, and is marked stale when the file at the current commit no longer matches.
 
 #### Broken and expensive rules
 
 - **Built:** rules are checked as a set before a version is saved: an invalid pattern is reported with the position of the error, a pattern that compiles larger than 1 MB is rejected, and so are duplicate names. Patterns use Rust's `regex` crate, which runs in linear time, so no pattern can backtrack catastrophically. If a rule still fails at scan time (such as a model rule whose model is missing), it becomes a rule-error finding and the other rules run. The UI then shows **Partial scan** and names the rules that didn't run. `run_test_suite` adds diagnostics for rules that run but behave badly.
+  - **Slow rules:** every scan saves each rule's time and match count. A rule that floods the text (at least one match per 16 bytes and 1,000 matches) is named in a **Slow scan** note, in session history, in the rule editor's example check, and by `run_test_suite`. Time alone can't tell a broad pattern from a busy built-in rule; the flood of matches is what slows a scan. The densest built-in rule matches once every 32 bytes, while `\w+` matches once every 6 to 16. A per-rule timing table sits behind the Advanced switch.
 - **Guarantee:** a scan where any rule failed is never shown as clean.
-- **Gaps:** there's no time budget per rule, so a slow but valid rule slows the whole scan. Per-rule timing isn't reported.
-- **Next:** record each rule's time in the scan log and warn rule authors about the slowest.
+- **Gaps:** a slow rule is reported, not stopped: there's no time budget per rule. Model rules are never flagged; the secret detector costs about 3.5 s per MB on every scan, which the rule guide notes.
+- **Next:** a per-rule time budget that turns a runaway rule into a rule error.
 
 ### Scans and repositories change underneath you
 
@@ -463,7 +464,7 @@ Not built: there is no CLI yet. It would call the engine in-process, like the de
 
 ### Tests and checks
 
-- **Automated tests,** all passing on 2026-10-28: engine 155, server 97, UI 24. They cover highlights across multi-byte text and overlapping findings, every newline style, suppression matching and expiry, and rule errors leaving the rest of a scan intact. The UI's stale-result and cancel handling has no automated test.
+- **Automated tests,** all passing on 2026-10-29: engine 157, server 108, UI 37. They cover highlights across multi-byte text and overlapping findings, every newline style, suppression matching and expiry, rule errors leaving the rest of a scan intact, cut-off scans marked interrupted, flooding rules flagged while built-in rules aren't, and the likely-real-first sort. The UI's stale-result and cancel handling has no automated test.
 - **Scan documents** in `tests/` for the Phase 3 cases: `unicode-offsets.md`, `mixed-line-endings.ini`, `clean-lookalikes.yaml`, and `password-lookalikes.yaml`.
 - **Rule set testing:** `generate_test_data` and `run_test_suite` (see the MCP server section) report each case as caught, missed, a false alarm, or scored as an example.
 
