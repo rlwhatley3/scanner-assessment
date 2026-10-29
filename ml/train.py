@@ -38,6 +38,9 @@ DILATIONS = (1, 2, 4)
 SEED = 7
 # The most samples of one class a single CredData repo contributes to training.
 PER_REPO_LIMIT = 400
+# Synthetic training samples. 20,000 was chosen over 10,000 and 40,000 on the CredData validation
+# repos, never the test repos.
+SYNTHETIC_SAMPLES = 20_000
 OUTPUT = Path(__file__).resolve().parent.parent / "engine" / "models" / "value-classifier.onnx"
 
 
@@ -168,7 +171,7 @@ def main() -> None:
 
     torch.manual_seed(SEED)
     torch.use_deterministic_algorithms(True)
-    train_samples = generate(40_000, seed=SEED)
+    train_samples = generate(SYNTHETIC_SAMPLES, seed=SEED)
     tests = {"synthetic": tensors(generate(4_000, seed=SEED + 1))}
     if args.creddata:
         by_split = value_creddata.load(Path(args.creddata))

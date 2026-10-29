@@ -276,7 +276,7 @@ The value classifier (`engine/models/value-classifier.onnx`) runs locally on the
 It was trained on two sources, each evaluated on held-out data of its own:
 
 - **Synthetic samples** (`ml/data.py`, 40,000): one config or code line setting a name to a value. Credentials in known formats and generic keys and passwords; non-secret hashes, digests, UUIDs, IDs, encoded data, URLs, and paths, sometimes under secret-sounding names; and placeholder and documentation values. Real-shaped values are random at generation time.
-- **CredData** ([Samsung/CredData](https://github.com/Samsung/CredData) at commit `fc9b64b`), the same checkout the secret detector uses: single-line rows that mark their value, with `T` as credential, `F` as non-secret, and `X` as placeholder. Split by a hash of the repository ID into 241 training, 28 validation, and 63 test repositories. Each training repository contributes at most 400 values per class (18,806 in all). No CredData file is committed; each keeps its source project's license (by a count of license files: MIT 186 repositories, Apache-2.0 95, BSD 20, LGPL 10, GPL or AGPL 7, ISC 5, CC0 or Creative Commons 3, EPL 1, other 3, no license file 7).
+- **CredData** ([Samsung/CredData](https://github.com/Samsung/CredData) at commit `fc9b64b`), the same checkout the secret detector uses: single-line rows that mark their value, with `T` as credential, `F` as non-secret, and `X` as placeholder. The shipped model was split by its own hash of the repository ID into 241 training, 28 validation, and 63 test repositories, with at most 400 values per class from each training repository (18,806 in all). The training code now uses the secret detector's split instead (234 training, 37 validation, 66 test), so both models hold out the same test repositories; see below for why the shipped model wasn't replaced. No CredData file is committed; each keeps its source project's license (by a count of license files: MIT 186 repositories, Apache-2.0 95, BSD 20, LGPL 10, GPL or AGPL 7, ISC 5, CC0 or Creative Commons 3, EPL 1, other 3, no license file 7).
 
 **Results**, kept separate by source:
 
@@ -287,6 +287,19 @@ It was trained on two sources, each evaluated on held-out data of its own:
 | Synthetic | accuracy 0.986 | accuracy 0.974 |
 
 The synthetic-only model's near-perfect synthetic score and poor CredData score show why the real data mattered: it had learned the generator, not real code.
+
+**The split now matches the detector's.** The secret detector and the value classifier first split CredData repositories differently, so the shipped classifier trained on 51 of the detector's 66 test repositories. That made "detector proposes, classifier gates" impossible to measure on data neither model had seen. `ml/value_creddata.py` now uses the detector's rule. The classifier was retrained with it, choosing settings on the 37 validation repositories only, and compared with the shipped model:
+
+| Held-out data | Shipped model | Retrained on the detector's split |
+|---|---|---|
+| CredData, the 66 test repositories (9,963 values) | accuracy 0.975; 2.2% of credentials lowered (but trained on 51 of them) | accuracy 0.473; 65.6% |
+| CredData, the 65 test repositories other than `2ba83c6a` (3,686) | accuracy 0.959; 2.2% (trained on 50) | accuracy 0.880; 10.0% |
+| CredData, the 15 test repositories neither model trained on (1,002) | accuracy 0.885; 2.8% | accuracy 0.845; 5.0% |
+| CredData, the 37 validation repositories (2,846) | accuracy 0.960; 2.5% (trained on 28) | accuracy 0.868; 11.6% |
+| Synthetic (4,000) | accuracy 0.974; 2.3% | accuracy 0.972; 3.8% |
+| Hand-written engine tests (10 cases) | 10 of 10 | 10 of 10 |
+
+`2ba83c6a` holds 82% of the test credentials, and the shipped model trained on it. On the only comparison fair to both, the 15 repositories neither saw, the shipped model is still ahead, so it stays in the engine. Its numbers on the detector's test repositories are not held-out numbers. A gating evaluation should use a classifier trained by `ml/train.py` on the new split.
 
 ### Known gaps
 

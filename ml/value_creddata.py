@@ -9,7 +9,8 @@ synthetic ones: the value's line, the value's byte range in it, and a class.
 - `F` (a false positive: a hash, ID, variable, or ordinary value) is a non-secret.
 - `X` (a test value, example, or placeholder) is a placeholder.
 
-Repos are split by a hash of their ID, so one repo's lines never land in both training and test.
+Repos are split by a hash of their ID with the secret detector's rule, so one repo's lines never
+land in both training and test, and both models hold out the same test repos.
 """
 
 import csv
@@ -23,9 +24,13 @@ LABELS = {"T": CREDENTIAL, "F": NON_SECRET, "X": PLACEHOLDER}
 
 
 def split_of(repo: str) -> str:
-    """`test` for about 20% of repos, `validation` for about 10%, `train` for the rest."""
-    bucket = int(hashlib.sha256(repo.encode()).hexdigest()[:8], 16) % 10
-    return "test" if bucket < 2 else "validation" if bucket == 2 else "train"
+    """Which split a repo belongs to, by the same rule as the secret detector's
+    `creddata.split_of`, so both models hold out the same test repos: one in five is `test`, one
+    in eight of the rest is `validation` (for choosing settings), and the rest is `train`."""
+    digest = int(hashlib.sha256(repo.encode()).hexdigest(), 16)
+    if digest % 5 == 0:
+        return "test"
+    return "validation" if (digest // 5) % 8 == 0 else "train"
 
 
 def load(root: Path) -> dict[str, list[tuple[str, Sample]]]:
