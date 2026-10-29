@@ -369,3 +369,96 @@ The synthetic-only model's near-perfect synthetic score and poor CredData score 
 ### Known gaps
 
 - **Built-in rule updates don't reach existing databases.** The built-in rule set is seeded only into an empty database, and saved rule set versions keep the rule copies they were made with. A changed built-in rule (such as the GitHub checksum) only reaches a database through a new rule set version, or by recreating the local database.
+
+## Phase 3: New feedback
+
+**What came first:** the reports that apply to the scanner as it's used today, on pasted text: whether a finding can be trusted, suppressions, rule failures, scan lifecycle, and keeping scanned content safe. Repository scanning, a CLI, and remediation are designed below but not built. Each would need the guarantees above to hold first, and building them on a scanner people don't trust would only spread the problem.
+
+Each report below says what was built, what the design guarantees, what it doesn't, and what comes next.
+
+### Findings are difficult to trust
+
+#### False positives, misses, and overlapping rules
+
+- **Built:** every match is reported with a confidence score, a placeholder score, and "why flagged". Placeholders, comments, failed checksums, and the value classifier score examples down. Format parsing and password shape catch odd formats. Overlapping matches share one highlight.
+- **Guarantee:** a trust signal only moves scores. It never hides a finding, so a wrong signal costs ranking, not a miss.
+- **Gaps:** the engine doesn't see file paths (`docs/`, `fixtures/`, generated files). The results view sorts by severity, not confidence. Overlapping rules each still report.
+- **Next:** pass paths in and treat docs, tests, and generated files as example evidence; sort likely examples last.
+
+#### Suppressions
+
+- **Built:** a suppression covers one value in one scan session: the rule plus a keyed hash of the value (Argon2id, with a local key kept outside the database). It needs a reason and an expiry, at most 365 days out. Matching values aren't flagged in that session's later scans, and each scan shows how many values it skipped. Each session lists its suppressions, and any can be removed, in the UI or over MCP.
+- **Guarantee:** the value is never stored. If it changes, it gets flagged again. A suppression can't hide a different secret.
+- **Gaps:** suppressions don't carry over to a new session. The hash cost is below OWASP's password-storage minimum, to keep a 200-finding scan under about a second; the key is the main protection.
+- **Next:** once file scanning exists, scope suppressions to a file path instead of a session.
+
+#### Findings that move or disappear
+
+- **Built:** locations are byte offsets plus line and column, counting `\n`, `\r\n`, and a lone `\r` as line breaks. The UI converts byte offsets to string positions, so multi-byte text before a match doesn't shift the highlight. The text is locked while scanning and read-only after; changing it means a new scan.
+- **Guarantee:** a finding always points into the exact text that was scanned.
+- **Gaps:** past scans don't keep the text, so an old finding's location can't be checked against anything. Columns count code points, so an emoji made of several counts as more than one column. No file scanning, so files changing mid-scan isn't handled yet.
+- **Next:** with file scanning, store a hash of each file's content with its findings and mark a finding stale when the file no longer matches.
+
+#### Broken and expensive rules
+
+- **Built:** rules are checked as a set before a version is saved: an invalid pattern is reported with the position of the error, a pattern that compiles larger than 1 MB is rejected, and so are duplicate names. Patterns use Rust's `regex` crate, which runs in linear time, so no pattern can backtrack catastrophically. If a rule still fails at scan time (such as a model rule whose model is missing), it becomes a rule-error finding and the other rules run. The UI then shows **Partial scan** and names the rules that didn't run. `run_test_suite` adds diagnostics for rules that run but behave badly.
+- **Guarantee:** a scan where any rule failed is never shown as clean.
+- **Gaps:** there's no time budget per rule, so a slow but valid rule slows the whole scan. Per-rule timing isn't reported.
+- **Next:** record each rule's time in the scan log and warn rule authors about the slowest.
+
+### Scans and repositories change underneath you
+
+- **Built:**
+  - **One scan at a time:** each scan gets a token. A response for a cancelled or older scan is dropped, so stale results never replace newer ones.
+  - **Nothing changes mid-scan:** the text is locked while scanning, and a session's rule set version is a saved snapshot that can't change.
+  - **Leaving:** reload or close warns while a scan runs; leaving the playground cancels it. After a reload the text is gone (it's never stored) and the saved scans remain.
+  - **Limits:** 1 MB of text per scan, at most 200 findings (the rest are dropped and the scan says so), and at most 4 scans at once.
+- **Guarantee:** results on screen always belong to the text on screen and the session's rule set version.
+- **Gaps:**
+  - **A cancelled scan can show as clean in the session's history.** The scan's row is saved before the engine runs. If the request ends early (Cancel, reload, a closed tab), the server never saves the findings or removes the row, so the history lists an empty scan, which reads as **Clean**.
+  - **Cancel doesn't stop the server's work:** the engine finishes the scan, and its results are thrown away.
+  - **No repository scanning:** file walking, symlinks, binary and huge files, renames, and caching don't exist yet.
+- **Next:**
+  - Give scans a status (running, completed, failed). Only completed scans count as clean, and a scan left running is shown as interrupted.
+  - **Repository scanning:** don't follow symlinks outside the selected folder, and track visited directories so loops end. Skip binary files (a NUL byte), files over the size limit, and unreadable files, and list each one as **not scanned** with the reason. Hash each file's content when it's read, so a file edited mid-scan is detected and reported.
+  - **Caching:** key cached results by file content hash, rule set version, ignore settings, and engine version, so any change makes a miss, never a wrong hit. Apply suppressions after the cache, so adding or removing one never makes cached results stale.
+
+### Remediation has consequences
+
+Not built. Removing a secret from code doesn't un-leak it, so the first step for any real credential is rotating it, and the UI should say so. The design for fixing findings from the results view:
+
+- **Re-check before editing:** a suggested edit applies only if the file still hashes to what was scanned and the value at the finding's range still matches its fingerprint. Otherwise the edit is refused and the file is scanned again.
+- **Preview, one finding at a time:** each edit is shown as a diff before it applies. Overlapping findings become one edit.
+- **Automatic only when nothing can break:** replacing a value with a reference to an environment variable or a secret store needs review. Only changes that can't alter behavior, such as removing a secret from a comment, could run without review.
+- **Partial results:** each finding gets its own status (not attempted, applied, refused, failed). After a lost connection the UI shows that status, not the original results.
+
+### Automation needs a stable contract
+
+Not built: there is no CLI yet. What exists already fits one: the REST and MCP responses are JSON with `partial` and `truncated` flags, rule errors have stable codes, and findings never contain matched values. The design for the CLI:
+
+- **Exit codes:** 0 no findings, 1 findings, 2 partial (a rule or file failed), 3 invalid rules or usage, 4 internal error, 130 cancelled. A partial scan never exits 0.
+- **Output:** JSON with a schema version, and SARIF for code-scanning tools. Readable output and diagnostics go to stderr. Neither ever prints a matched value.
+- **Concurrent runs:** each run is self-contained and reports the rule set version and engine version it used, so callers can tell results apart.
+
+### Scanned content must stay safe
+
+- **Built:**
+  - **Never written down:** scan text isn't stored or logged by the API or the MCP server, and the UI keeps it out of browser storage. Findings hold the rule, the location, and a fingerprint, never the value. Generated test cases are rebuilt from their seed, so their text isn't stored either.
+  - **No temporary files:** the engine does no disk or network I/O.
+  - **Local only:** both models run on the CPU. The API listens only on loopback, and the MCP server also checks `Host` and refuses browser requests.
+- **Guarantee:** a failure mid-scan leaves no copy of the text on disk, because it was only ever in memory.
+- **Gaps:** the text stays in server and browser memory until it's freed, and isn't zeroed. A crash dump or swap file could hold it.
+- **Next:** clear scan text from memory when the scan ends.
+
+### Tests and checks
+
+- **Automated tests,** all passing on 2026-10-28: engine 155, server 97, UI 24. They cover highlights across multi-byte text and overlapping findings, every newline style, suppression matching and expiry, and rule errors leaving the rest of a scan intact. The UI's stale-result and cancel handling has no automated test.
+- **Scan documents** in `tests/` for the Phase 3 cases: `unicode-offsets.md`, `mixed-line-endings.ini`, `clean-lookalikes.yaml`, and `password-lookalikes.yaml`.
+- **Rule set testing:** `generate_test_data` and `run_test_suite` (see the MCP server section) report each case as caught, missed, a false alarm, or scored as an example.
+
+### Product ideas
+
+- **Pre-commit hook and CI step** built on the CLI, scanning only changed files.
+- **Git history scanning,** since a removed secret is still in old commits.
+- **Team suppressions** that need a second person's approval and show up in review.
+- **Rotation links per vendor** on each finding, so the next step is one click away.
