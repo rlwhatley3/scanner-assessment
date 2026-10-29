@@ -267,6 +267,8 @@
 
 .findings-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
   align-items: baseline;
   justify-content: space-between;
 }
@@ -277,6 +279,7 @@
   align-items: center;
   color: var(--muted);
   font-size: var(--font-small);
+  white-space: nowrap;
 }
 
 .findings-list {
