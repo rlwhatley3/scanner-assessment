@@ -412,14 +412,14 @@ Each report below says what was built, what the design guarantees, what it doesn
   - **One scan at a time:** each scan gets a token. A response for a cancelled or older scan is dropped, so stale results never replace newer ones.
   - **Nothing changes mid-scan:** the text is locked while scanning, and a session's rule set version is a saved snapshot that can't change.
   - **Leaving:** reload or close warns while a scan runs; leaving the playground cancels it. After a reload the text is gone (it's never stored) and the saved scans remain.
+  - **Every scan settles:** a scan is `running`, `completed`, or `interrupted`. If the caller leaves first (Cancel, reload, a closed tab, a dropped connection), the scan is marked interrupted. Scans still running when the server starts are marked interrupted too, and a migration marked earlier cut-off scans. Only a completed scan with no findings counts as clean; history shows the rest as **Interrupted** and says their results weren't saved.
   - **Limits:** 1 MB of text per scan, at most 200 findings (the rest are dropped and the scan says so), and at most 4 scans at once.
-- **Guarantee:** results on screen always belong to the text on screen and the session's rule set version.
+- **Guarantee:** results on screen always belong to the text on screen and the session's rule set version, and a scan that didn't finish never reads as clean.
 - **Gaps:**
-  - **A cancelled scan can show as clean in the session's history.** The scan's row is saved before the engine runs. If the request ends early (Cancel, reload, a closed tab), the server never saves the findings or removes the row, so the history lists an empty scan, which reads as **Clean**.
   - **Cancel doesn't stop the server's work:** the engine finishes the scan, and its results are thrown away.
   - **No repository scanning:** file walking, symlinks, binary and huge files, renames, and caching don't exist yet.
 - **Next:**
-  - Give scans a status (running, completed, failed). Only completed scans count as clean, and a scan left running is shown as interrupted.
+  - Stop the engine when its scan is cancelled, by checking for a cancel between rules.
   - **Repository scanning:** each scan looks at one specific commit SHA, pulled in locally, and is recorded against it. The branch can move on during or after the scan, but the record says exactly what was checked, so edits, renames, and new or deleted files can't change a scan that's running. Don't follow symlinks outside the repository, and track visited directories so loops end. Skip binary files (a NUL byte), files over the size limit, and unreadable files, and list each one as **not scanned** with the reason.
   - **Paths:** keep paths as raw bytes, never pass them through a shell, and escape them for each output: JSON strings, URI-encoded in SARIF, and control characters shown as escapes in readable output, so a file name can't break a script or fake a line of output.
   - **Caching:** key cached results by file content hash, rule set version, ignore settings, and engine version, so any change makes a miss, never a wrong hit. Apply suppressions after the cache, so adding or removing one never makes cached results stale.
@@ -434,25 +434,32 @@ Removing a secret from code doesn't un-leak it, so the first step for any real c
 - **Preview, one finding at a time:** each edit is shown as a diff before it applies. Overlapping findings become one edit.
 - **Automatic only when nothing can break:** replacing a value with a reference to an environment variable or a secret store needs review. Only changes that can't alter behavior, such as removing a secret from a comment, could run without review.
 - **Teams decide what's automatic:** a setting on the rule set says which rules may fix without review. It defaults to none, and because it's part of the rule set version, every fix records the policy it ran under.
+- **In-app approval:** the rule set can also mark fixes as needing approval, selected by rule, finding type, severity, or a label the team puts on rules or known values (by fingerprint, never the value), such as `prod` or `payments`. A matching fix becomes a recommended change that waits for approval in the app, the way a pull request waits for review. The team chooses its approvers (admins, for example), and the change applies only after a required approver accepts it. The record keeps who approved it and the policy that required it.
 - **Partial results:** each file is written in one step (write a new copy, then swap it in), so a cancel never leaves a half-edited file. Each finding gets its own status (not attempted, applied, refused, failed). After a lost connection the UI shows that status, not the original results.
 
 ### Automation needs a stable contract
 
-Not built: there is no CLI yet. What exists already fits one: the REST and MCP responses are JSON with `partial` and `truncated` flags, rule errors have stable codes, and findings never contain matched values. The design for the CLI:
+Not built: there is no CLI yet. It would call the engine in-process, like the desktop app.
 
-- **Exit codes:** 0 no findings, 1 findings, 2 partial (a rule or file failed), 3 invalid rules or usage, 4 internal error, 130 cancelled. A partial scan never exits 0.
-- **Output:** JSON with a schema version, and SARIF for code-scanning tools. Readable output and diagnostics go to stderr. Neither ever prints a matched value.
-- **Concurrent runs:** each run is self-contained and reports the rule set version and engine version it used, so callers can tell results apart.
+- **Exit codes:** 0 clean, 1 findings, 2 partial, 3 invalid rules or usage, 4 internal error, 130 cancelled. The highest that applies wins, so a partial scan never exits 0.
+- **Every outcome is explicit:** truncated results say so, skipped files are listed with the reason, and a cancelled run is marked `cancelled`.
+- **Output:** JSON or SARIF on stdout, readable output on stderr. Never a matched value, even with `--verbose`.
+- **Concurrent runs:** each reports the commit SHA, rule set version, and engine version it used.
+- **One contract, in Protobuf:** today the REST API, MCP tools, and UI each describe the same shapes separately. Versioned `.proto` files (`scanner.v1`) would define them once.
+  - Rust (`prost`) and TypeScript (`protobuf-es`) types are generated from them at build time.
+  - `buf breaking` in CI blocks breaking changes; a real break is a new package (`scanner.v2`).
+  - The CLI's JSON is Protobuf's standard JSON mapping, and `scanner schema` prints the schema embedded in the binary.
+  - Each release publishes the `.proto` files so other teams can generate their own clients.
 
 ### Scanned content must stay safe
 
 - **Built:**
-  - **Never written down:** scan text isn't stored or logged by the API or the MCP server, and the UI keeps it out of browser storage. Findings hold the rule, the location, and a fingerprint, never the value. Generated test cases are rebuilt from their seed, so their text isn't stored either.
-  - **No temporary files:** the engine does no disk or network I/O.
-  - **Local only:** both models run on the CPU. The API listens only on loopback, and the MCP server also checks `Host` and refuses browser requests.
-- **Guarantee:** a failure mid-scan leaves no copy of the text on disk, because it was only ever in memory.
-- **Gaps:** the text stays in server and browser memory until it's freed, and isn't zeroed. A crash dump or swap file could hold it.
-- **Next:** clear scan text from memory when the scan ends.
+  - **Never written down:** scan text isn't stored or logged, and the UI keeps it out of browser storage. Findings hold the rule, location, and a fingerprint, never the value. Errors give sizes and counts, never text.
+  - **No temp files or caches:** the engine does no disk or network I/O, and generated test cases are rebuilt from their seed.
+  - **No confusing leftovers:** a scan cut off partway is marked interrupted, never clean.
+  - **Local only:** both models run on the CPU, and the API and MCP server listen only on loopback.
+- **Guarantee:** a failure mid-scan leaves no copy of the text on disk.
+- **Gap:** the text stays in memory until it's freed and isn't zeroed, so a crash dump or swap file could hold it.
 
 ### Tests and checks
 
